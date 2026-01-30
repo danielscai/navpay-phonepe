@@ -28,7 +28,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step() { echo -e "\n${BLUE}==== $1 ====${NC}"; }
 
 # 路径配置
-PEV70_DIR="/Users/danielscai/Documents/印度支付/apk包-研究/pev70_apktool"
+PEV70_DIR="/Users/danielscai/Documents/印度支付/apk包-研究/decompiled/pev70_apktool"
 TARGET_DIR="${1:-/Users/danielscai/Documents/印度支付/apk包-研究/merge_test_output/decompiled/base}"
 
 if [ ! -d "$TARGET_DIR" ]; then
