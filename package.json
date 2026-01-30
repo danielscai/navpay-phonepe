@@ -3,7 +3,14 @@
   "private": true,
   "packageManager": "yarn@4.0.0",
   "scripts": {
+    "yarn1": "corepack prepare yarn@1.22.22 --activate && yarn -v",
+    "yarn2": "corepack prepare yarn@2.4.3 --activate && yarn -v",
+    "yarn3": "corepack prepare yarn@3.6.4 --activate && yarn -v",
+    "yarn4": "corepack prepare yarn@4.0.0 --activate && yarn -v",
+    "step3": "./tools/step3_verify_signature_bypass.sh",
     "4": "./tools/step4_verify_injection.sh",
-    "logs": "./tools/step4_view_http_logs.sh"
+    "step4": "./tools/step4_verify_injection.sh",
+    "logs": "./tools/step4_view_http_logs.sh",
+    "logs:crash": "adb logcat | grep -i -E \"(FATAL EXCEPTION|AndroidRuntime|SIGABRT|SIGSEGV|CRASH)\""
   }
 }
