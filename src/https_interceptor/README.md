@@ -180,3 +180,32 @@ https_interceptor/
   - `decompiled/pev70_jadx/sources/com/PhonePeTweak/Def/PhonePeInterceptor.java`
   - `decompiled/pev70_jadx/sources/com/PhonePeTweak/Def/HttpJsonInterceptor.java`
   - `decompiled/pev70_jadx/sources/com/PhonePeTweak/Def/CertificatePinner.java`
+
+---
+
+## 结论与注意事项（务必先看）
+
+### 1) OkHttp 未混淆、版本与原版一致（已确认）
+我们已经确认 **PhonePe 原版 APK 中的 okhttp3 未被混淆**，且版本为 **4.10.0**，这不是推测而是基于文件证据：
+
+- 版本证据：`decompiled/phonepe_original_apktool/smali_classes9/okhttp3/OkHttp.smali`
+  - `VERSION = "4.10.0"`
+- 标准 API 存在：
+  - `Request.url()`：`decompiled/phonepe_original_apktool/smali_classes9/okhttp3/Request.smali`
+  - `Interceptor$Chain.request()/proceed()/connection()`：`decompiled/phonepe_original_apktool/smali_classes9/okhttp3/Interceptor$Chain.smali`
+
+**结论**：不要再假设“okhttp3 被混淆”。我们的拦截器必须与 **OkHttp 4.10.0 标准 API** 保持一致。
+
+### 2) pev70 实现方式的可参考点（不直接复用代码）
+pev70 的思路可以参考，但 **不直接拷贝其 smali/代码**。可借鉴的点包括：
+
+- 在 `OkHttpClient$Builder.build()` 处注入自定义拦截器（核心入口）。
+- 构建时注入拦截器后，**直接 `return new OkHttpClient(builder)`**，避免递归。
+- pev70 还改写了 `Util.isSensitiveHeader()` / `Request$Builder.addHeader()` 等以放开敏感头记录（可作为思路，不直接复用）。
+
+相关证据详见：`docs/pev70注入代码详细分析.md`
+
+### 3) 本仓库落地原则
+- 只参考 pev70 的思路，不直接用其 smali/代码。
+- 以 **最小改动、可回溯** 为优先级。
+- 每次改动后必须在模拟器中验证是否可进入登录界面。
