@@ -18,6 +18,8 @@ build/
 out/
 *.apk.idsig
 node_modules/
+.gradle/
+src/log_server/data/logs.db
 
 # ========================================
 # 系统文件
