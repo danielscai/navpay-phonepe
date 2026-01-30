@@ -209,12 +209,10 @@
         }
 
         .method-badge {
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 10px;
-            font-weight: bold;
-            min-width: 36px;
-            text-align: center;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            text-indent: -9999px;
             flex: 0 0 auto;
         }
 
@@ -225,10 +223,10 @@
         .method-PATCH { background: #6f42c1; color: #fff; }
 
         .status-badge {
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 10px;
-            font-weight: bold;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            text-indent: -9999px;
             flex: 0 0 auto;
         }
 
@@ -652,11 +650,10 @@
             return `
                 <div class="${itemClass}" data-id="${log.id}" onclick="selectLog('${log.id}')">
                     <div class="log-header">
-                        <span class="method-badge ${methodClass}">${log.method}</span>
-                        <span class="status-badge ${statusClass}">${log.statusCode || 'ERR'}</span>
+                        <span class="method-badge ${methodClass}" title="${log.method}"></span>
+                        <span class="status-badge ${statusClass}" title="${log.statusCode || 'ERR'}"></span>
                         <span class="log-url" title="${escapeHtml(log.url)}">${shortenUrl(log.url)}</span>
                         <div class="log-meta">
-                            <span class="duration">${log.durationMs}ms</span>
                             <span>${formatTime(log.timestamp)}</span>
                             ${log.tokenDetected ? '<span class="token-warning">⚠️ Token</span>' : ''}
                         </div>
