@@ -321,6 +321,14 @@
             align-items: center;
         }
 
+        .detail-url {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            color: #adb5bd;
+            word-break: break-all;
+            margin-bottom: 12px;
+        }
+
         .header-count {
             background: #0f3460;
             padding: 2px 8px;
@@ -698,6 +706,11 @@
                         <pre style="color: #ffc107;">${escapeHtml(log.tokenInfo)}</pre>
                     </div>
                 ` : ''}
+
+                <div class="detail-section">
+                    <div class="detail-title">URL</div>
+                    <div class="detail-url">${escapeHtml(log.url)}</div>
+                </div>
 
                 <div class="detail-section">
                     <div class="detail-title">请求 / 响应头</div>
