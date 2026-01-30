@@ -2,6 +2,8 @@ package com.httpinterceptor.interceptor;
 
 import android.util.Log;
 
+import org.json.JSONObject;
+
 import java.io.IOException;
 
 import okhttp3.Interceptor;
@@ -48,6 +50,20 @@ public class RemoteLoggingInterceptor implements Interceptor {
         if (url.startsWith("https://")) {
             String method = safeRequestMethod(request);
             Log.d(TAG, "HTTPS: " + method + " " + url);
+            sendRemoteLog(method, url);
+        }
+    }
+
+    private static void sendRemoteLog(String method, String url) {
+        try {
+            JSONObject json = new JSONObject();
+            json.put("timestamp", System.currentTimeMillis());
+            json.put("method", method);
+            json.put("url", url);
+            json.put("protocol", "https");
+            LogSender.getInstance().sendLog(json);
+        } catch (Throwable t) {
+            Log.w(TAG, "Remote log send skipped: " + t.getMessage());
         }
     }
 
