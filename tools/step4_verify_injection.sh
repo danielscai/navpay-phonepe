@@ -17,6 +17,7 @@ ACTIVITY_NAME=".launch.core.main.ui.MainActivity"
 LOGIN_ACTIVITY="com.phonepe.login.internal.ui.views.LoginActivity"
 DEVICE_SERIAL=""
 SOURCE_APK="$SOURCE_APK_DEFAULT"
+FULL_RUN=0
 
 usage() {
   cat <<'USAGE'
@@ -25,10 +26,12 @@ Usage: tools/step4_verify_injection.sh [options]
 Options:
   --apk <path>   Source merged APK to patch (default: temp/phonepe_merged_test/com.phonepe.app_merged_signed.apk)
   -s <serial>    adb device/emulator serial (required if multiple devices)
+  --full         Full rerun (ignore cached outputs)
 
 Notes:
 - Full real run: signature-bypass merge -> patch -> rebuild -> sign -> install -> run -> logcat check.
 - No log server involved; verification is via adb logcat.
+ - Default fast mode reuses cached outputs when possible; use --full to force rebuild.
 USAGE
 }
 
@@ -45,6 +48,10 @@ while [ $# -gt 0 ]; do
     -h|--help)
       usage
       exit 0
+      ;;
+    --full)
+      FULL_RUN=1
+      shift
       ;;
     *)
       echo "[FAIL] Unknown arg: $1"
@@ -98,17 +105,68 @@ fi
 
 echo "[INFO] Using device: $DEVICE_SERIAL"
 
-# Clean outputs
-rm -rf "$WORK_DIR"
+# Prepare work dir
+if [ "$FULL_RUN" -eq 1 ]; then
+  rm -rf "$WORK_DIR"
+fi
 mkdir -p "$WORK_DIR"
 
-# Decompile source APK
-apktool d -f "$SOURCE_APK" -o "$DECOMPILED_DIR" >/dev/null
+STAMP_FILE="$WORK_DIR/source_apk.stamp"
+SOURCE_MTIME=""
+if [ -f "$SOURCE_APK" ]; then
+  SOURCE_MTIME=$(stat -f "%m" "$SOURCE_APK" 2>/dev/null || true)
+fi
+STAMP_MATCH=0
+if [ -n "$SOURCE_MTIME" ] && [ -f "$STAMP_FILE" ]; then
+  if grep -Fq "$SOURCE_APK:$SOURCE_MTIME" "$STAMP_FILE"; then
+    STAMP_MATCH=1
+  fi
+fi
+
+# If cached signed APK is valid, reuse it directly
+DEMO_APK="$ROOT_DIR/src/https_interceptor/app/build/outputs/apk/debug/app-debug.apk"
+DEMO_MTIME=""
+if [ -f "$DEMO_APK" ]; then
+  DEMO_MTIME=$(stat -f "%m" "$DEMO_APK" 2>/dev/null || true)
+fi
+SIG_BUILD_MTIME=""
+if [ -f "$ROOT_DIR/src/signature_bypass/build/classes.dex" ]; then
+  SIG_BUILD_MTIME=$(stat -f "%m" "$ROOT_DIR/src/signature_bypass/build/classes.dex" 2>/dev/null || true)
+fi
+CACHE_STAMP_FILE="$WORK_DIR/cache.stamp"
+CACHE_MATCH=0
+if [ -n "$SOURCE_MTIME" ] && [ -n "$DEMO_MTIME" ] && [ -n "$SIG_BUILD_MTIME" ] && [ -f "$CACHE_STAMP_FILE" ]; then
+  if grep -Fq "$SOURCE_APK:$SOURCE_MTIME|$DEMO_APK:$DEMO_MTIME|sig:$SIG_BUILD_MTIME" "$CACHE_STAMP_FILE"; then
+    CACHE_MATCH=1
+  fi
+fi
+
+if [ "$FULL_RUN" -eq 0 ] && [ "$CACHE_MATCH" -eq 1 ] && [ -f "$SIGNED_APK" ]; then
+  echo "[INFO] Reusing cached signed APK: $SIGNED_APK"
+else
+
+# Decompile source APK (reuse if possible)
+if [ "$FULL_RUN" -eq 0 ] && [ "$STAMP_MATCH" -eq 1 ] && [ -d "$DECOMPILED_DIR" ] && [ -f "$DECOMPILED_DIR/apktool.yml" ]; then
+  echo "[INFO] Reusing decompiled APK: $DECOMPILED_DIR"
+else
+  rm -rf "$DECOMPILED_DIR"
+  apktool d -f "$SOURCE_APK" -o "$DECOMPILED_DIR" >/dev/null
+  echo "$SOURCE_APK:$SOURCE_MTIME" > "$STAMP_FILE"
+fi
 
 # Step 3: always merge signature bypass into decompiled APK
 echo "[INFO] Merging signature bypass (step3) into decompiled APK..."
 if [ -x "$SIG_COMPILE_SCRIPT" ]; then
-  "$SIG_COMPILE_SCRIPT" >/dev/null
+  if [ "$FULL_RUN" -eq 1 ]; then
+    "$SIG_COMPILE_SCRIPT" >/dev/null
+  else
+    if [ ! -d "$ROOT_DIR/src/signature_bypass/build/smali" ] || \
+       [ ! -d "$ROOT_DIR/src/signature_bypass/build/pine_smali" ]; then
+      "$SIG_COMPILE_SCRIPT" >/dev/null
+    else
+      echo "[INFO] Reusing signature_bypass build outputs"
+    fi
+  fi
 fi
 "$SIG_MERGE_SCRIPT" "$DECOMPILED_DIR" >/dev/null
 
@@ -130,6 +188,9 @@ apktool b "$DECOMPILED_DIR" -o "$UNSIGNED_APK" >/dev/null
 "$ZIPALIGN" -f 4 "$UNSIGNED_APK" "$ALIGNED_APK"
 "$APKSIGNER" sign --ks "$HOME/.android/debug.keystore" --ks-pass pass:android --out "$SIGNED_APK" "$ALIGNED_APK"
 "$APKSIGNER" verify -v "$SIGNED_APK"
+
+echo "$SOURCE_APK:$SOURCE_MTIME|$DEMO_APK:$DEMO_MTIME|sig:$SIG_BUILD_MTIME" > "$CACHE_STAMP_FILE"
+fi
 
 # Install and run
 adb -s "$DEVICE_SERIAL" install -r "$SIGNED_APK" >/dev/null

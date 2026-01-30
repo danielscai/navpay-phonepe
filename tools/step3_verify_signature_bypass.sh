@@ -14,9 +14,10 @@ PACKAGE_NAME="com.phonepe.app"
 ACTIVITY_NAME=".launch.core.main.ui.MainActivity"
 LOGIN_ACTIVITY="com.phonepe.login.internal.ui.views.LoginActivity"
 DEVICE_SERIAL=""
-DO_INSTALL=false
-DO_RUN=false
+DO_INSTALL=true
+DO_RUN=true
 SOURCE_APK="$MERGED_APK_DEFAULT"
+FULL_RUN=0
 
 usage() {
   cat <<'USAGE'
@@ -26,10 +27,13 @@ Options:
   --apk <path>   Source merged APK to patch (default: temp/phonepe_merged_test/com.phonepe.app_merged_signed.apk)
   --install      Install patched APK to device/emulator
   --run          Launch app after install
+  --no-run       Do not install/run (build only)
   -s <serial>    adb device/emulator serial
+  --full         Full rerun (ignore cached outputs)
 
 Notes:
-- Always rebuilds signature_bypass outputs and re-patches the APK.
+- Default is fast: reuse decompiled APK and signature_bypass build outputs when possible.
+- Default behavior installs + runs on the device. Use --no-run for build-only.
 - Uses apktool/zipalign/apksigner; outputs go to temp/signature_bypass_test/.
 USAGE
 }
@@ -48,6 +52,11 @@ while [ $# -gt 0 ]; do
       DO_RUN=true
       shift
       ;;
+    --no-run)
+      DO_INSTALL=false
+      DO_RUN=false
+      shift
+      ;;
     -s)
       DEVICE_SERIAL="$2"
       shift 2
@@ -55,6 +64,10 @@ while [ $# -gt 0 ]; do
     -h|--help)
       usage
       exit 0
+      ;;
+    --full)
+      FULL_RUN=1
+      shift
       ;;
     *)
       echo "[FAIL] Unknown arg: $1"
@@ -89,15 +102,44 @@ fi
 export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk}"
 export PATH="$JAVA_HOME/bin:$PATH"
 
-# Clean outputs to ensure real run
-rm -rf "$TASK_DIR/build" "$WORK_DIR"
+# Prepare work dir
+if [ "$FULL_RUN" -eq 1 ]; then
+  rm -rf "$WORK_DIR"
+fi
 mkdir -p "$WORK_DIR"
 
-# Rebuild signature bypass outputs
-(cd "$TASK_DIR" && ./scripts/compile.sh)
+STAMP_FILE="$WORK_DIR/source_apk.stamp"
+SOURCE_MTIME=""
+if [ -f "$SOURCE_APK" ]; then
+  SOURCE_MTIME=$(stat -f "%m" "$SOURCE_APK" 2>/dev/null || true)
+fi
+STAMP_MATCH=0
+if [ -n "$SOURCE_MTIME" ] && [ -f "$STAMP_FILE" ]; then
+  if grep -Fq "$SOURCE_APK:$SOURCE_MTIME" "$STAMP_FILE"; then
+    STAMP_MATCH=1
+  fi
+fi
 
-# Decompile source APK
-apktool d -f "$SOURCE_APK" -o "$DECOMPILED_DIR"
+# Rebuild signature bypass outputs (reuse if possible)
+if [ "$FULL_RUN" -eq 1 ]; then
+  rm -rf "$TASK_DIR/build"
+  (cd "$TASK_DIR" && ./scripts/compile.sh)
+else
+  if [ ! -d "$TASK_DIR/build/smali" ] || [ ! -d "$TASK_DIR/build/pine_smali" ]; then
+    (cd "$TASK_DIR" && ./scripts/compile.sh)
+  else
+    echo "[INFO] Reusing signature_bypass build outputs"
+  fi
+fi
+
+# Decompile source APK (reuse if possible)
+if [ "$FULL_RUN" -eq 0 ] && [ "$STAMP_MATCH" -eq 1 ] && [ -d "$DECOMPILED_DIR" ] && [ -f "$DECOMPILED_DIR/apktool.yml" ]; then
+  echo "[INFO] Reusing decompiled APK: $DECOMPILED_DIR"
+else
+  rm -rf "$DECOMPILED_DIR"
+  apktool d -f "$SOURCE_APK" -o "$DECOMPILED_DIR"
+  echo "$SOURCE_APK:$SOURCE_MTIME" > "$STAMP_FILE"
+fi
 
 # Merge smali + native libs + inject hook
 (cd "$TASK_DIR" && ./scripts/merge.sh "$DECOMPILED_DIR")
@@ -136,11 +178,17 @@ if $DO_INSTALL || $DO_RUN; then
   $DO_INSTALL && adb -s "$DEVICE_SERIAL" install -r "$SIGNED_APK"
   if $DO_RUN; then
     adb -s "$DEVICE_SERIAL" shell am start -n "$PACKAGE_NAME/$ACTIVITY_NAME"
-    sleep 20
-    adb -s "$DEVICE_SERIAL" shell dumpsys activity activities > "$WORK_DIR/dumpsys_activities.txt" || true
-    if grep -Fq "$LOGIN_ACTIVITY" "$WORK_DIR/dumpsys_activities.txt"; then
-      echo "[PASS] Login activity detected: $LOGIN_ACTIVITY"
-    else
+    found=0
+    for i in $(seq 1 8); do
+      adb -s "$DEVICE_SERIAL" shell dumpsys activity activities > "$WORK_DIR/dumpsys_activities.txt" || true
+      if grep -Fq "$LOGIN_ACTIVITY" "$WORK_DIR/dumpsys_activities.txt"; then
+        echo "[PASS] Login activity detected: $LOGIN_ACTIVITY"
+        found=1
+        break
+      fi
+      sleep 1
+    done
+    if [ "$found" -ne 1 ]; then
       echo "[FAIL] Login activity not detected in task stack: $LOGIN_ACTIVITY"
       echo "       See: $WORK_DIR/dumpsys_activities.txt"
       exit 1
