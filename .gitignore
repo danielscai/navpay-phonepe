@@ -17,6 +17,7 @@ temp/
 build/
 out/
 *.apk.idsig
+node_modules/
 
 # ========================================
 # 系统文件
