@@ -19,6 +19,10 @@ DEVICE_SERIAL=""
 SOURCE_APK="$SOURCE_APK_DEFAULT"
 FULL_RUN=0
 
+# Colors
+RED='\033[0;31m'
+NC='\033[0m'
+
 usage() {
   cat <<'USAGE'
 Usage: tools/step4_verify_injection.sh [options]
@@ -104,6 +108,7 @@ if [ -z "$DEVICE_SERIAL" ]; then
 fi
 
 echo "[INFO] Using device: $DEVICE_SERIAL"
+echo "[INFO] Mode: $([ "$FULL_RUN" -eq 1 ] && echo "FULL" || echo "FAST")"
 
 # Prepare work dir
 if [ "$FULL_RUN" -eq 1 ]; then
@@ -142,10 +147,10 @@ if [ -n "$SOURCE_MTIME" ] && [ -n "$DEMO_MTIME" ] && [ -n "$SIG_BUILD_MTIME" ] &
 fi
 
 if [ "$FULL_RUN" -eq 0 ] && [ "$CACHE_MATCH" -eq 1 ] && [ -f "$SIGNED_APK" ]; then
-  echo "[INFO] Reusing cached signed APK: $SIGNED_APK"
+  echo "[INFO] Cache hit -> reuse signed APK"
 else
 
-# Decompile source APK (reuse if possible)
+echo "[INFO] Decompile source APK (reuse if possible)"
 if [ "$FULL_RUN" -eq 0 ] && [ "$STAMP_MATCH" -eq 1 ] && [ -d "$DECOMPILED_DIR" ] && [ -f "$DECOMPILED_DIR/apktool.yml" ]; then
   echo "[INFO] Reusing decompiled APK: $DECOMPILED_DIR"
 else
@@ -154,8 +159,7 @@ else
   echo "$SOURCE_APK:$SOURCE_MTIME" > "$STAMP_FILE"
 fi
 
-# Step 3: always merge signature bypass into decompiled APK
-echo "[INFO] Merging signature bypass (step3) into decompiled APK..."
+echo "[INFO] Step3: merge signature bypass into decompiled APK"
 if [ -x "$SIG_COMPILE_SCRIPT" ]; then
   if [ "$FULL_RUN" -eq 1 ]; then
     "$SIG_COMPILE_SCRIPT" >/dev/null
@@ -170,7 +174,7 @@ if [ -x "$SIG_COMPILE_SCRIPT" ]; then
 fi
 "$SIG_MERGE_SCRIPT" "$DECOMPILED_DIR" >/dev/null
 
-# Patch interceptor into decompiled APK (step4)
+echo "[INFO] Step4: patch interceptor into decompiled APK"
 "$PATCH_SCRIPT" "$DECOMPILED_DIR"
 
 # If OkHttpClient$Builder.build() calls HookUtil.build(), ensure HookUtil exists
@@ -183,7 +187,7 @@ if [ -n "$BUILDER_SMALI" ] && rg -q "com/httpinterceptor/hook/HookUtil;->build\\
   fi
 fi
 
-# Rebuild + sign
+echo "[INFO] Rebuild + sign APK"
 apktool b "$DECOMPILED_DIR" -o "$UNSIGNED_APK" >/dev/null
 "$ZIPALIGN" -f 4 "$UNSIGNED_APK" "$ALIGNED_APK"
 "$APKSIGNER" sign --ks "$HOME/.android/debug.keystore" --ks-pass pass:android --out "$SIGNED_APK" "$ALIGNED_APK"
@@ -192,15 +196,23 @@ apktool b "$DECOMPILED_DIR" -o "$UNSIGNED_APK" >/dev/null
 echo "$SOURCE_APK:$SOURCE_MTIME|$DEMO_APK:$DEMO_MTIME|sig:$SIG_BUILD_MTIME" > "$CACHE_STAMP_FILE"
 fi
 
-# Install and run
+echo "[INFO] Clear logcat"
+adb -s "$DEVICE_SERIAL" logcat -c || true
+
+echo "[INFO] Force-stop + uninstall"
+adb -s "$DEVICE_SERIAL" shell am force-stop "$PACKAGE_NAME" >/dev/null 2>&1 || true
+adb -s "$DEVICE_SERIAL" uninstall "$PACKAGE_NAME" >/dev/null 2>&1 || true
+
+echo "[INFO] Install APK"
 adb -s "$DEVICE_SERIAL" install -r "$SIGNED_APK" >/dev/null
+echo "[INFO] Launch app"
 adb -s "$DEVICE_SERIAL" shell am start -n "$PACKAGE_NAME/$ACTIVITY_NAME" >/dev/null
 
-# Wait for app startup (8s is enough)
+echo "[INFO] Wait for app startup (8s)"
 sleep 8
 
-# Capture logcat for interceptor tag
-adb -s "$DEVICE_SERIAL" logcat -d -s HttpInterceptor > "$WORK_DIR/logcat_httpinterceptor.txt" || true
+echo "[INFO] Check HttpInterceptor logs"
+adb -s "$DEVICE_SERIAL" logcat -d | rg -n "HttpInterceptor" > "$WORK_DIR/logcat_httpinterceptor.txt" || true
 
 if [ -s "$WORK_DIR/logcat_httpinterceptor.txt" ]; then
   echo "[PASS] Found HttpInterceptor logs: $WORK_DIR/logcat_httpinterceptor.txt"
@@ -209,8 +221,8 @@ else
   exit 1
 fi
 
-# Capture logcat for signature bypass tag
-adb -s "$DEVICE_SERIAL" logcat -d -s SigBypass > "$WORK_DIR/logcat_sigbypass.txt" || true
+echo "[INFO] Check SigBypass logs"
+adb -s "$DEVICE_SERIAL" logcat -d | rg -n "SigBypass" > "$WORK_DIR/logcat_sigbypass.txt" || true
 
 if [ -s "$WORK_DIR/logcat_sigbypass.txt" ]; then
   echo "[PASS] Found SigBypass logs: $WORK_DIR/logcat_sigbypass.txt"
@@ -219,8 +231,18 @@ else
   exit 1
 fi
 
-# Check if login activity is present in the task stack (usable state)
+echo "[INFO] Check login activity in task stack"
 adb -s "$DEVICE_SERIAL" shell dumpsys activity activities > "$WORK_DIR/dumpsys_activities.txt" || true
+
+echo "[INFO] Check crash logs"
+adb -s "$DEVICE_SERIAL" logcat -d -s AndroidRuntime > "$WORK_DIR/logcat_androidruntime.txt" || true
+if rg -n "FATAL EXCEPTION|Process: $PACKAGE_NAME" "$WORK_DIR/logcat_androidruntime.txt" >/dev/null 2>&1; then
+  echo -e "${RED}[FAIL] Crash detected in AndroidRuntime logs:${NC} $WORK_DIR/logcat_androidruntime.txt"
+  while IFS= read -r line; do
+    echo -e "${RED}${line}${NC}"
+  done < "$WORK_DIR/logcat_androidruntime.txt"
+  exit 1
+fi
 
 if grep -Fq "$LOGIN_ACTIVITY" "$WORK_DIR/dumpsys_activities.txt"; then
   echo "[PASS] Login activity detected: $LOGIN_ACTIVITY"

@@ -104,6 +104,11 @@ new_idx=$((max_idx + 1))
 INJECT_SMALI_DIR="$TARGET_DIR/smali_classes$new_idx"
 mkdir -p "$INJECT_SMALI_DIR"
 
+# 清理旧的 com/httpinterceptor，避免重复类导致旧版本被加载
+while IFS= read -r d; do
+    rm -rf "$d"
+done < <(find "$TARGET_DIR" -type d -path "*/com/httpinterceptor")
+
 # 创建拦截器/HookUtil smali 目录
 INTERCEPTOR_SMALI_DIR="$INJECT_SMALI_DIR/com/httpinterceptor/interceptor"
 HOOK_SMALI_DIR="$INJECT_SMALI_DIR/com/httpinterceptor/hook"
