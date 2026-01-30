@@ -1,5 +1,7 @@
 package com.httpinterceptor.interceptor;
 
+import android.util.Log;
+
 import java.io.IOException;
 
 import okhttp3.Interceptor;
@@ -7,13 +9,16 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 /**
- * 最小化拦截器：仅验证注入链路，不做任何日志或解析。
+ * 最小化拦截器：仅验证注入链路，不做任何复杂解析。
  */
 public class RemoteLoggingInterceptor implements Interceptor {
+
+    private static final String TAG = "HttpInterceptor";
 
     @Override
     public Response intercept(Chain chain) throws IOException {
         Request request = chain.request();
+        logHttpsRequest(request);
         return safeProceed(chain, request);
     }
 
@@ -35,6 +40,37 @@ public class RemoteLoggingInterceptor implements Interceptor {
                 }
                 throw new IOException("Proceed failed", t);
             }
+        }
+    }
+
+    private static void logHttpsRequest(Request request) {
+        String url = safeRequestUrl(request);
+        if (url.startsWith("https://")) {
+            String method = safeRequestMethod(request);
+            Log.d(TAG, "HTTPS: " + method + " " + url);
+        }
+    }
+
+    private static String safeRequestUrl(Request request) {
+        Object url = safeGetField(request, "a");
+        return url == null ? "unknown" : String.valueOf(url);
+    }
+
+    private static String safeRequestMethod(Request request) {
+        Object method = safeGetField(request, "b");
+        return method == null ? "UNKNOWN" : String.valueOf(method);
+    }
+
+    private static Object safeGetField(Object target, String fieldName) {
+        if (target == null || fieldName == null) {
+            return null;
+        }
+        try {
+            java.lang.reflect.Field f = target.getClass().getDeclaredField(fieldName);
+            f.setAccessible(true);
+            return f.get(target);
+        } catch (Throwable t) {
+            return null;
         }
     }
 }
