@@ -204,17 +204,18 @@
         .log-header {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 8px;
             user-select: none;
         }
 
         .method-badge {
-            padding: 4px 8px;
+            padding: 2px 6px;
             border-radius: 4px;
-            font-size: 12px;
+            font-size: 10px;
             font-weight: bold;
-            min-width: 60px;
+            min-width: 36px;
             text-align: center;
+            flex: 0 0 auto;
         }
 
         .method-GET { background: #4ecca3; color: #1a1a2e; }
@@ -224,10 +225,11 @@
         .method-PATCH { background: #6f42c1; color: #fff; }
 
         .status-badge {
-            padding: 4px 8px;
+            padding: 2px 6px;
             border-radius: 4px;
-            font-size: 12px;
+            font-size: 10px;
             font-weight: bold;
+            flex: 0 0 auto;
         }
 
         .status-2xx { background: #4ecca3; color: #1a1a2e; }
@@ -239,13 +241,12 @@
         .log-url {
             flex: 1;
             font-family: 'Consolas', 'Monaco', monospace;
-            font-size: 13px;
+            font-size: 12px;
             color: #adb5bd;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
             display: flex;
             gap: 4px;
+            min-width: 0;
+            overflow: hidden;
         }
 
         .url-start,
@@ -254,15 +255,29 @@
             white-space: nowrap;
         }
 
+        .url-start {
+            flex: 1 1 auto;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .url-end {
+            flex: 0 0 auto;
+        }
+
         .url-ellipsis {
             color: #6c757d;
+            flex: 0 0 auto;
         }
 
         .log-meta {
             display: flex;
-            gap: 16px;
-            font-size: 12px;
+            gap: 8px;
+            font-size: 10px;
             color: #6c757d;
+            flex: 0 0 auto;
+            white-space: nowrap;
         }
 
         .duration {
@@ -826,8 +841,8 @@
             if (str.length <= 60) {
                 return escapeHtml(str);
             }
-            const start = str.slice(0, 32);
-            const end = str.slice(-24);
+            const start = str.slice(0, 24);
+            const end = str.slice(-32);
             return `<span class="url-start">${escapeHtml(start)}</span><span class="url-ellipsis">…</span><span class="url-end">${escapeHtml(end)}</span>`;
         }
 
