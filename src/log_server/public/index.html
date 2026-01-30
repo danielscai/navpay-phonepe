@@ -244,6 +244,18 @@
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            display: flex;
+            gap: 4px;
+        }
+
+        .url-start,
+        .url-end {
+            color: #adb5bd;
+            white-space: nowrap;
+        }
+
+        .url-ellipsis {
+            color: #6c757d;
         }
 
         .log-meta {
@@ -399,6 +411,11 @@
 
         .json-null {
             color: #6c757d;
+        }
+
+        .muted {
+            color: #6c757d;
+            font-style: italic;
         }
 
         /* 原始日志 */
@@ -622,7 +639,7 @@
                     <div class="log-header">
                         <span class="method-badge ${methodClass}">${log.method}</span>
                         <span class="status-badge ${statusClass}">${log.statusCode || 'ERR'}</span>
-                        <span class="log-url" title="${escapeHtml(log.url)}">${escapeHtml(log.url)}</span>
+                        <span class="log-url" title="${escapeHtml(log.url)}">${shortenUrl(log.url)}</span>
                         <div class="log-meta">
                             <span class="duration">${log.durationMs}ms</span>
                             <span>${formatTime(log.timestamp)}</span>
@@ -735,7 +752,7 @@
 
         // 格式化 Body (JSON)
         function formatBody(body) {
-            if (!body) return '';
+            if (!body) return '<span class="muted">空</span>';
 
             try {
                 const parsed = JSON.parse(body);
@@ -778,7 +795,17 @@
         // 格式化时间
         function formatTime(timestamp) {
             if (!timestamp) return '';
-            const date = new Date(timestamp);
+            let value = timestamp;
+            if (typeof value === 'string' && value.trim() !== '') {
+                const asNumber = Number(value);
+                if (!Number.isNaN(asNumber)) {
+                    value = asNumber;
+                }
+            }
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) {
+                return 'invalid date';
+            }
             return date.toLocaleTimeString('zh-CN');
         }
 
@@ -791,6 +818,17 @@
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#039;');
+        }
+
+        function shortenUrl(url) {
+            if (!url) return '';
+            const str = String(url);
+            if (str.length <= 60) {
+                return escapeHtml(str);
+            }
+            const start = str.slice(0, 32);
+            const end = str.slice(-24);
+            return `<span class="url-start">${escapeHtml(start)}</span><span class="url-ellipsis">…</span><span class="url-end">${escapeHtml(end)}</span>`;
         }
 
         // 切换原始日志
