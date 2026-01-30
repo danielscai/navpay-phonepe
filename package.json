@@ -1,0 +1,9 @@
+{
+  "name": "indipay-apk-research",
+  "private": true,
+  "packageManager": "yarn@4.0.0",
+  "scripts": {
+    "4": "./tools/step4_verify_injection.sh",
+    "logs": "./tools/step4_view_http_logs.sh"
+  }
+}
