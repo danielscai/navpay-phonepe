@@ -879,8 +879,17 @@
                     tail = '';
                 }
             }
-            const trimmedTail = tail.length > 80 ? `…${tail.slice(-80)}` : tail;
-            return `<span class="url-host">${escapeHtml(host)}</span><span class="url-end url-tail">${escapeHtml(trimmedTail)}</span>`;
+            const path = tail.startsWith('/') ? tail : `/${tail}`;
+            const parts = path.split('/').filter(Boolean);
+            let displayPath = '';
+            if (parts.length === 0) {
+                displayPath = '/';
+            } else if (parts.length === 1) {
+                displayPath = `/${parts[0]}`;
+            } else {
+                displayPath = `/${parts[0]}/…/${parts[parts.length - 1]}`;
+            }
+            return `<span class="url-host">${escapeHtml(host)}</span><span class="url-end url-tail">${escapeHtml(displayPath)}</span>`;
         }
 
         // 切换原始日志
