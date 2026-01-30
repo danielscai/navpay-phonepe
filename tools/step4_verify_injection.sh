@@ -10,26 +10,23 @@ DECOMPILED_DIR="$WORK_DIR/base_decompiled"
 UNSIGNED_APK="$WORK_DIR/patched_unsigned.apk"
 ALIGNED_APK="$WORK_DIR/patched_aligned.apk"
 SIGNED_APK="$WORK_DIR/patched_signed.apk"
-LOG_SERVER_DIR="$ROOT_DIR/src/log_server"
-LOG_DB="$LOG_SERVER_DIR/data/logs.db"
-LOG_SERVER_URL="http://127.0.0.1:8088/api/log"
 PACKAGE_NAME="com.phonepe.app"
 ACTIVITY_NAME=".launch.core.main.ui.MainActivity"
+LOGIN_ACTIVITY="com.phonepe.login.internal.ui.views.LoginActivity"
 DEVICE_SERIAL=""
 SOURCE_APK="$SOURCE_APK_DEFAULT"
 
 usage() {
   cat <<'USAGE'
-Usage: tools/step4_test_https_interceptor.sh [options]
+Usage: tools/step4_verify_injection.sh [options]
 
 Options:
   --apk <path>   Source merged APK to patch (default: temp/phonepe_merged_test/com.phonepe.app_merged_signed.apk)
-  --url <url>    Log server URL injected into interceptor (default: http://127.0.0.1:8088/api/log)
   -s <serial>    adb device/emulator serial (required if multiple devices)
 
 Notes:
-- This script performs a full real run: patch -> rebuild -> sign -> install -> run -> verify logs on server.
-- It cleans previous outputs under temp/https_interceptor_test and clears log server DB.
+- Full real run: patch -> rebuild -> sign -> install -> run -> logcat check.
+- No log server involved; verification is via adb logcat.
 USAGE
 }
 
@@ -37,10 +34,6 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --apk)
       SOURCE_APK="$2"
-      shift 2
-      ;;
-    --url)
-      LOG_SERVER_URL="$2"
       shift 2
       ;;
     -s)
@@ -75,11 +68,9 @@ if [ ! -f "$ZIPALIGN" ] || [ ! -f "$APKSIGNER" ]; then
   exit 1
 fi
 
-# Ensure Java runtime for apksigner
 export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk}"
 export PATH="$JAVA_HOME/bin:$PATH"
 
-# Select device
 if ! command -v adb >/dev/null 2>&1; then
   echo "[FAIL] adb not found"
   exit 1
@@ -105,29 +96,14 @@ echo "[INFO] Using device: $DEVICE_SERIAL"
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
 
-# Clear log DB for a clean verification run
-rm -f "$LOG_DB"
-
-# Start log server in background
-( cd "$LOG_SERVER_DIR" && ./start.sh > "$WORK_DIR/log_server.out" 2>&1 ) &
-SERVER_PID=$!
-trap 'kill "$SERVER_PID" >/dev/null 2>&1 || true' EXIT
-
-# Ensure adb reverse for emulator/host
-adb -s "$DEVICE_SERIAL" reverse tcp:8088 tcp:8088 >/dev/null 2>&1 || true
-
-# Give server time to start
-sleep 3
-
 # Decompile source APK
 apktool d -f "$SOURCE_APK" -o "$DECOMPILED_DIR" >/dev/null
 
 # Patch interceptor into decompiled APK
-"$PATCH_SCRIPT" "$DECOMPILED_DIR" "$LOG_SERVER_URL"
+"$PATCH_SCRIPT" "$DECOMPILED_DIR"
 
 # Rebuild + sign
-echo "[INFO] Rebuilding APK (apktool b)..."
-apktool b "$DECOMPILED_DIR" -o "$UNSIGNED_APK"
+apktool b "$DECOMPILED_DIR" -o "$UNSIGNED_APK" >/dev/null
 "$ZIPALIGN" -f 4 "$UNSIGNED_APK" "$ALIGNED_APK"
 "$APKSIGNER" sign --ks "$HOME/.android/debug.keystore" --ks-pass pass:android --out "$SIGNED_APK" "$ALIGNED_APK"
 "$APKSIGNER" verify -v "$SIGNED_APK"
@@ -136,27 +112,28 @@ apktool b "$DECOMPILED_DIR" -o "$UNSIGNED_APK"
 adb -s "$DEVICE_SERIAL" install -r "$SIGNED_APK" >/dev/null
 adb -s "$DEVICE_SERIAL" shell am start -n "$PACKAGE_NAME/$ACTIVITY_NAME" >/dev/null
 
-# Wait for app network activity
+# Wait for app startup
 sleep 20
 
-# Capture a brief logcat snippet for debugging
+# Capture logcat for interceptor tag
 adb -s "$DEVICE_SERIAL" logcat -d -s HttpInterceptor > "$WORK_DIR/logcat_httpinterceptor.txt" || true
 
-# Verify logs received
-LOG_CHECK=$(curl --max-time 3 -s "http://127.0.0.1:8088/api/logs?limit=1" || true)
-python3 - <<'PY'
-import json, sys
-try:
-    data = json.loads(sys.argv[1])
-    logs = data.get('data', [])
-    if isinstance(logs, list) and len(logs) > 0:
-        print("[PASS] Log server received entries")
-    else:
-        print("[FAIL] No logs received")
-        sys.exit(1)
-except Exception as e:
-    print(f"[FAIL] Could not parse log response: {e}")
-    sys.exit(1)
-PY "$LOG_CHECK"
+if [ -s "$WORK_DIR/logcat_httpinterceptor.txt" ]; then
+  echo "[PASS] Found HttpInterceptor logs: $WORK_DIR/logcat_httpinterceptor.txt"
+else
+  echo "[WARN] No HttpInterceptor logs captured yet: $WORK_DIR/logcat_httpinterceptor.txt"
+  exit 1
+fi
 
-echo "[PASS] Step 4 full HTTPS interception test completed."
+# Check if login activity is present in the task stack (usable state)
+adb -s "$DEVICE_SERIAL" shell dumpsys activity activities > "$WORK_DIR/dumpsys_activities.txt" || true
+
+if grep -Fq "$LOGIN_ACTIVITY" "$WORK_DIR/dumpsys_activities.txt"; then
+  echo "[PASS] Login activity detected: $LOGIN_ACTIVITY"
+else
+  echo "[FAIL] Login activity not detected in task stack: $LOGIN_ACTIVITY"
+  echo "       See: $WORK_DIR/dumpsys_activities.txt"
+  exit 1
+fi
+
+echo "[PASS] Step 4 injection verification completed."

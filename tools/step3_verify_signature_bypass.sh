@@ -12,6 +12,7 @@ ALIGNED_APK="$WORK_DIR/patched_aligned.apk"
 SIGNED_APK="$WORK_DIR/patched_signed.apk"
 PACKAGE_NAME="com.phonepe.app"
 ACTIVITY_NAME=".launch.core.main.ui.MainActivity"
+LOGIN_ACTIVITY="com.phonepe.login.internal.ui.views.LoginActivity"
 DEVICE_SERIAL=""
 DO_INSTALL=false
 DO_RUN=false
@@ -133,7 +134,18 @@ if $DO_INSTALL || $DO_RUN; then
   fi
 
   $DO_INSTALL && adb -s "$DEVICE_SERIAL" install -r "$SIGNED_APK"
-  $DO_RUN && adb -s "$DEVICE_SERIAL" shell am start -n "$PACKAGE_NAME/$ACTIVITY_NAME"
+  if $DO_RUN; then
+    adb -s "$DEVICE_SERIAL" shell am start -n "$PACKAGE_NAME/$ACTIVITY_NAME"
+    sleep 20
+    adb -s "$DEVICE_SERIAL" shell dumpsys activity activities > "$WORK_DIR/dumpsys_activities.txt" || true
+    if grep -Fq "$LOGIN_ACTIVITY" "$WORK_DIR/dumpsys_activities.txt"; then
+      echo "[PASS] Login activity detected: $LOGIN_ACTIVITY"
+    else
+      echo "[FAIL] Login activity not detected in task stack: $LOGIN_ACTIVITY"
+      echo "       See: $WORK_DIR/dumpsys_activities.txt"
+      exit 1
+    fi
+  fi
 fi
 
 echo "[PASS] Step 3 full signature bypass pipeline completed."
