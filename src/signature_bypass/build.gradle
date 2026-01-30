@@ -1,0 +1,43 @@
+// 签名绕过模块构建配置
+//
+// 使用方法：
+// 1. 确保安装了 Android SDK 和 Gradle
+// 2. 运行: gradle build
+// 3. 输出在 build/outputs/ 目录
+
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'com.sigbypass'
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 24
+        targetSdk 34
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+    maven { url 'https://jitpack.io' }
+}
+
+dependencies {
+    // Pine Hook 框架
+    // GitHub: https://github.com/AltimLi/Pine
+    implementation 'top.canyie.pine:core:0.2.3'
+}
