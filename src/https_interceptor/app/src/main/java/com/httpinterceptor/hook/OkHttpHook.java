@@ -19,9 +19,6 @@ public class OkHttpHook {
 
     private static final String TAG = "OkHttpHook";
 
-    // 日志服务器地址
-    private static String logServerUrl = "http://127.0.0.1:8088/api/log";
-
     // 是否已初始化
     private static boolean initialized = false;
 
@@ -31,12 +28,8 @@ public class OkHttpHook {
      * @param serverUrl 日志服务器地址
      */
     public static void init(String serverUrl) {
-        if (serverUrl != null && !serverUrl.isEmpty()) {
-            logServerUrl = serverUrl;
-        }
-        RemoteLoggingInterceptor.setLogServerUrl(logServerUrl);
         initialized = true;
-        Log.i(TAG, "OkHttpHook initialized, server: " + logServerUrl);
+        Log.i(TAG, "OkHttpHook initialized");
     }
 
     /**
@@ -72,11 +65,5 @@ public class OkHttpHook {
         return hookBuild(new OkHttpClient.Builder());
     }
 
-    /**
-     * 设置日志服务器地址
-     */
-    public static void setLogServerUrl(String url) {
-        logServerUrl = url;
-        RemoteLoggingInterceptor.setLogServerUrl(url);
-    }
+    // 预留接口：以后如果需要远程日志，再补回配置入口
 }

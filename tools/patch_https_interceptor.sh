@@ -10,11 +10,11 @@
 # 2. 复制拦截器 smali 到目标 APK
 # 3. 修改 HookUtil 或 OkHttpClient.Builder.build() 注入拦截器
 #
-# 用法：./patch_https_interceptor.sh <decompiled_dir> [log_server_url]
+# 用法：./patch_https_interceptor.sh <decompiled_dir>
 #
 # 示例：
 #   ./patch_https_interceptor.sh ./merged_output/decompiled/base
-#   ./patch_https_interceptor.sh ./merged_output/decompiled/base http://192.168.1.100:8088/api/log
+#   ./patch_https_interceptor.sh ./merged_output/decompiled/base
 #######################################################################
 
 set -e
@@ -36,7 +36,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 INTERCEPTOR_SRC="$PROJECT_ROOT/src/https_interceptor"
 TARGET_DIR="${1:-$PROJECT_ROOT/temp/phonepe_merged/decompiled/base}"
-LOG_SERVER_URL="${2:-http://127.0.0.1:8088/api/log}"
 
 # Java/Android 配置
 export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk}"
@@ -47,7 +46,7 @@ ANDROID_JAR="$ANDROID_SDK/platforms/android-36/android.jar"
 if [ ! -d "$TARGET_DIR" ]; then
     log_error "目标目录不存在: $TARGET_DIR"
     echo ""
-    echo "用法: $0 <decompiled_dir> [log_server_url]"
+    echo "用法: $0 <decompiled_dir>"
     echo ""
     echo "示例:"
     echo "  $0 ./merged_output/decompiled/base"
@@ -90,9 +89,25 @@ APP_DECOMPILED="$TEMP_DIR/app_decompiled"
 
 log_info "临时目录: $TEMP_DIR"
 
-# 创建拦截器 smali 目录
-INTERCEPTOR_SMALI_DIR="$TARGET_DIR/smali_classes14/com/httpinterceptor/interceptor"
-mkdir -p "$INTERCEPTOR_SMALI_DIR"
+# 选择新的 smali_classes 目录用于注入，避免覆盖原有类
+max_idx=0
+for d in "$TARGET_DIR"/smali_classes*; do
+    base=$(basename "$d")
+    if [[ "$base" =~ ^smali_classes([0-9]+)$ ]]; then
+        idx="${BASH_REMATCH[1]}"
+        if [ "$idx" -gt "$max_idx" ]; then
+            max_idx="$idx"
+        fi
+    fi
+done
+new_idx=$((max_idx + 1))
+INJECT_SMALI_DIR="$TARGET_DIR/smali_classes$new_idx"
+mkdir -p "$INJECT_SMALI_DIR"
+
+# 创建拦截器/HookUtil smali 目录
+INTERCEPTOR_SMALI_DIR="$INJECT_SMALI_DIR/com/httpinterceptor/interceptor"
+HOOK_SMALI_DIR="$INJECT_SMALI_DIR/com/httpinterceptor/hook"
+mkdir -p "$INTERCEPTOR_SMALI_DIR" "$HOOK_SMALI_DIR"
 
 # 从 https_interceptor demo APK 提取 smali
 DEMO_APK="$PROJECT_ROOT/src/https_interceptor/app/build/outputs/apk/debug/app-debug.apk"
@@ -122,114 +137,70 @@ fi
 
 log_info "已复制 RemoteLoggingInterceptor smali 文件"
 
-log_step "3. 修改 HookUtil 注入拦截器"
+log_step "2.1 复制 HookUtil smali"
 
-# 查找 HookUtil.smali
-HOOKUTIL_SMALI="$TARGET_DIR/smali_classes14/com/PhonePeTweak/Def/HookUtil.smali"
+log_info "从 demo APK 提取 HookUtil* smali"
+found=0
+while IFS= read -r f; do
+    cp "$f" "$HOOK_SMALI_DIR/"
+    found=1
+done < <(find "$APP_DECOMPILED" -path "*/com/httpinterceptor/hook/HookUtil*.smali")
 
-if [ ! -f "$HOOKUTIL_SMALI" ]; then
-    log_warn "未找到 HookUtil.smali，尝试搜索..."
-    HOOKUTIL_SMALI=$(find "$TARGET_DIR" -name "HookUtil.smali" | head -1)
+if [ "$found" -ne 1 ]; then
+    log_error "未找到 HookUtil smali 文件"
+    exit 1
 fi
 
-if [ -z "$HOOKUTIL_SMALI" ] || [ ! -f "$HOOKUTIL_SMALI" ]; then
-    log_warn "未找到 HookUtil.smali，将尝试注入 OkHttpClient\$Builder.build()"
+log_info "已复制 HookUtil smali 文件"
 
-    BUILDER_SMALI=$(find "$TARGET_DIR" -path "*/okhttp3/OkHttpClient\$Builder.smali" | head -1)
-    if [ -z "$BUILDER_SMALI" ] || [ ! -f "$BUILDER_SMALI" ]; then
-        log_error "找不到 OkHttpClient\$Builder.smali"
-        exit 1
-    fi
+log_step "3. 修改 OkHttpClient\$Builder.build() 调用 HookUtil"
 
-    if grep -q "RemoteLoggingInterceptor" "$BUILDER_SMALI"; then
-        log_warn "OkHttpClient\$Builder 已包含 RemoteLoggingInterceptor，跳过修改"
-    else
-        log_info "注入 RemoteLoggingInterceptor 到 OkHttpClient\$Builder.build()"
+BUILDER_SMALI=$(find "$TARGET_DIR" -path "*/okhttp3/OkHttpClient\$Builder.smali" | head -1)
+if [ -z "$BUILDER_SMALI" ] || [ ! -f "$BUILDER_SMALI" ]; then
+    log_error "找不到 OkHttpClient\$Builder.smali"
+    exit 1
+fi
 
-        python3 - "$BUILDER_SMALI" <<'PYCODE'
+if rg -q "HookUtil;->build\(" "$BUILDER_SMALI"; then
+    log_warn "OkHttpClient\$Builder.build() 已指向 HookUtil.build()，跳过修改"
+else
+    log_info "替换 OkHttpClient\$Builder.build() -> HookUtil.build()"
+
+    python3 - "$BUILDER_SMALI" <<'PYCODE'
 import re
 import sys
 from pathlib import Path
+
 path = Path(sys.argv[1])
-lines = path.read_text().splitlines()
-method_start = None
-for i, line in enumerate(lines):
-    if re.match(r"^\.method .* build\(\)Lokhttp3/OkHttpClient;", line):
-        method_start = i
-        break
-if method_start is None:
-    raise SystemExit("build() method not found")
-locals_idx = None
-for i in range(method_start+1, min(method_start+10, len(lines))):
-    if lines[i].strip().startswith('.locals '):
-        locals_idx = i
-        break
-if locals_idx is None:
-    raise SystemExit(".locals not found in build()")
-# increase locals by 1 to ensure a temp register
-m = re.match(r"(\s*\.locals\s+)(\d+)", lines[locals_idx])
-if not m:
-    raise SystemExit("Failed to parse .locals")
-count = int(m.group(2))
-lines[locals_idx] = f"{m.group(1)}{count+2}"
-# inject after .locals
-inject = [
-    "    const-string v0, \"HttpInterceptor\"",
-    "    const-string v1, \"RemoteLoggingInterceptor injected\"",
-    "    invoke-static {v0, v1}, Landroid/util/Log;->d(Ljava/lang/String;Ljava/lang/String;)I",
-    "    new-instance v0, Lcom/httpinterceptor/interceptor/RemoteLoggingInterceptor;",
-    "    invoke-direct {v0}, Lcom/httpinterceptor/interceptor/RemoteLoggingInterceptor;-><init>()V",
-    "    invoke-virtual {p0, v0}, Lokhttp3/OkHttpClient$Builder;->addInterceptor(Lokhttp3/Interceptor;)Lokhttp3/OkHttpClient$Builder;",
-    ""
-]
-lines[locals_idx+1:locals_idx+1] = inject
-path.write_text("\n".join(lines) + "\n")
+text = path.read_text()
+
+pattern = re.compile(
+    r"(?ms)^\.method public final build\(\)Lokhttp3/OkHttpClient;.*?^\.end method\s*",
+)
+
+replacement = """\
+.method public final build()Lokhttp3/OkHttpClient;
+    .locals 1
+    .annotation build Lorg/jetbrains/annotations/NotNull;
+    .end annotation
+
+    invoke-static {p0}, Lcom/httpinterceptor/hook/HookUtil;->build(Lokhttp3/OkHttpClient$Builder;)Lokhttp3/OkHttpClient;
+
+    move-result-object v0
+
+    return-object v0
+.end method
+"""
+
+new_text, n = pattern.subn(replacement, text, count=1)
+if n != 1:
+    raise SystemExit("Failed to replace OkHttpClient$Builder.build()")
+
+path.write_text(new_text)
 PYCODE
-    fi
-else
-    log_info "找到 HookUtil: $HOOKUTIL_SMALI"
-
-    # 备份
-    cp "$HOOKUTIL_SMALI" "$HOOKUTIL_SMALI.bak"
-
-    # 检查是否已经注入过
-    if grep -q "RemoteLoggingInterceptor" "$HOOKUTIL_SMALI"; then
-        log_warn "HookUtil 已经包含 RemoteLoggingInterceptor，跳过修改"
-    else
-        log_info "修改 HookUtil.build() 方法..."
-
-        # 尝试在 PhonePeInterceptor 之后添加
-        if grep -q "PhonePeInterceptor" "$HOOKUTIL_SMALI"; then
-            sed -i '' '/PhonePeInterceptor.*addInterceptor/a\
-    \
-    # Add RemoteLoggingInterceptor\
-    new-instance v2, Lcom\/httpinterceptor\/interceptor\/RemoteLoggingInterceptor;\
-    invoke-direct {v2}, Lcom\/httpinterceptor\/interceptor\/RemoteLoggingInterceptor;-><init>()V\
-    invoke-virtual {p0, v2}, Lokhttp3\/OkHttpClient\$Builder;->addInterceptor(Lokhttp3\/Interceptor;)Lokhttp3\/OkHttpClient\$Builder;\
-' "$HOOKUTIL_SMALI"
-            log_info "已在 PhonePeInterceptor 后添加 RemoteLoggingInterceptor"
-        else
-            log_warn "未找到 PhonePeInterceptor 引用，请手动修改 HookUtil.smali"
-        fi
-    fi
 fi
 
-log_step "4. 设置日志服务器地址"
-
-# 如果用户指定了自定义服务器地址，更新 smali 文件
-if [ "$LOG_SERVER_URL" != "http://127.0.0.1:8088/api/log" ]; then
-    log_info "更新日志服务器地址为: $LOG_SERVER_URL"
-
-    # 转义 URL 中的特殊字符
-    ESCAPED_URL=$(echo "$LOG_SERVER_URL" | sed 's/\//\\\//g')
-
-    for f in "$INTERCEPTOR_SMALI_DIR"/RemoteLoggingInterceptor*.smali; do
-        [ -f "$f" ] || continue
-        sed -i '' "s/http:\/\/127.0.0.1:8088\/api\/log/$ESCAPED_URL/g" "$f"
-    done
-fi
-
-log_step "5. 验证文件"
+log_step "4. 验证文件"
 
 echo "检查生成的文件:"
 check_file() {
@@ -249,6 +220,15 @@ else
     done
 fi
 
+hookutil_files=("$HOOK_SMALI_DIR"/HookUtil*.smali)
+if [ ${#hookutil_files[@]} -eq 0 ]; then
+    echo -e "  ${RED}✗${NC} HookUtil*.smali - 缺失!"
+else
+    for f in "${hookutil_files[@]}"; do
+        check_file "$f"
+    done
+fi
+
 # 清理临时目录
 rm -rf "$TEMP_DIR"
 
@@ -257,14 +237,7 @@ log_step "完成"
 echo ""
 echo -e "${GREEN}HTTPS 拦截器补丁已应用!${NC}"
 echo ""
-echo "日志服务器地址: $LOG_SERVER_URL"
-echo ""
 echo "下一步:"
 echo "  1. 重新打包: apktool b $TARGET_DIR -o patched.apk"
 echo "  2. 对齐签名 (使用现有脚本)"
-echo "  3. 启动日志服务器:"
-echo "     cd $PROJECT_ROOT/src/log_server && npm install && npm start"
-echo "  4. 设置端口转发:"
-echo "     adb reverse tcp:8088 tcp:8088"
-echo "  5. 安装 APK 并测试"
-echo "  6. 在浏览器打开 http://localhost:8088 查看日志"
+echo "  3. 安装 APK 并测试"

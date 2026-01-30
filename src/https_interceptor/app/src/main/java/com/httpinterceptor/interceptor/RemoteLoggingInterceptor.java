@@ -6,9 +6,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -47,9 +44,6 @@ public class RemoteLoggingInterceptor implements Interceptor {
 
     private static final String TAG = "HttpInterceptor";
 
-    // 日志服务器地址
-    private static String logServerUrl = "http://127.0.0.1:8088/api/log";
-
     // 发送线程池
     private final ExecutorService executor = Executors.newFixedThreadPool(2);
 
@@ -75,14 +69,6 @@ public class RemoteLoggingInterceptor implements Interceptor {
         TOKEN_PATTERNS.add(new TokenPattern("Refresh Token", Pattern.compile(".*refresh.*token.*", Pattern.CASE_INSENSITIVE)));
         TOKEN_PATTERNS.add(new TokenPattern("1FA Token", Pattern.compile(".*/tokens/1fa.*", Pattern.CASE_INSENSITIVE)));
         TOKEN_PATTERNS.add(new TokenPattern("SSO Token", Pattern.compile(".*/sso.*", Pattern.CASE_INSENSITIVE)));
-    }
-
-    /**
-     * 设置日志服务器地址
-     */
-    public static void setLogServerUrl(String url) {
-        logServerUrl = url;
-        Log.i(TAG, "Log server URL set to: " + url);
     }
 
     @Override
@@ -128,7 +114,7 @@ public class RemoteLoggingInterceptor implements Interceptor {
             } catch (JSONException je) {
                 Log.e(TAG, "Error logging error", je);
             }
-            sendLogAsync(logData);
+            logAsync(logData);
             throw e;
         }
 
@@ -168,7 +154,7 @@ public class RemoteLoggingInterceptor implements Interceptor {
         }
 
         // 异步发送日志
-        sendLogAsync(logData);
+        logAsync(logData);
 
         return response;
     }
@@ -338,37 +324,14 @@ public class RemoteLoggingInterceptor implements Interceptor {
     }
 
     /**
-     * 异步发送日志
+     * 异步记录日志（本地）
      */
-    private void sendLogAsync(final JSONObject logData) {
+    private void logAsync(final JSONObject logData) {
         executor.submit(() -> {
-            HttpURLConnection connection = null;
             try {
-                URL url = new URL(logServerUrl);
-                connection = (HttpURLConnection) url.openConnection();
-                connection.setRequestMethod("POST");
-                connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-                connection.setConnectTimeout(5000);
-                connection.setReadTimeout(5000);
-                connection.setDoOutput(true);
-
-                byte[] body = logData.toString().getBytes(StandardCharsets.UTF_8);
-                connection.setFixedLengthStreamingMode(body.length);
-
-                try (OutputStream os = connection.getOutputStream()) {
-                    os.write(body);
-                }
-
-                int responseCode = connection.getResponseCode();
-                if (responseCode != 200) {
-                    Log.w(TAG, "Log server returned: " + responseCode);
-                }
+                Log.d(TAG, "HTTP log: " + logData.toString());
             } catch (Exception e) {
-                Log.w(TAG, "Failed to send log: " + e.getMessage());
-            } finally {
-                if (connection != null) {
-                    connection.disconnect();
-                }
+                Log.w(TAG, "Failed to log: " + e.getMessage());
             }
         });
     }

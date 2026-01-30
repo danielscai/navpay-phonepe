@@ -4,6 +4,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PATCH_SCRIPT="$ROOT_DIR/tools/patch_https_interceptor.sh"
+SIG_COMPILE_SCRIPT="$ROOT_DIR/src/signature_bypass/scripts/compile.sh"
+SIG_MERGE_SCRIPT="$ROOT_DIR/src/signature_bypass/scripts/merge.sh"
 SOURCE_APK_DEFAULT="$ROOT_DIR/temp/phonepe_merged_test/com.phonepe.app_merged_signed.apk"
 WORK_DIR="$ROOT_DIR/temp/https_interceptor_test"
 DECOMPILED_DIR="$WORK_DIR/base_decompiled"
@@ -25,7 +27,7 @@ Options:
   -s <serial>    adb device/emulator serial (required if multiple devices)
 
 Notes:
-- Full real run: patch -> rebuild -> sign -> install -> run -> logcat check.
+- Full real run: signature-bypass merge -> patch -> rebuild -> sign -> install -> run -> logcat check.
 - No log server involved; verification is via adb logcat.
 USAGE
 }
@@ -54,6 +56,10 @@ done
 
 if [ ! -x "$PATCH_SCRIPT" ]; then
   echo "[FAIL] Missing patch script: $PATCH_SCRIPT"
+  exit 1
+fi
+if [ ! -x "$SIG_MERGE_SCRIPT" ]; then
+  echo "[FAIL] Missing signature bypass merge script: $SIG_MERGE_SCRIPT"
   exit 1
 fi
 if [ ! -f "$SOURCE_APK" ]; then
@@ -99,8 +105,25 @@ mkdir -p "$WORK_DIR"
 # Decompile source APK
 apktool d -f "$SOURCE_APK" -o "$DECOMPILED_DIR" >/dev/null
 
-# Patch interceptor into decompiled APK
+# Step 3: always merge signature bypass into decompiled APK
+echo "[INFO] Merging signature bypass (step3) into decompiled APK..."
+if [ -x "$SIG_COMPILE_SCRIPT" ]; then
+  "$SIG_COMPILE_SCRIPT" >/dev/null
+fi
+"$SIG_MERGE_SCRIPT" "$DECOMPILED_DIR" >/dev/null
+
+# Patch interceptor into decompiled APK (step4)
 "$PATCH_SCRIPT" "$DECOMPILED_DIR"
+
+# If OkHttpClient$Builder.build() calls HookUtil.build(), ensure HookUtil exists
+BUILDER_SMALI=$(find "$DECOMPILED_DIR" -path '*/okhttp3/OkHttpClient$Builder.smali' | head -1)
+HOOKUTIL_SMALI=$(find "$DECOMPILED_DIR" -path '*/com/httpinterceptor/hook/HookUtil.smali' | head -1)
+if [ -n "$BUILDER_SMALI" ] && rg -q "com/httpinterceptor/hook/HookUtil;->build\\(" "$BUILDER_SMALI"; then
+  if [ -z "$HOOKUTIL_SMALI" ] || [ ! -f "$HOOKUTIL_SMALI" ]; then
+    echo '[FAIL] OkHttpClient$Builder.build() calls HookUtil.build() but HookUtil.smali is missing.'
+    exit 1
+  fi
+fi
 
 # Rebuild + sign
 apktool b "$DECOMPILED_DIR" -o "$UNSIGNED_APK" >/dev/null
@@ -112,8 +135,8 @@ apktool b "$DECOMPILED_DIR" -o "$UNSIGNED_APK" >/dev/null
 adb -s "$DEVICE_SERIAL" install -r "$SIGNED_APK" >/dev/null
 adb -s "$DEVICE_SERIAL" shell am start -n "$PACKAGE_NAME/$ACTIVITY_NAME" >/dev/null
 
-# Wait for app startup
-sleep 20
+# Wait for app startup (8s is enough)
+sleep 8
 
 # Capture logcat for interceptor tag
 adb -s "$DEVICE_SERIAL" logcat -d -s HttpInterceptor > "$WORK_DIR/logcat_httpinterceptor.txt" || true
@@ -122,6 +145,16 @@ if [ -s "$WORK_DIR/logcat_httpinterceptor.txt" ]; then
   echo "[PASS] Found HttpInterceptor logs: $WORK_DIR/logcat_httpinterceptor.txt"
 else
   echo "[WARN] No HttpInterceptor logs captured yet: $WORK_DIR/logcat_httpinterceptor.txt"
+  exit 1
+fi
+
+# Capture logcat for signature bypass tag
+adb -s "$DEVICE_SERIAL" logcat -d -s SigBypass > "$WORK_DIR/logcat_sigbypass.txt" || true
+
+if [ -s "$WORK_DIR/logcat_sigbypass.txt" ]; then
+  echo "[PASS] Found SigBypass logs: $WORK_DIR/logcat_sigbypass.txt"
+else
+  echo "[FAIL] No SigBypass logs captured: $WORK_DIR/logcat_sigbypass.txt"
   exit 1
 fi
 
