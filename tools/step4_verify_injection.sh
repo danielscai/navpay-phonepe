@@ -33,9 +33,10 @@ Options:
   --full         Full rerun (ignore cached outputs)
 
 Notes:
+- 默认使用 FAST 模式（强烈建议），尽量复用缓存以加速验证。
+- 只有在需要“全量重跑”时才使用 --full。
 - Full real run: signature-bypass merge -> patch -> rebuild -> sign -> install -> run -> logcat check.
 - No log server involved; verification is via adb logcat.
- - Default fast mode reuses cached outputs when possible; use --full to force rebuild.
 USAGE
 }
 
@@ -134,14 +135,18 @@ DEMO_MTIME=""
 if [ -f "$DEMO_APK" ]; then
   DEMO_MTIME=$(stat -f "%m" "$DEMO_APK" 2>/dev/null || true)
 fi
+PATCH_MTIME=""
+if [ -f "$PATCH_SCRIPT" ]; then
+  PATCH_MTIME=$(stat -f "%m" "$PATCH_SCRIPT" 2>/dev/null || true)
+fi
 SIG_BUILD_MTIME=""
 if [ -f "$ROOT_DIR/src/signature_bypass/build/classes.dex" ]; then
   SIG_BUILD_MTIME=$(stat -f "%m" "$ROOT_DIR/src/signature_bypass/build/classes.dex" 2>/dev/null || true)
 fi
 CACHE_STAMP_FILE="$WORK_DIR/cache.stamp"
 CACHE_MATCH=0
-if [ -n "$SOURCE_MTIME" ] && [ -n "$DEMO_MTIME" ] && [ -n "$SIG_BUILD_MTIME" ] && [ -f "$CACHE_STAMP_FILE" ]; then
-  if grep -Fq "$SOURCE_APK:$SOURCE_MTIME|$DEMO_APK:$DEMO_MTIME|sig:$SIG_BUILD_MTIME" "$CACHE_STAMP_FILE"; then
+if [ -n "$SOURCE_MTIME" ] && [ -n "$DEMO_MTIME" ] && [ -n "$SIG_BUILD_MTIME" ] && [ -n "$PATCH_MTIME" ] && [ -f "$CACHE_STAMP_FILE" ]; then
+  if grep -Fq "$SOURCE_APK:$SOURCE_MTIME|$DEMO_APK:$DEMO_MTIME|sig:$SIG_BUILD_MTIME|patch:$PATCH_MTIME" "$CACHE_STAMP_FILE"; then
     CACHE_MATCH=1
   fi
 fi
@@ -193,7 +198,7 @@ apktool b "$DECOMPILED_DIR" -o "$UNSIGNED_APK" >/dev/null
 "$APKSIGNER" sign --ks "$HOME/.android/debug.keystore" --ks-pass pass:android --out "$SIGNED_APK" "$ALIGNED_APK"
 "$APKSIGNER" verify -v "$SIGNED_APK"
 
-echo "$SOURCE_APK:$SOURCE_MTIME|$DEMO_APK:$DEMO_MTIME|sig:$SIG_BUILD_MTIME" > "$CACHE_STAMP_FILE"
+echo "$SOURCE_APK:$SOURCE_MTIME|$DEMO_APK:$DEMO_MTIME|sig:$SIG_BUILD_MTIME|patch:$PATCH_MTIME" > "$CACHE_STAMP_FILE"
 fi
 
 echo "[INFO] Clear logcat"

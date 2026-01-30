@@ -142,6 +142,20 @@ fi
 
 log_info "已复制 RemoteLoggingInterceptor smali 文件"
 
+log_info "从 demo APK 提取 LogSender* smali"
+found=0
+while IFS= read -r f; do
+    cp "$f" "$INTERCEPTOR_SMALI_DIR/"
+    found=1
+done < <(find "$APP_DECOMPILED" -path "*/com/httpinterceptor/interceptor/LogSender*.smali")
+
+if [ "$found" -ne 1 ]; then
+    log_error "未找到 LogSender smali 文件"
+    exit 1
+fi
+
+log_info "已复制 LogSender smali 文件"
+
 log_step "2.1 复制 HookUtil smali"
 
 log_info "从 demo APK 提取 HookUtil* smali"
@@ -203,6 +217,50 @@ if n != 1:
 
 path.write_text(new_text)
 PYCODE
+fi
+
+log_step "3.1 允许本地明文日志上报"
+
+MANIFEST_FILE="$TARGET_DIR/AndroidManifest.xml"
+NSC_DIR="$TARGET_DIR/res/xml"
+NSC_FILE="$NSC_DIR/network_security_config.xml"
+
+if [ -f "$MANIFEST_FILE" ]; then
+  python3 - "$MANIFEST_FILE" <<'PYCODE'
+import sys
+import xml.etree.ElementTree as ET
+
+path = sys.argv[1]
+ns_android = "http://schemas.android.com/apk/res/android"
+ET.register_namespace("android", ns_android)
+tree = ET.parse(path)
+root = tree.getroot()
+app = root.find("application")
+if app is not None:
+    key_clear = f"{{{ns_android}}}usesCleartextTraffic"
+    key_nsc = f"{{{ns_android}}}networkSecurityConfig"
+    if app.get(key_clear) != "true":
+        app.set(key_clear, "true")
+    if app.get(key_nsc) is None:
+        app.set(key_nsc, "@xml/network_security_config")
+tree.write(path, encoding="utf-8", xml_declaration=True)
+PYCODE
+  log_info "已设置 usesCleartextTraffic + networkSecurityConfig"
+else
+  log_warn "AndroidManifest.xml 未找到，跳过 cleartext 配置"
+fi
+
+mkdir -p "$NSC_DIR"
+if [ ! -f "$NSC_FILE" ]; then
+  cat <<'XML' > "$NSC_FILE"
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
+XML
+  log_info "已写入 network_security_config.xml"
+else
+  log_warn "network_security_config.xml 已存在，未覆盖"
 fi
 
 log_step "4. 验证文件"

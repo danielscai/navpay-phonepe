@@ -103,18 +103,6 @@ public class LogSender {
     }
 
     /**
-     * 发送日志 (便捷方法)
-     */
-    public void sendLog(LoggingInterceptor.InterceptedRequest request) {
-        try {
-            JSONObject json = request.toJson();
-            sendLog(json);
-        } catch (JSONException e) {
-            Log.e(TAG, "Error converting request to JSON", e);
-        }
-    }
-
-    /**
      * 发送 Token 检测日志
      */
     public void sendTokenLog(String patternName, String url, String tokenInfo) {
