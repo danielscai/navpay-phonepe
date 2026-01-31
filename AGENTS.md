@@ -19,8 +19,8 @@ This repository is a security research and reverse‑engineering workspace for A
 - `cd src/https_interceptor && ./gradlew assembleDebug`: build the demo APK.
 - `cd src/log_server && npm run start`: run the log server (use `npm run dev` for watch mode).
 - `cd src/log_server && ./start.sh`: convenience script (installs deps, sets `adb reverse`, starts server).
-- `cd src/signature_bypass && ./scripts/compile.sh`: build the bypass DEX/smali.
-- `cd src/signature_bypass && ./scripts/merge.sh /path/to/decompiled/base`: inject into a decompiled APK.
+- `cd src/signature_bypass && ./tools/compile.sh`: build the bypass DEX/smali.
+- `cd src/signature_bypass && ./tools/merge.sh /path/to/decompiled/base`: inject into a decompiled APK.
 
 ## Coding Style & Naming Conventions
 

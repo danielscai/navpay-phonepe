@@ -1,0 +1,14 @@
+id: signature_bypass
+name: Signature Bypass
+version: 1.0.0
+entry: Lcom/sigbypass/HookEntry;->init(Landroid/content/Context;)V
+marker:
+  file: assets/inject_manifest.json
+  key: signature_bypass
+payload:
+  smali_dir: build/smali
+  pine_smali_dir: build/pine_smali
+  lib_dir: libs/jni
+scripts:
+  inject: tools/inject.sh
+  verify: scripts/verify.sh

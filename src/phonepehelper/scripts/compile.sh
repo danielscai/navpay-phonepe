@@ -1,14 +1,14 @@
 #!/bin/bash
 
 #######################################################################
-# 签名绕过模块编译脚本
+# PhonePeHelper 模块编译脚本
 #
 # 功能：将 Java 源码编译为 smali 文件
 #
 # 依赖：
 # - Java JDK (javac)
 # - Android SDK (d8/dx)
-# - baksmali (smali 反汇编工具)
+# - baksmali (smali 反编译工具)
 #
 # 用法：./compile.sh
 #######################################################################
@@ -45,9 +45,6 @@ ANDROID_JAR=$(ls -d "$ANDROID_SDK/platforms/android-"* 2>/dev/null | sort -V | t
 JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk}"
 export PATH="$JAVA_HOME/bin:$PATH"
 
-# Pine 框架 JAR (从 Maven Central 下载)
-PINE_JAR="$LIBS_DIR/pine-core-classes.jar"
-
 log_step "检查依赖"
 
 # 检查 Java
@@ -77,31 +74,33 @@ if ! command -v baksmali &> /dev/null; then
     log_warn "baksmali 未找到，尝试使用本地版本..."
     BAKSMALI="java -jar $LIBS_DIR/baksmali.jar"
     if [ ! -f "$LIBS_DIR/baksmali.jar" ]; then
-        log_info "下载 baksmali..."
-        mkdir -p "$LIBS_DIR"
-        curl -L -o "$LIBS_DIR/baksmali.jar" \
-            "https://github.com/JesusFreke/smali/releases/download/v2.5.2/baksmali-2.5.2.jar"
+        SIG_BAKSMALI="$PROJECT_DIR/../signature_bypass/libs/baksmali.jar"
+        if [ -f "$SIG_BAKSMALI" ]; then
+            log_info "使用 signature_bypass 的 baksmali.jar"
+            mkdir -p "$LIBS_DIR"
+            cp "$SIG_BAKSMALI" "$LIBS_DIR/baksmali.jar"
+        else
+            log_info "下载 baksmali..."
+            mkdir -p "$LIBS_DIR"
+            curl -L -o "$LIBS_DIR/baksmali.jar" \
+                "https://github.com/JesusFreke/smali/releases/download/v2.5.2/baksmali-2.5.2.jar"
+        fi
+    else
+        size=$(stat -f "%z" "$LIBS_DIR/baksmali.jar" 2>/dev/null || echo 0)
+        if [ "$size" -lt 200000 ]; then
+            log_warn "baksmali.jar 可能损坏，尝试替换..."
+            SIG_BAKSMALI="$PROJECT_DIR/../signature_bypass/libs/baksmali.jar"
+            if [ -f "$SIG_BAKSMALI" ]; then
+                cp "$SIG_BAKSMALI" "$LIBS_DIR/baksmali.jar"
+            else
+                curl -L -o "$LIBS_DIR/baksmali.jar" \
+                    "https://github.com/JesusFreke/smali/releases/download/v2.5.2/baksmali-2.5.2.jar"
+            fi
+        fi
     fi
 else
     BAKSMALI="baksmali"
 fi
-
-log_step "准备 Pine 框架"
-
-# 如果 Pine JAR 不存在，从 Maven Central 下载
-if [ ! -f "$PINE_JAR" ]; then
-    mkdir -p "$LIBS_DIR"
-
-    log_info "下载 Pine 框架 (Maven Central)..."
-    PINE_AAR="$LIBS_DIR/pine-core.aar"
-    curl -L -o "$PINE_AAR" \
-        "https://repo1.maven.org/maven2/top/canyie/pine/core/0.3.0/core-0.3.0.aar"
-
-    log_info "从 AAR 提取 classes.jar..."
-    unzip -o "$PINE_AAR" "classes.jar" -d "$LIBS_DIR"
-    mv "$LIBS_DIR/classes.jar" "$PINE_JAR"
-fi
-log_info "Pine JAR: $PINE_JAR"
 
 log_step "编译 Java 源码"
 
@@ -120,7 +119,7 @@ done
 # 编译 Java
 log_info "编译中..."
 javac -source 1.8 -target 1.8 \
-    -cp "$ANDROID_JAR:$PINE_JAR" \
+    -cp "$ANDROID_JAR" \
     -d "$BUILD_DIR/classes" \
     $JAVA_FILES
 
@@ -161,51 +160,8 @@ find "$OUTPUT_DIR" -name "*.smali" | while read f; do
     echo "  - ${f#$OUTPUT_DIR/}"
 done
 
-log_step "编译 Pine 框架为 Smali"
-
-PINE_DEX_DIR="$BUILD_DIR/pine_dex"
-PINE_SMALI_DIR="$BUILD_DIR/pine_smali"
-
-mkdir -p "$PINE_DEX_DIR" "$PINE_SMALI_DIR"
-
-# 转换 Pine JAR 为 DEX
-log_info "转换 Pine JAR 为 DEX..."
-"$BUILD_TOOLS/d8" --lib "$ANDROID_JAR" --output "$PINE_DEX_DIR" "$PINE_JAR" 2>&1 | grep -v "^$" || true
-
-# 转换 DEX 为 Smali
-log_info "反编译 Pine 为 Smali..."
-java -jar "$LIBS_DIR/baksmali.jar" d "$PINE_DEX_DIR/classes.dex" -o "$PINE_SMALI_DIR"
-
-pine_count=$(find "$PINE_SMALI_DIR" -name "*.smali" | wc -l | tr -d ' ')
-log_info "生成 $pine_count 个 Pine Smali 文件"
-
-log_step "提取 Pine Native 库"
-
-# 从 AAR 提取 native 库
-if [ ! -d "$LIBS_DIR/jni/arm64-v8a" ]; then
-    log_info "提取 libpine.so..."
-    unzip -o "$LIBS_DIR/pine-core.aar" "jni/*" -d "$LIBS_DIR" 2>/dev/null || true
-fi
-
-if [ -f "$LIBS_DIR/jni/arm64-v8a/libpine.so" ]; then
-    log_info "libpine.so 已就绪"
-else
-    log_warn "libpine.so 提取失败"
-fi
-
 log_step "完成"
 
 echo ""
 echo -e "${GREEN}编译成功!${NC}"
 echo ""
-echo "输出目录: $BUILD_DIR"
-echo ""
-echo "生成的文件:"
-echo "  - build/classes.dex           (签名绕过 DEX)"
-echo "  - build/smali/                (签名绕过 Smali)"
-echo "  - build/pine_smali/           (Pine 框架 Smali)"
-echo "  - libs/jni/arm64-v8a/         (Native 库)"
-echo ""
-echo "下一步: 运行 merge.sh 将代码注入到 APK"
-echo ""
-echo "示例: ./scripts/merge.sh /path/to/decompiled/base"

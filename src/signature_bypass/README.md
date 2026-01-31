@@ -20,7 +20,7 @@ signature_bypass_src/
 │   ├── ReflectUtils.java              # 反射工具类
 │   ├── SignatureHook.java             # 签名 Hook 核心逻辑
 │   └── HookEntry.java                 # 入口类
-├── scripts/
+├── tools/
 │   ├── compile.sh                     # 编译脚本
 │   ├── merge.sh                       # 合并脚本
 │   └── inject_hook.py                 # 注入辅助脚本
@@ -57,7 +57,7 @@ public static final String ORIGINAL_SIGNATURE = "3082...";
 
 ```bash
 chmod +x scripts/*.sh
-./scripts/compile.sh
+./tools/compile.sh
 ```
 
 输出：
@@ -75,7 +75,7 @@ chmod +x scripts/*.sh
 
 ```bash
 # 假设目标 APK 已反编译到 /path/to/decompiled/base
-./scripts/merge.sh /path/to/decompiled/base
+./tools/merge.sh /path/to/decompiled/base
 ```
 
 输出：

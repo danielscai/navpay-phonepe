@@ -73,25 +73,25 @@ preflight() {
 
 run_task0() {
   echo "=== Task0: signature_bypass compile ==="
-  if [ ! -x "$TASK0_DIR/scripts/compile.sh" ]; then
-    echo "[ERROR] Missing script: $TASK0_DIR/scripts/compile.sh"
+  if [ ! -x "$TASK0_DIR/tools/compile.sh" ]; then
+    echo "[ERROR] Missing script: $TASK0_DIR/tools/compile.sh"
     exit 1
   fi
-  (cd "$TASK0_DIR" && ./scripts/compile.sh)
+  (cd "$TASK0_DIR" && ./tools/compile.sh)
 }
 
 run_merge() {
   local target="$1"
   echo "=== Task0: merge into decompiled APK ==="
-  if [ ! -x "$TASK0_DIR/scripts/merge.sh" ]; then
-    echo "[ERROR] Missing script: $TASK0_DIR/scripts/merge.sh"
+  if [ ! -x "$TASK0_DIR/tools/merge.sh" ]; then
+    echo "[ERROR] Missing script: $TASK0_DIR/tools/merge.sh"
     exit 1
   fi
   if [ ! -d "$target" ]; then
     echo "[ERROR] Target dir not found: $target"
     exit 1
   fi
-  (cd "$TASK0_DIR" && ./scripts/merge.sh "$target")
+  (cd "$TASK0_DIR" && ./tools/merge.sh "$target")
 }
 
 run_task1_build() {

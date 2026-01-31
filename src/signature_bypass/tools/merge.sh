@@ -96,7 +96,7 @@ if [ -d "$PINE_SMALI_DIR/top/canyie/pine" ]; then
     log_info "已复制 Pine 框架 ($(find $PINE_SMALI_DIR/top/canyie/pine -name '*.smali' | wc -l | tr -d ' ') 个文件)"
 else
     log_error "Pine 框架 smali 未找到"
-    log_error "请运行 ./scripts/compile.sh 先编译 Pine 框架"
+    log_error "请运行 ./tools/compile.sh 先编译 Pine 框架"
     exit 1
 fi
 

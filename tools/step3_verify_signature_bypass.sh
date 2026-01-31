@@ -77,12 +77,12 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-if [ ! -x "$TASK_DIR/scripts/compile.sh" ]; then
-  echo "[FAIL] Missing script: $TASK_DIR/scripts/compile.sh"
+if [ ! -x "$TASK_DIR/tools/compile.sh" ]; then
+  echo "[FAIL] Missing script: $TASK_DIR/tools/compile.sh"
   exit 1
 fi
-if [ ! -x "$TASK_DIR/scripts/merge.sh" ]; then
-  echo "[FAIL] Missing script: $TASK_DIR/scripts/merge.sh"
+if [ ! -x "$TASK_DIR/tools/merge.sh" ]; then
+  echo "[FAIL] Missing script: $TASK_DIR/tools/merge.sh"
   exit 1
 fi
 if [ ! -f "$SOURCE_APK" ]; then
@@ -123,10 +123,10 @@ fi
 # Rebuild signature bypass outputs (reuse if possible)
 if [ "$FULL_RUN" -eq 1 ]; then
   rm -rf "$TASK_DIR/build"
-  (cd "$TASK_DIR" && ./scripts/compile.sh)
+  (cd "$TASK_DIR" && ./tools/compile.sh)
 else
   if [ ! -d "$TASK_DIR/build/smali" ] || [ ! -d "$TASK_DIR/build/pine_smali" ]; then
-    (cd "$TASK_DIR" && ./scripts/compile.sh)
+    (cd "$TASK_DIR" && ./tools/compile.sh)
   else
     echo "[INFO] Reusing signature_bypass build outputs"
   fi
@@ -142,7 +142,7 @@ else
 fi
 
 # Merge smali + native libs + inject hook
-(cd "$TASK_DIR" && ./scripts/merge.sh "$DECOMPILED_DIR")
+(cd "$TASK_DIR" && ./tools/merge.sh "$DECOMPILED_DIR")
 
 # Rebuild patched APK
 apktool b "$DECOMPILED_DIR" -o "$UNSIGNED_APK"

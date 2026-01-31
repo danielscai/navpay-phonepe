@@ -3,29 +3,31 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-PATCH_SCRIPT="$ROOT_DIR/tools/patch_https_interceptor.sh"
 SIG_COMPILE_SCRIPT="$ROOT_DIR/src/signature_bypass/tools/compile.sh"
 SIG_MERGE_SCRIPT="$ROOT_DIR/src/signature_bypass/tools/merge.sh"
+PATCH_INTERCEPTOR="$ROOT_DIR/tools/patch_https_interceptor.sh"
+PHONEPEHELPER_PATCH="$ROOT_DIR/tools/patch_phonepehelper.sh"
 SOURCE_APK_DEFAULT="$ROOT_DIR/temp/phonepe_merged_test/com.phonepe.app_merged_signed.apk"
-WORK_DIR="$ROOT_DIR/temp/https_interceptor_test"
+WORK_DIR="$ROOT_DIR/temp/phonepehelper_test"
 DECOMPILED_DIR="$WORK_DIR/base_decompiled"
 UNSIGNED_APK="$WORK_DIR/patched_unsigned.apk"
 ALIGNED_APK="$WORK_DIR/patched_aligned.apk"
 SIGNED_APK="$WORK_DIR/patched_signed.apk"
 PACKAGE_NAME="com.phonepe.app"
 ACTIVITY_NAME=".launch.core.main.ui.MainActivity"
-LOGIN_ACTIVITY="com.phonepe.login.internal.ui.views.LoginActivity"
 DEVICE_SERIAL=""
 SOURCE_APK="$SOURCE_APK_DEFAULT"
 FULL_RUN=0
 
 # Colors
 RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
 NC='\033[0m'
 
 usage() {
   cat <<'USAGE'
-Usage: tools/step4_verify_injection.sh [options]
+Usage: tools/step6_verify_phonepehelper.sh [options]
 
 Options:
   --apk <path>   Source merged APK to patch (default: temp/phonepe_merged_test/com.phonepe.app_merged_signed.apk)
@@ -33,10 +35,8 @@ Options:
   --full         Full rerun (ignore cached outputs)
 
 Notes:
-- 默认使用 FAST 模式（强烈建议），尽量复用缓存以加速验证。
-- 只有在需要“全量重跑”时才使用 --full。
-- Full real run: signature-bypass merge -> patch -> rebuild -> sign -> install -> run -> logcat check.
-- No log server involved; verification is via adb logcat.
+- 默认使用 FAST 模式（尽量复用缓存以加速验证）。
+- Full run: signature-bypass merge -> phonepehelper patch -> rebuild -> sign -> install -> run -> logcat check.
 USAGE
 }
 
@@ -64,14 +64,18 @@ while [ $# -gt 0 ]; do
       exit 1
       ;;
   esac
-done
+ done
 
-if [ ! -x "$PATCH_SCRIPT" ]; then
-  echo "[FAIL] Missing patch script: $PATCH_SCRIPT"
-  exit 1
-fi
 if [ ! -x "$SIG_MERGE_SCRIPT" ]; then
   echo "[FAIL] Missing signature bypass merge script: $SIG_MERGE_SCRIPT"
+  exit 1
+fi
+if [ ! -x "$PATCH_INTERCEPTOR" ]; then
+  echo "[FAIL] Missing https interceptor patch script: $PATCH_INTERCEPTOR"
+  exit 1
+fi
+if [ ! -x "$PHONEPEHELPER_PATCH" ]; then
+  echo "[FAIL] Missing phonepehelper patch script: $PHONEPEHELPER_PATCH"
   exit 1
 fi
 if [ ! -f "$SOURCE_APK" ]; then
@@ -102,16 +106,21 @@ if [ -z "$DEVICE_SERIAL" ]; then
   elif [ "$count" -eq 1 ]; then
     DEVICE_SERIAL="$devices"
   else
-    echo "[FAIL] Multiple devices found. Please specify -s <serial>."
-    echo "$devices"
-    exit 1
+    emulator=$(echo "$devices" | rg -m1 '^emulator-' || true)
+    if [ -n "$emulator" ]; then
+      DEVICE_SERIAL="$emulator"
+      echo "[INFO] Multiple devices found, auto-select emulator: $DEVICE_SERIAL"
+    else
+      echo "[FAIL] Multiple devices found. Please specify -s <serial>."
+      echo "$devices"
+      exit 1
+    fi
   fi
 fi
 
 echo "[INFO] Using device: $DEVICE_SERIAL"
 echo "[INFO] Mode: $([ "$FULL_RUN" -eq 1 ] && echo "FULL" || echo "FAST")"
 
-# Prepare work dir
 if [ "$FULL_RUN" -eq 1 ]; then
   rm -rf "$WORK_DIR"
 fi
@@ -129,24 +138,22 @@ if [ -n "$SOURCE_MTIME" ] && [ -f "$STAMP_FILE" ]; then
   fi
 fi
 
-# If cached signed APK is valid, reuse it directly
-DEMO_APK="$ROOT_DIR/src/https_interceptor/app/build/outputs/apk/debug/app-debug.apk"
-DEMO_MTIME=""
-if [ -f "$DEMO_APK" ]; then
-  DEMO_MTIME=$(stat -f "%m" "$DEMO_APK" 2>/dev/null || true)
-fi
-PATCH_MTIME=""
-if [ -f "$PATCH_SCRIPT" ]; then
-  PATCH_MTIME=$(stat -f "%m" "$PATCH_SCRIPT" 2>/dev/null || true)
-fi
 SIG_BUILD_MTIME=""
 if [ -f "$ROOT_DIR/src/signature_bypass/build/classes.dex" ]; then
   SIG_BUILD_MTIME=$(stat -f "%m" "$ROOT_DIR/src/signature_bypass/build/classes.dex" 2>/dev/null || true)
 fi
+PHONEPEHELPER_BUILD_MTIME=""
+if [ -f "$ROOT_DIR/src/phonepehelper/build/classes.dex" ]; then
+  PHONEPEHELPER_BUILD_MTIME=$(stat -f "%m" "$ROOT_DIR/src/phonepehelper/build/classes.dex" 2>/dev/null || true)
+fi
+PATCH_MTIME=""
+if [ -f "$PHONEPEHELPER_PATCH" ]; then
+  PATCH_MTIME=$(stat -f "%m" "$PHONEPEHELPER_PATCH" 2>/dev/null || true)
+fi
 CACHE_STAMP_FILE="$WORK_DIR/cache.stamp"
 CACHE_MATCH=0
-if [ -n "$SOURCE_MTIME" ] && [ -n "$DEMO_MTIME" ] && [ -n "$SIG_BUILD_MTIME" ] && [ -n "$PATCH_MTIME" ] && [ -f "$CACHE_STAMP_FILE" ]; then
-  if grep -Fq "$SOURCE_APK:$SOURCE_MTIME|$DEMO_APK:$DEMO_MTIME|sig:$SIG_BUILD_MTIME|patch:$PATCH_MTIME" "$CACHE_STAMP_FILE"; then
+if [ -n "$SOURCE_MTIME" ] && [ -n "$SIG_BUILD_MTIME" ] && [ -n "$PATCH_MTIME" ] && [ -f "$CACHE_STAMP_FILE" ]; then
+  if grep -Fq "$SOURCE_APK:$SOURCE_MTIME|sig:$SIG_BUILD_MTIME|pph:$PHONEPEHELPER_BUILD_MTIME|patch:$PATCH_MTIME" "$CACHE_STAMP_FILE"; then
     CACHE_MATCH=1
   fi
 fi
@@ -164,7 +171,7 @@ else
   echo "$SOURCE_APK:$SOURCE_MTIME" > "$STAMP_FILE"
 fi
 
-echo "[INFO] Step3: merge signature bypass into decompiled APK"
+echo "[INFO] Step1: merge signature bypass"
 if [ -x "$SIG_COMPILE_SCRIPT" ]; then
   if [ "$FULL_RUN" -eq 1 ]; then
     "$SIG_COMPILE_SCRIPT" >/dev/null
@@ -179,82 +186,53 @@ if [ -x "$SIG_COMPILE_SCRIPT" ]; then
 fi
 "$SIG_MERGE_SCRIPT" "$DECOMPILED_DIR" >/dev/null
 
-echo "[INFO] Step4: patch interceptor into decompiled APK"
-"$PATCH_SCRIPT" "$DECOMPILED_DIR"
+echo "[INFO] Step2: patch https interceptor"
+"$PATCH_INTERCEPTOR" "$DECOMPILED_DIR" >/dev/null
 
-# If OkHttpClient$Builder.build() calls HookUtil.build(), ensure HookUtil exists
-BUILDER_SMALI=$(find "$DECOMPILED_DIR" -path '*/okhttp3/OkHttpClient$Builder.smali' | head -1)
-HOOKUTIL_SMALI=$(find "$DECOMPILED_DIR" -path '*/com/httpinterceptor/hook/HookUtil.smali' | head -1)
-if [ -n "$BUILDER_SMALI" ] && rg -q "com/httpinterceptor/hook/HookUtil;->build\\(" "$BUILDER_SMALI"; then
-  if [ -z "$HOOKUTIL_SMALI" ] || [ ! -f "$HOOKUTIL_SMALI" ]; then
-    echo '[FAIL] OkHttpClient$Builder.build() calls HookUtil.build() but HookUtil.smali is missing.'
-    exit 1
-  fi
-fi
+echo "[INFO] Step3: patch phonepehelper"
+"$PHONEPEHELPER_PATCH" "$DECOMPILED_DIR" >/dev/null
 
 echo "[INFO] Rebuild + sign APK"
 apktool b "$DECOMPILED_DIR" -o "$UNSIGNED_APK" >/dev/null
 "$ZIPALIGN" -f 4 "$UNSIGNED_APK" "$ALIGNED_APK"
 "$APKSIGNER" sign --ks "$HOME/.android/debug.keystore" --ks-pass pass:android --out "$SIGNED_APK" "$ALIGNED_APK"
-"$APKSIGNER" verify -v "$SIGNED_APK"
+"$APKSIGNER" verify -v "$SIGNED_APK" >/dev/null
 
-echo "$SOURCE_APK:$SOURCE_MTIME|$DEMO_APK:$DEMO_MTIME|sig:$SIG_BUILD_MTIME|patch:$PATCH_MTIME" > "$CACHE_STAMP_FILE"
+echo "$SOURCE_APK:$SOURCE_MTIME|sig:$SIG_BUILD_MTIME|pph:$PHONEPEHELPER_BUILD_MTIME|patch:$PATCH_MTIME" > "$CACHE_STAMP_FILE"
+
 fi
-
-echo "[INFO] Clear logcat"
-adb -s "$DEVICE_SERIAL" logcat -c || true
-
-echo "[INFO] Force-stop + uninstall"
-adb -s "$DEVICE_SERIAL" shell am force-stop "$PACKAGE_NAME" >/dev/null 2>&1 || true
-adb -s "$DEVICE_SERIAL" uninstall "$PACKAGE_NAME" >/dev/null 2>&1 || true
 
 echo "[INFO] Install APK"
 adb -s "$DEVICE_SERIAL" install -r "$SIGNED_APK" >/dev/null
-echo "[INFO] Launch app"
-adb -s "$DEVICE_SERIAL" shell am start -n "$PACKAGE_NAME/$ACTIVITY_NAME" >/dev/null
 
-echo "[INFO] Wait for app startup (8s)"
-sleep 8
+echo "[INFO] Launch app + check logs"
+adb -s "$DEVICE_SERIAL" logcat -c
 
-echo "[INFO] Check HttpInterceptor logs"
-adb -s "$DEVICE_SERIAL" logcat -d | rg -n "HttpInterceptor" > "$WORK_DIR/logcat_httpinterceptor.txt" || true
+APP_OK=0
+for attempt in 1 2 3; do
+  echo "[INFO] Launch attempt $attempt/3"
+  adb -s "$DEVICE_SERIAL" shell am force-stop "$PACKAGE_NAME" >/dev/null || true
+  adb -s "$DEVICE_SERIAL" shell am start -n "$PACKAGE_NAME/$ACTIVITY_NAME" >/dev/null || true
+  sleep 8
 
-if [ -s "$WORK_DIR/logcat_httpinterceptor.txt" ]; then
-  echo "[PASS] Found HttpInterceptor logs: $WORK_DIR/logcat_httpinterceptor.txt"
+  if adb -s "$DEVICE_SERIAL" shell pidof "$PACKAGE_NAME" >/dev/null 2>&1; then
+    LOGS=$(adb -s "$DEVICE_SERIAL" logcat -d -s PPHelper | tail -n 120)
+    if echo "$LOGS" | grep -q "PhonePeHelper initialized"; then
+      APP_OK=1
+      break
+    fi
+  fi
+done
+
+if [ "$APP_OK" -eq 1 ]; then
+  echo -e "${GREEN}[PASS]${NC} PPHelper logs found"
 else
-  echo "[WARN] No HttpInterceptor logs captured yet: $WORK_DIR/logcat_httpinterceptor.txt"
+  echo -e "${RED}[FAIL]${NC} PPHelper logs not found"
+  echo "[INFO] Collecting diagnostics..."
+  adb -s "$DEVICE_SERIAL" shell pidof "$PACKAGE_NAME" > "$WORK_DIR/pidof.txt" 2>/dev/null || true
+  adb -s "$DEVICE_SERIAL" shell dumpsys activity activities > "$WORK_DIR/dumpsys_activities.txt" 2>/dev/null || true
+  adb -s "$DEVICE_SERIAL" logcat -d | rg -n "SigBypass|PPHelper" > "$WORK_DIR/logcat_injection.txt" || true
+  adb -s "$DEVICE_SERIAL" logcat -d | rg -n "com.phonepe.app" > "$WORK_DIR/logcat_phonepe.txt" || true
+  echo "[INFO] Diagnostics saved to: $WORK_DIR"
   exit 1
 fi
-
-echo "[INFO] Check SigBypass logs"
-adb -s "$DEVICE_SERIAL" logcat -d | rg -n "SigBypass" > "$WORK_DIR/logcat_sigbypass.txt" || true
-
-if [ -s "$WORK_DIR/logcat_sigbypass.txt" ]; then
-  echo "[PASS] Found SigBypass logs: $WORK_DIR/logcat_sigbypass.txt"
-else
-  echo "[FAIL] No SigBypass logs captured: $WORK_DIR/logcat_sigbypass.txt"
-  exit 1
-fi
-
-echo "[INFO] Check login activity in task stack"
-adb -s "$DEVICE_SERIAL" shell dumpsys activity activities > "$WORK_DIR/dumpsys_activities.txt" || true
-
-echo "[INFO] Check crash logs"
-adb -s "$DEVICE_SERIAL" logcat -d -s AndroidRuntime > "$WORK_DIR/logcat_androidruntime.txt" || true
-if rg -n "FATAL EXCEPTION|Process: $PACKAGE_NAME" "$WORK_DIR/logcat_androidruntime.txt" >/dev/null 2>&1; then
-  echo -e "${RED}[FAIL] Crash detected in AndroidRuntime logs:${NC} $WORK_DIR/logcat_androidruntime.txt"
-  while IFS= read -r line; do
-    echo -e "${RED}${line}${NC}"
-  done < "$WORK_DIR/logcat_androidruntime.txt"
-  exit 1
-fi
-
-if grep -Fq "$LOGIN_ACTIVITY" "$WORK_DIR/dumpsys_activities.txt"; then
-  echo "[PASS] Login activity detected: $LOGIN_ACTIVITY"
-else
-  echo "[FAIL] Login activity not detected in task stack: $LOGIN_ACTIVITY"
-  echo "       See: $WORK_DIR/dumpsys_activities.txt"
-  exit 1
-fi
-
-echo "[PASS] Step 4 injection verification completed."
