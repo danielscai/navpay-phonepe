@@ -793,12 +793,16 @@
         function formatBody(body) {
             if (!body) return '<span class="muted">空</span>';
 
-            try {
-                const parsed = JSON.parse(body);
-                return syntaxHighlight(JSON.stringify(parsed, null, 2));
-            } catch (e) {
-                return escapeHtml(body);
+            const text = String(body).trim();
+            if (looksLikeJson(text)) {
+                try {
+                    const parsed = JSON.parse(text);
+                    return syntaxHighlight(JSON.stringify(parsed, null, 2));
+                } catch (e) {
+                    // fallthrough to raw
+                }
             }
+            return escapeHtml(body);
         }
 
         // JSON 语法高亮
@@ -857,6 +861,12 @@
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#039;');
+        }
+
+        function looksLikeJson(text) {
+            if (!text) return false;
+            return (text.startsWith('{') && text.endsWith('}')) ||
+                (text.startsWith('[') && text.endsWith(']'));
         }
 
         function shortenUrl(url) {
