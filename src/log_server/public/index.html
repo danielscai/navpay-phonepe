@@ -209,10 +209,12 @@
         }
 
         .method-badge {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            text-indent: -9999px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+            min-width: 36px;
+            text-align: center;
             flex: 0 0 auto;
         }
 
@@ -226,7 +228,6 @@
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            text-indent: -9999px;
             flex: 0 0 auto;
         }
 
@@ -673,7 +674,7 @@
             return `
                 <div class="${itemClass}" data-id="${log.id}" onclick="selectLog('${log.id}')">
                     <div class="log-header">
-                        <span class="method-badge ${methodClass}" title="${log.method}"></span>
+                        <span class="method-badge ${methodClass}">${log.method}</span>
                         <span class="status-badge ${statusClass}" title="${log.statusCode || 'ERR'}"></span>
                         <span class="log-url" title="${escapeHtml(log.url)}">${shortenUrl(log.url)}</span>
                         <div class="log-meta">
@@ -732,11 +733,11 @@
                     <div class="detail-columns">
                         <div>
                             <div class="column-title">请求头 <span class="header-count">${requestHeaderCount} 个</span></div>
-                            ${renderHeaders(log.requestHeaders, 2)}
+                            ${renderHeaders(log.requestHeaders, 0)}
                         </div>
                         <div>
                             <div class="column-title">响应头 <span class="header-count">${responseHeaderCount} 个</span></div>
-                            ${renderHeaders(log.responseHeaders, 2)}
+                            ${renderHeaders(log.responseHeaders, 0)}
                         </div>
                     </div>
                 </div>
@@ -762,7 +763,7 @@
             `;
         }
 
-        // 渲染 Headers（默认显示前 2 个）
+        // 渲染 Headers（默认折叠）
         function renderHeaders(headers, limit) {
             if (!headers || Object.keys(headers).length === 0) {
                 return '<div style="color: #6c757d; font-style: italic;">无</div>';
@@ -786,7 +787,7 @@
                         `;
                     }).join('')}
                 </table>
-                ${entries.length > limit ? `<div class="headers-toggle" onclick="toggleHeaders(this)">展开其余 ${entries.length - limit} 个</div>` : ''}
+                ${entries.length > limit ? `<div class="headers-toggle" onclick="toggleHeaders(this)">展开 ${entries.length} 个</div>` : ''}
             `;
         }
 
