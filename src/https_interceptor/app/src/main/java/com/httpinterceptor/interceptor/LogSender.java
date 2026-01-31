@@ -27,7 +27,7 @@ public class LogSender {
     private static final String TAG = "LogSender";
 
     // 默认服务器地址 (通过 adb reverse 映射)
-    private static String serverUrl = "http://127.0.0.1:8088/api/log";
+    private static String serverUrl = "http://192.168.1.8:8088/api/log";
 
     // 单例
     private static volatile LogSender instance;

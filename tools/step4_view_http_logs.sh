@@ -3,20 +3,29 @@
 set -euo pipefail
 
 PACKAGE_NAME="com.phonepe.app"
-TAG="HttpInterceptor"
+MODE="app"
+TAG=""
 DEVICE_SERIAL=""
 
 usage() {
   cat <<'USAGE'
-Usage: tools/step4_view_http_logs.sh [-s <serial>]
+Usage: tools/step4_view_http_logs.sh [app|sigbypass|https] [-s <serial>]
 
-默认使用 log tag 过滤：HttpInterceptor
+默认显示 app 的所有日志（按 PID 过滤）
+指定模式：
+  app        显示 app 全部日志（默认）
+  sigbypass  仅显示 SigBypass 日志
+  https      仅显示 HttpInterceptor 日志
 如需指定设备，传 -s <serial>
 USAGE
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    app|sigbypass|https)
+      MODE="$1"
+      shift
+      ;;
     -s)
       DEVICE_SERIAL="$2"
       shift 2
@@ -55,5 +64,30 @@ fi
 
 echo "[INFO] Using device: $DEVICE_SERIAL"
 
-echo "[INFO] Showing logs by tag: $TAG"
-exec adb -s "$DEVICE_SERIAL" logcat -s "$TAG"
+case "$MODE" in
+  app)
+    pid=$(adb -s "$DEVICE_SERIAL" shell pidof -s "$PACKAGE_NAME" 2>/dev/null | tr -d '\r')
+    if [ -n "$pid" ]; then
+      echo "[INFO] Showing logs by PID: $pid ($PACKAGE_NAME)"
+      exec adb -s "$DEVICE_SERIAL" logcat --pid="$pid"
+    else
+      echo "[WARN] No PID found for $PACKAGE_NAME. Showing full logcat."
+      exec adb -s "$DEVICE_SERIAL" logcat
+    fi
+    ;;
+  sigbypass)
+    TAG="SigBypass"
+    echo "[INFO] Showing logs by tag: $TAG"
+    exec adb -s "$DEVICE_SERIAL" logcat -s "$TAG"
+    ;;
+  https)
+    TAG="HttpInterceptor"
+    echo "[INFO] Showing logs by tag: $TAG"
+    exec adb -s "$DEVICE_SERIAL" logcat -s "$TAG"
+    ;;
+  *)
+    echo "[FAIL] Unknown mode: $MODE"
+    usage
+    exit 1
+    ;;
+esac

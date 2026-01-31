@@ -5,6 +5,8 @@ import os
 import shutil
 import subprocess
 import sys
+import time
+from typing import Optional
 from datetime import datetime
 from pathlib import Path
 
@@ -15,6 +17,16 @@ MANIFEST_PATH = SCRIPT_DIR / "cache_manifest.json"
 
 DEFAULT_PACKAGE = "com.phonepe.app"
 DEFAULT_SERIAL = "emulator-5554"
+SIGBYPASS_BUILD_DIR = "cache/phonepe_sigbypass_build"
+HTTPS_BUILD_DIR = "cache/phonepe_https_interceptor_build"
+DEFAULT_UNSIGNED_APK = "patched_unsigned.apk"
+DEFAULT_ALIGNED_APK = "patched_aligned.apk"
+DEFAULT_SIGNED_APK = "patched_signed.apk"
+DEFAULT_ACTIVITY = ".launch.core.main.ui.MainActivity"
+SIGBYPASS_LOG_TAG = "SigBypass"
+HTTPS_LOG_TAG = "HttpInterceptor"
+SIGBYPASS_LOGIN_ACTIVITY = "com.phonepe.login.internal.ui.views.LoginActivity"
+DEFAULT_TIMEOUT_SEC = 12
 
 
 def load_manifest():
@@ -470,25 +482,84 @@ def sigbypass_compile(cache_path: Path, work_dir: Path, unsigned_apk: str, align
     run([str(apksigner), "sign", "--ks", str(keystore), "--ks-pass", "pass:android", "--out", str(signed), str(aligned)], env=env)
     run([str(apksigner), "verify", "-v", str(signed)], env=env)
 
-def sigbypass_test(signed_apk: Path, package: str, activity: str, log_tag: str, timeout_sec: int, serial: str):
+def sigbypass_test(
+    signed_apk: Path,
+    package: str,
+    activity: str,
+    log_tag: str,
+    timeout_sec: int,
+    serial: str,
+    login_activity: Optional[str] = None,
+    clear_data: bool = False,
+):
     if not signed_apk.exists():
         raise RuntimeError(f"Signed APK not found: {signed_apk}")
     adb = adb_path()
     device = select_device(adb, serial)
 
+    work_dir = signed_apk.parent
+    logcat_path = work_dir / f"logcat_{log_tag}.txt"
+    dumpsys_path = work_dir / "dumpsys_activities.txt"
+
     run([adb, "-s", device, "logcat", "-c"])
     run([adb, "-s", device, "install", "-r", str(signed_apk)])
+    if clear_data:
+        run([adb, "-s", device, "shell", "pm", "clear", package])
+    run([adb, "-s", device, "shell", "am", "force-stop", package])
     run([adb, "-s", device, "shell", "am", "start", "-n", f"{package}/{activity}"])
 
     deadline = datetime.now().timestamp() + timeout_sec
-    found = False
+    found_log = False
+    found_login = login_activity is None
+    last_log = ""
+    last_dumpsys = ""
     while datetime.now().timestamp() < deadline:
         out = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-s", log_tag], text=True)
         if out.strip():
-            found = True
+            last_log = out
+            found_log = True
+        if login_activity:
+            dumpsys = subprocess.check_output([adb, "-s", device, "shell", "dumpsys", "activity", "activities"], text=True)
+            last_dumpsys = dumpsys
+            if login_activity in dumpsys:
+                found_login = True
+        if found_log and found_login:
             break
-    if not found:
-        raise RuntimeError(f"No log output for tag '{log_tag}' within {timeout_sec}s")
+        time.sleep(1)
+    if not found_log:
+        logcat_path.write_text(last_log or "", encoding="utf-8")
+        raise RuntimeError(
+            f"No log output for tag '{log_tag}' within {timeout_sec}s. "
+            f"See: {logcat_path}"
+        )
+    if not found_login:
+        dumpsys_path.write_text(last_dumpsys or "", encoding="utf-8")
+        raise RuntimeError(
+            f"Login activity not detected in task stack: {login_activity}. "
+            f"See: {dumpsys_path}"
+        )
+
+
+def rerun_app(signed_apk: Path, package: str, activity: str, serial: str, retries: int = 3):
+    if not signed_apk.exists():
+        raise RuntimeError(f"Signed APK not found: {signed_apk}")
+    adb = adb_path()
+    device = select_device(adb, serial)
+
+    run([adb, "-s", device, "install", "-r", str(signed_apk)])
+
+    last_out = ""
+    for _ in range(retries):
+        run([adb, "-s", device, "shell", "am", "force-stop", package])
+        out = subprocess.check_output(
+            [adb, "-s", device, "shell", "am", "start", "-n", f"{package}/{activity}"],
+            text=True,
+        )
+        last_out = out or ""
+        if "Error:" not in last_out and "Exception" not in last_out:
+            return
+        time.sleep(1)
+    raise RuntimeError(f"Failed to start activity after {retries} attempts: {last_out.strip()}")
 
 
 def cmd_graph(manifest):
@@ -620,7 +691,7 @@ def main():
     sigbypass.add_argument("-d", "--delete", action="store_true", default=False)
 
     https = sub.add_parser("https")
-    https.add_argument("action", choices=["pre-cache", "inject", "compile", "test"])
+    https.add_argument("action", choices=["pre-cache", "inject", "compile", "test", "rerun"])
     https.add_argument("--serial")
     https.add_argument("-d", "--delete", action="store_true", default=False)
 
@@ -649,17 +720,17 @@ def main():
         if source_subdir:
             source_root = source_root / source_subdir
 
-        compile_cfg = cfg.get("compile", {})
-        work_dir = resolve_cache_path(compile_cfg.get("work_dir", "cache/phonepe_sigbypass_build"))
-        unsigned = compile_cfg.get("unsigned_apk", "patched_unsigned.apk")
-        aligned = compile_cfg.get("aligned_apk", "patched_aligned.apk")
-        signed = compile_cfg.get("signed_apk", "patched_signed.apk")
+        work_dir = resolve_cache_path(SIGBYPASS_BUILD_DIR)
+        unsigned = DEFAULT_UNSIGNED_APK
+        aligned = DEFAULT_ALIGNED_APK
+        signed = DEFAULT_SIGNED_APK
 
-        test_cfg = cfg.get("test", {})
-        package = test_cfg.get("package", DEFAULT_PACKAGE)
-        activity = test_cfg.get("activity", ".launch.core.main.ui.MainActivity")
-        log_tag = test_cfg.get("log_tag", "SigBypass")
-        timeout = int(test_cfg.get("timeout_sec", 12))
+        package = DEFAULT_PACKAGE
+        activity = DEFAULT_ACTIVITY
+        log_tag = SIGBYPASS_LOG_TAG
+        timeout = DEFAULT_TIMEOUT_SEC
+        login_activity = SIGBYPASS_LOGIN_ACTIVITY
+        clear_data = True
 
         inject_script_cfg = cfg.get("inject_script")
         if not inject_script_cfg:
@@ -691,7 +762,16 @@ def main():
             do_compile()
         elif action == "test":
             do_compile()
-            sigbypass_test(work_dir / signed, package, activity, log_tag, timeout, args.serial or "")
+            sigbypass_test(
+                work_dir / signed,
+                package,
+                activity,
+                log_tag,
+                timeout,
+                args.serial or "",
+                login_activity,
+                clear_data,
+            )
         else:
             raise RuntimeError(f"Unknown sigbypass action: {action}")
     elif args.cmd == "https":
@@ -715,17 +795,16 @@ def main():
             raise RuntimeError("phonepe_https_interceptor missing inject_script in manifest")
         inject_script = (REPO_ROOT / inject_script_cfg).resolve()
 
-        compile_cfg = cfg.get("compile", {})
-        work_dir = resolve_cache_path(compile_cfg.get("work_dir", "cache/phonepe_https_interceptor_build"))
-        unsigned = compile_cfg.get("unsigned_apk", "patched_unsigned.apk")
-        aligned = compile_cfg.get("aligned_apk", "patched_aligned.apk")
-        signed = compile_cfg.get("signed_apk", "patched_signed.apk")
+        work_dir = resolve_cache_path(HTTPS_BUILD_DIR)
+        unsigned = DEFAULT_UNSIGNED_APK
+        aligned = DEFAULT_ALIGNED_APK
+        signed = DEFAULT_SIGNED_APK
 
-        test_cfg = cfg.get("test", {})
-        package = test_cfg.get("package", DEFAULT_PACKAGE)
-        activity = test_cfg.get("activity", ".launch.core.main.ui.MainActivity")
-        log_tag = test_cfg.get("log_tag", "HttpInterceptor")
-        timeout = int(test_cfg.get("timeout_sec", 12))
+        package = DEFAULT_PACKAGE
+        activity = DEFAULT_ACTIVITY
+        log_tag = HTTPS_LOG_TAG
+        timeout = DEFAULT_TIMEOUT_SEC
+        login_activity = None
 
         def do_pre_cache():
             https_pre_cache(cache_path, source_root, reset_paths, added_paths, args.delete)
@@ -747,7 +826,17 @@ def main():
             do_compile()
         elif action == "test":
             do_compile()
-            sigbypass_test(work_dir / signed, package, activity, log_tag, timeout, args.serial or "")
+            sigbypass_test(
+                work_dir / signed,
+                package,
+                activity,
+                log_tag,
+                timeout,
+                args.serial or "",
+                login_activity,
+            )
+        elif action == "rerun":
+            rerun_app(work_dir / signed, package, activity, args.serial or "")
         else:
             raise RuntimeError(f"Unknown https action: {action}")
     else:

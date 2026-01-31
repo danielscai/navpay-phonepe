@@ -116,10 +116,8 @@ mkdir -p "$INTERCEPTOR_SMALI_DIR" "$HOOK_SMALI_DIR"
 
 # 从 https_interceptor demo APK 提取 smali
 DEMO_APK="$PROJECT_ROOT/src/https_interceptor/app/build/outputs/apk/debug/app-debug.apk"
-if [ ! -f "$DEMO_APK" ]; then
-    log_warn "未找到 demo APK，尝试构建..."
-    (cd "$PROJECT_ROOT/src/https_interceptor" && ./build_and_install.sh build)
-fi
+log_info "强制构建 demo APK..."
+(cd "$PROJECT_ROOT/src/https_interceptor" && ./build_and_install.sh build)
 
 if [ ! -f "$DEMO_APK" ]; then
     log_error "demo APK 未找到: $DEMO_APK"

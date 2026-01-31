@@ -13,6 +13,7 @@
     "res": "./tools/restart_app.sh",
     "logs": "./tools/step4_view_http_logs.sh",
     "logs:crash": "adb logcat | grep -i -E \"(FATAL EXCEPTION|AndroidRuntime|SIGABRT|SIGSEGV|CRASH)\"",
+    "emu": "/Users/danielscai/Library/Android/sdk/emulator/emulator @phonepe1",
     "patch:phonepehelper": "./tools/patch_phonepehelper.sh",
     "graph": "python3 src/cache-manager/cache_manager.py graph",
     "status": "python3 src/cache-manager/cache_manager.py status",

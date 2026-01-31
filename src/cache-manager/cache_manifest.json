@@ -25,18 +25,6 @@
       "lib/armeabi-v7a/libpine.so"
     ],
     "inject_script": "src/signature_bypass/tools/merge.sh",
-    "compile": {
-      "work_dir": "cache/phonepe_sigbypass_build",
-      "unsigned_apk": "patched_unsigned.apk",
-      "aligned_apk": "patched_aligned.apk",
-      "signed_apk": "patched_signed.apk"
-    },
-    "test": {
-      "package": "com.phonepe.app",
-      "activity": ".launch.core.main.ui.MainActivity",
-      "log_tag": "SigBypass",
-      "timeout_sec": 12
-    },
     "readonly": false
   },
   "phonepe_https_interceptor": {
@@ -52,18 +40,6 @@
       "smali_classes*"
     ],
     "inject_script": "tools/patch_https_interceptor.sh",
-    "compile": {
-      "work_dir": "cache/phonepe_https_interceptor_build",
-      "unsigned_apk": "patched_unsigned.apk",
-      "aligned_apk": "patched_aligned.apk",
-      "signed_apk": "patched_signed.apk"
-    },
-    "test": {
-      "package": "com.phonepe.app",
-      "activity": ".launch.core.main.ui.MainActivity",
-      "log_tag": "HttpInterceptor",
-      "timeout_sec": 12
-    },
     "readonly": false
   }
 }
