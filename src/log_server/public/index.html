@@ -357,6 +357,10 @@
             gap: 16px;
         }
 
+        .headers-section {
+            display: none;
+        }
+
         .column-title {
             font-size: 12px;
             color: #6c757d;
@@ -726,14 +730,14 @@
                 <div class="detail-section">
                     <div class="detail-title">
                         URL
-                        <span class="headers-toggle" onclick="toggleHeadersAll('headers-${log.id}', this)">展开请求/响应头</span>
+                        <span class="headers-toggle" onclick="toggleHeadersAll('headers-${log.id}-section', this)">展开请求/响应头</span>
                     </div>
                     <div class="detail-url">${escapeHtml(log.url)}</div>
                 </div>
 
-                <div class="detail-section">
+                <div class="detail-section headers-section" id="headers-${log.id}-section">
                     <div class="detail-title">请求 / 响应头</div>
-                    <div class="detail-columns" id="headers-${log.id}">
+                    <div class="detail-columns">
                         <div>
                             <div class="column-title">请求头 <span class="header-count">${requestHeaderCount} 个</span></div>
                             ${renderHeaders(log.requestHeaders, 0)}
@@ -913,16 +917,15 @@
             element.innerHTML = isVisible ? '▼ 隐藏原始日志' : '▶ 查看原始日志';
         }
 
-        function toggleHeadersAll(containerId, element) {
-            const container = document.getElementById(containerId);
-            if (!container) return;
-            const tables = container.querySelectorAll('.headers-table');
-            let expanded = false;
-            tables.forEach(t => {
-                const now = t.classList.toggle('show-all');
-                expanded = expanded || now;
-            });
-            element.textContent = expanded ? '收起请求/响应头' : '展开请求/响应头';
+        function toggleHeadersAll(sectionId, element) {
+            const section = document.getElementById(sectionId);
+            if (!section) return;
+            const isVisible = section.style.display !== 'none';
+            section.style.display = isVisible ? 'none' : 'block';
+            element.textContent = isVisible ? '展开请求/响应头' : '收起请求/响应头';
+            if (!isVisible) {
+                section.querySelectorAll('.headers-table').forEach(t => t.classList.add('show-all'));
+            }
         }
 
         // 更新统计
