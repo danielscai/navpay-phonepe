@@ -724,13 +724,16 @@
                 ` : ''}
 
                 <div class="detail-section">
-                    <div class="detail-title">URL</div>
+                    <div class="detail-title">
+                        URL
+                        <span class="headers-toggle" onclick="toggleHeadersAll('headers-${log.id}', this)">展开请求/响应头</span>
+                    </div>
                     <div class="detail-url">${escapeHtml(log.url)}</div>
                 </div>
 
                 <div class="detail-section">
                     <div class="detail-title">请求 / 响应头</div>
-                    <div class="detail-columns">
+                    <div class="detail-columns" id="headers-${log.id}">
                         <div>
                             <div class="column-title">请求头 <span class="header-count">${requestHeaderCount} 个</span></div>
                             ${renderHeaders(log.requestHeaders, 0)}
@@ -787,7 +790,6 @@
                         `;
                     }).join('')}
                 </table>
-                ${entries.length > limit ? `<div class="headers-toggle" onclick="toggleHeaders(this)">展开 ${entries.length} 个</div>` : ''}
             `;
         }
 
@@ -911,11 +913,16 @@
             element.innerHTML = isVisible ? '▼ 隐藏原始日志' : '▶ 查看原始日志';
         }
 
-        function toggleHeaders(element) {
-            const table = element.previousElementSibling;
-            const isExpanded = table.classList.toggle('show-all');
-            const remaining = table.querySelectorAll('.extra').length;
-            element.textContent = isExpanded ? '收起' : `展开其余 ${remaining} 个`;
+        function toggleHeadersAll(containerId, element) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            const tables = container.querySelectorAll('.headers-table');
+            let expanded = false;
+            tables.forEach(t => {
+                const now = t.classList.toggle('show-all');
+                expanded = expanded || now;
+            });
+            element.textContent = expanded ? '收起请求/响应头' : '展开请求/响应头';
         }
 
         // 更新统计
