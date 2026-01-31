@@ -41,5 +41,18 @@
     ],
     "inject_script": "tools/patch_https_interceptor.sh",
     "readonly": false
+  },
+  "phonepe_phonepehelper": {
+    "deps": ["phonepe_https_interceptor"],
+    "path": "cache/phonepe_phonepehelper",
+    "source_cache": "phonepe_https_interceptor",
+    "reset_paths": [
+      "smali_classes*/com/sigbypass/HookEntry.smali"
+    ],
+    "added_paths": [
+      "smali_classes*"
+    ],
+    "inject_script": "tools/patch_phonepehelper.sh",
+    "readonly": false
   }
 }

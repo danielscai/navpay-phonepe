@@ -19,12 +19,15 @@ DEFAULT_PACKAGE = "com.phonepe.app"
 DEFAULT_SERIAL = "emulator-5554"
 SIGBYPASS_BUILD_DIR = "cache/phonepe_sigbypass_build"
 HTTPS_BUILD_DIR = "cache/phonepe_https_interceptor_build"
+PHONEPEHELPER_BUILD_DIR = "cache/phonepe_phonepehelper_build"
 DEFAULT_UNSIGNED_APK = "patched_unsigned.apk"
 DEFAULT_ALIGNED_APK = "patched_aligned.apk"
 DEFAULT_SIGNED_APK = "patched_signed.apk"
 DEFAULT_ACTIVITY = ".launch.core.main.ui.MainActivity"
 SIGBYPASS_LOG_TAG = "SigBypass"
 HTTPS_LOG_TAG = "HttpInterceptor"
+PPHELPER_LOG_TAG = "PPHelper"
+PPHELPER_LOG_MATCH = "PhonePeHelper initialized"
 SIGBYPASS_LOGIN_ACTIVITY = "com.phonepe.login.internal.ui.views.LoginActivity"
 DEFAULT_TIMEOUT_SEC = 12
 
@@ -433,6 +436,41 @@ def sigbypass_inject(cache_path: Path, inject_script: Path, reset_paths, added_p
             ensure_writable_shallow(p)
     run([str(inject_script), str(cache_path)], cwd=REPO_ROOT)
 
+def phonepehelper_pre_cache(cache_path: Path, source_root: Path, reset_paths, added_paths, delete_first: bool):
+    if not source_root.exists():
+        raise RuntimeError(f"Source cache not found: {source_root}")
+
+    if delete_first and cache_path.exists():
+        delete_cache_dir(cache_path)
+
+    if not cache_path.exists():
+        shutil.copytree(source_root, cache_path)
+    else:
+        refresh_cache_paths(cache_path, source_root, reset_paths, added_paths, "PPHELPER")
+    meta = {
+        "created_at": datetime.now().isoformat(),
+        "source": str(source_root),
+        "mode": "pre-cache",
+        "delete": bool(delete_first),
+    }
+    write_meta(cache_path / "meta.json", meta)
+
+def phonepehelper_inject(cache_path: Path, inject_script: Path, reset_paths, added_paths):
+    if not cache_path.exists():
+        raise RuntimeError(f"Phonepehelper cache not found: {cache_path}")
+    if not inject_script.exists():
+        raise RuntimeError(f"Inject script not found: {inject_script}")
+    if not os.access(inject_script, os.X_OK):
+        raise RuntimeError(f"Inject script not executable: {inject_script}")
+    ensure_writable_shallow(cache_path)
+    for rel in (reset_paths or []):
+        for p in expand_globs(cache_path, rel):
+            ensure_writable_shallow(p)
+    for rel in (added_paths or []):
+        for p in expand_globs(cache_path, rel):
+            ensure_writable_shallow(p)
+    run([str(inject_script), str(cache_path)], cwd=REPO_ROOT)
+
 def https_inject(cache_path: Path, inject_script: Path, reset_paths, added_paths):
     if not cache_path.exists():
         raise RuntimeError(f"HTTPS cache not found: {cache_path}")
@@ -491,6 +529,7 @@ def sigbypass_test(
     serial: str,
     login_activity: Optional[str] = None,
     clear_data: bool = False,
+    start_retries: int = 1,
 ):
     if not signed_apk.exists():
         raise RuntimeError(f"Signed APK not found: {signed_apk}")
@@ -505,8 +544,17 @@ def sigbypass_test(
     run([adb, "-s", device, "install", "-r", str(signed_apk)])
     if clear_data:
         run([adb, "-s", device, "shell", "pm", "clear", package])
-    run([adb, "-s", device, "shell", "am", "force-stop", package])
-    run([adb, "-s", device, "shell", "am", "start", "-n", f"{package}/{activity}"])
+    last_start_out = ""
+    for _ in range(max(1, start_retries)):
+        run([adb, "-s", device, "shell", "am", "force-stop", package])
+        out = subprocess.check_output(
+            [adb, "-s", device, "shell", "am", "start", "-n", f"{package}/{activity}"],
+            text=True,
+        )
+        last_start_out = out or ""
+        if "Error:" not in last_start_out and "Exception" not in last_start_out:
+            break
+        time.sleep(1)
 
     deadline = datetime.now().timestamp() + timeout_sec
     found_log = False
@@ -538,6 +586,54 @@ def sigbypass_test(
             f"Login activity not detected in task stack: {login_activity}. "
             f"See: {dumpsys_path}"
         )
+
+def phonepehelper_test(
+    signed_apk: Path,
+    package: str,
+    activity: str,
+    serial: str,
+    retries: int = 3,
+    sleep_sec: int = 8,
+):
+    if not signed_apk.exists():
+        raise RuntimeError(f"Signed APK not found: {signed_apk}")
+    adb = adb_path()
+    device = select_device(adb, serial)
+
+    work_dir = signed_apk.parent
+    logcat_path = work_dir / "logcat_pphelper.txt"
+    dumpsys_path = work_dir / "dumpsys_activities.txt"
+    pid_path = work_dir / "pidof.txt"
+    diag_path = work_dir / "logcat_injection.txt"
+
+    run([adb, "-s", device, "install", "-r", str(signed_apk)])
+    run([adb, "-s", device, "logcat", "-c"])
+
+    for _ in range(retries):
+        run([adb, "-s", device, "shell", "am", "force-stop", package])
+        run([adb, "-s", device, "shell", "am", "start", "-n", f"{package}/{activity}"])
+        time.sleep(sleep_sec)
+
+        try:
+            subprocess.check_output([adb, "-s", device, "shell", "pidof", package], text=True)
+        except subprocess.CalledProcessError:
+            continue
+
+        logs = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-s", PPHELPER_LOG_TAG], text=True)
+        if PPHELPER_LOG_MATCH in logs:
+            return
+
+    pid = subprocess.check_output([adb, "-s", device, "shell", "pidof", package], text=True).strip()
+    pid_path.write_text(pid or "", encoding="utf-8")
+    dumpsys = subprocess.check_output([adb, "-s", device, "shell", "dumpsys", "activity", "activities"], text=True)
+    dumpsys_path.write_text(dumpsys or "", encoding="utf-8")
+    diag = subprocess.check_output([adb, "-s", device, "logcat", "-d"], text=True)
+    diag_path.write_text(diag or "", encoding="utf-8")
+    logcat_path.write_text(
+        subprocess.check_output([adb, "-s", device, "logcat", "-d", "-s", PPHELPER_LOG_TAG], text=True),
+        encoding="utf-8",
+    )
+    raise RuntimeError(f"PPHelper logs not found. See: {logcat_path}")
 
 
 def rerun_app(signed_apk: Path, package: str, activity: str, serial: str, retries: int = 3):
@@ -695,6 +791,11 @@ def main():
     https.add_argument("--serial")
     https.add_argument("-d", "--delete", action="store_true", default=False)
 
+    phonepehelper = sub.add_parser("phonepehelper")
+    phonepehelper.add_argument("action", choices=["pre-cache", "inject", "compile", "test"])
+    phonepehelper.add_argument("--serial")
+    phonepehelper.add_argument("-d", "--delete", action="store_true", default=False)
+
     args = parser.parse_args()
     manifest = load_manifest()
 
@@ -771,6 +872,7 @@ def main():
                 args.serial or "",
                 login_activity,
                 clear_data,
+                3,
             )
         else:
             raise RuntimeError(f"Unknown sigbypass action: {action}")
@@ -834,11 +936,65 @@ def main():
                 timeout,
                 args.serial or "",
                 login_activity,
+                False,
+                3,
             )
         elif action == "rerun":
             rerun_app(work_dir / signed, package, activity, args.serial or "")
         else:
             raise RuntimeError(f"Unknown https action: {action}")
+    elif args.cmd == "phonepehelper":
+        cfg = manifest.get("phonepe_phonepehelper")
+        if not cfg:
+            raise RuntimeError("phonepe_phonepehelper missing from manifest")
+        source_cache = cfg.get("source_cache")
+        if not source_cache or source_cache not in manifest:
+            raise RuntimeError("phonepe_phonepehelper missing valid source_cache in manifest")
+
+        cache_path = resolve_cache_path(cfg["path"])
+        source_root = resolve_cache_path(manifest[source_cache]["path"])
+
+        reset_paths = cfg.get("reset_paths", [])
+        added_paths = cfg.get("added_paths", [])
+        if not reset_paths:
+            raise RuntimeError("phonepe_phonepehelper missing reset_paths in manifest")
+
+        inject_script_cfg = cfg.get("inject_script")
+        if not inject_script_cfg:
+            raise RuntimeError("phonepe_phonepehelper missing inject_script in manifest")
+        inject_script = (REPO_ROOT / inject_script_cfg).resolve()
+
+        work_dir = resolve_cache_path(PHONEPEHELPER_BUILD_DIR)
+        unsigned = DEFAULT_UNSIGNED_APK
+        aligned = DEFAULT_ALIGNED_APK
+        signed = DEFAULT_SIGNED_APK
+
+        package = DEFAULT_PACKAGE
+        activity = DEFAULT_ACTIVITY
+
+        def do_pre_cache():
+            phonepehelper_pre_cache(cache_path, source_root, reset_paths, added_paths, args.delete)
+
+        def do_inject():
+            do_pre_cache()
+            phonepehelper_inject(cache_path, inject_script, reset_paths, added_paths)
+
+        def do_compile():
+            do_inject()
+            sigbypass_compile(cache_path, work_dir, unsigned, aligned, signed)
+
+        action = args.action
+        if action == "pre-cache":
+            do_pre_cache()
+        elif action == "inject":
+            do_inject()
+        elif action == "compile":
+            do_compile()
+        elif action == "test":
+            do_compile()
+            phonepehelper_test(work_dir / signed, package, activity, args.serial or "")
+        else:
+            raise RuntimeError(f"Unknown phonepehelper action: {action}")
     else:
         raise RuntimeError("Unknown command")
 

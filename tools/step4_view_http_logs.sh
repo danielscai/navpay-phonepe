@@ -9,20 +9,21 @@ DEVICE_SERIAL=""
 
 usage() {
   cat <<'USAGE'
-Usage: tools/step4_view_http_logs.sh [app|sigbypass|https] [-s <serial>]
+Usage: tools/step4_view_http_logs.sh [app|sigbypass|https|pehelp] [-s <serial>]
 
 默认显示 app 的所有日志（按 PID 过滤）
 指定模式：
   app        显示 app 全部日志（默认）
   sigbypass  仅显示 SigBypass 日志
   https      仅显示 HttpInterceptor 日志
+  pehelp     仅显示 PPHelper 日志
 如需指定设备，传 -s <serial>
 USAGE
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    app|sigbypass|https)
+    app|sigbypass|https|pehelp)
       MODE="$1"
       shift
       ;;
@@ -82,6 +83,11 @@ case "$MODE" in
     ;;
   https)
     TAG="HttpInterceptor"
+    echo "[INFO] Showing logs by tag: $TAG"
+    exec adb -s "$DEVICE_SERIAL" logcat -s "$TAG"
+    ;;
+  pehelp)
+    TAG="PPHelper"
     echo "[INFO] Showing logs by tag: $TAG"
     exec adb -s "$DEVICE_SERIAL" logcat -s "$TAG"
     ;;
