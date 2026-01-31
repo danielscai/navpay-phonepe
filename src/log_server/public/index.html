@@ -445,6 +445,10 @@
             white-space: pre-wrap;
         }
 
+        .headers-fixed {
+            grid-template-columns: 1fr 1fr;
+        }
+
         .json-key {
             color: #4ecca3;
         }
@@ -748,7 +752,7 @@
 
                 <div class="detail-section headers-section" id="headers-${log.id}-section">
                     <div class="detail-title">请求 / 响应头</div>
-                    <div class="detail-columns">
+                    <div class="detail-columns headers-fixed">
                         <div>
                             <div class="column-title">请求头 <span class="header-count">${requestHeaderCount} 个</span></div>
                             ${renderHeaders(log.requestHeaders, 0)}
@@ -761,7 +765,6 @@
                 </div>
 
                 <div class="detail-section">
-                    <div class="detail-title">请求体 / 响应体</div>
                     <div class="detail-row">
                         <div>
                             <div class="column-title">请求体</div>
