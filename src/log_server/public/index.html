@@ -355,6 +355,7 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 16px;
+            width: 100%;
         }
 
         .detail-row {
@@ -447,6 +448,10 @@
 
         .headers-fixed {
             grid-template-columns: 1fr 1fr;
+        }
+
+        .headers-fixed > div {
+            min-width: 0;
         }
 
         .json-key {
