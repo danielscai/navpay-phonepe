@@ -17,8 +17,8 @@
 - **默认测试模拟器**：`emulator-5554`（后续测试默认使用该串号，除非在脚本参数中显式覆盖）。
 - **Android SDK 依赖**：测试脚本默认在 `$ANDROID_HOME` 或 `~/Library/Android/sdk` 下寻找 build-tools，优先 `35.0.0`；若缺失会自动搜索其他版本的 `zipalign/apksigner`，找不到则报错并提示安装 build-tools。
 - **Java 运行时**：`apksigner` 需要 Java，可用 `JAVA_HOME=/opt/homebrew/opt/openjdk`（macOS Homebrew 默认路径）。测试脚本会自动设置该默认值。
-- **测试 APK 基线**：统一从 `cache/phonepe_decompiled/base_decompiled_clean` 复制到工作目录，避免污染缓存；缓存由 `python3 src/cache/cache_manager.py rebuild` 生成。
-- **缓存管理入口**：`src/cache/cache_manager.py`（依赖关系配置见 `src/cache/cache_manifest.json`）。
+- **测试 APK 基线**：统一从 `cache/phonepe_decompiled/base_decompiled_clean` 复制到工作目录，避免污染缓存；缓存由 `python3 src/cache-manager/cache_manager.py rebuild` 生成。
+- **缓存管理入口**：`src/cache-manager/cache_manager.py`（依赖关系配置见 `src/cache-manager/cache_manifest.json`）。
 - **ADB 守护进程异常**：若出现 `could not install *smartsocket* listener: Operation not permitted`，优先使用 SDK 自带 adb（`$ANDROID_HOME/platform-tools/adb`），并执行 `adb kill-server && adb start-server` 后再重试。
 
 ## 推荐组织方式

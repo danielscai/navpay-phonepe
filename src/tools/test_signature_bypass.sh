@@ -78,7 +78,7 @@ export PATH="$JAVA_HOME/bin:$PATH"
 
 if [ ! -d "$BASELINE_DIR" ]; then
     log_error "Cache baseline not found: $BASELINE_DIR"
-    log_error "Run: python3 src/cache/cache_manager.py rebuild"
+    log_error "Run: python3 src/cache-manager/cache_manager.py rebuild"
     exit 1
 fi
 

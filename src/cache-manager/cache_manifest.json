@@ -1,0 +1,69 @@
+{
+  "phonepe_from_device": {
+    "deps": [],
+    "path": "cache/phonepe_from_device"
+  },
+  "phonepe_merged": {
+    "deps": ["phonepe_from_device"],
+    "path": "cache/phonepe_merged"
+  },
+  "phonepe_decompiled": {
+    "deps": ["phonepe_merged"],
+    "path": "cache/phonepe_decompiled"
+  },
+  "phonepe_sigbypass": {
+    "deps": ["phonepe_decompiled"],
+    "path": "cache/phonepe_sigbypass",
+    "source_cache": "phonepe_decompiled",
+    "source_subdir": "base_decompiled_clean",
+    "reset_paths": [
+      "smali/com/phonepe/app/PhonePeApplication.smali"
+    ],
+    "added_paths": [
+      "smali_classes*",
+      "lib/arm64-v8a/libpine.so",
+      "lib/armeabi-v7a/libpine.so"
+    ],
+    "inject_script": "src/signature_bypass/tools/merge.sh",
+    "compile": {
+      "work_dir": "cache/phonepe_sigbypass_build",
+      "unsigned_apk": "patched_unsigned.apk",
+      "aligned_apk": "patched_aligned.apk",
+      "signed_apk": "patched_signed.apk"
+    },
+    "test": {
+      "package": "com.phonepe.app",
+      "activity": ".launch.core.main.ui.MainActivity",
+      "log_tag": "SigBypass",
+      "timeout_sec": 12
+    },
+    "readonly": false
+  },
+  "phonepe_https_interceptor": {
+    "deps": ["phonepe_sigbypass"],
+    "path": "cache/phonepe_https_interceptor",
+    "source_cache": "phonepe_sigbypass",
+    "reset_paths": [
+      "smali*/okhttp3/OkHttpClient$Builder.smali",
+      "AndroidManifest.xml",
+      "res/xml/network_security_config.xml"
+    ],
+    "added_paths": [
+      "smali_classes*"
+    ],
+    "inject_script": "tools/patch_https_interceptor.sh",
+    "compile": {
+      "work_dir": "cache/phonepe_https_interceptor_build",
+      "unsigned_apk": "patched_unsigned.apk",
+      "aligned_apk": "patched_aligned.apk",
+      "signed_apk": "patched_signed.apk"
+    },
+    "test": {
+      "package": "com.phonepe.app",
+      "activity": ".launch.core.main.ui.MainActivity",
+      "log_tag": "HttpInterceptor",
+      "timeout_sec": 12
+    },
+    "readonly": false
+  }
+}

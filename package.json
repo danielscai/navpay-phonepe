@@ -14,13 +14,14 @@
     "logs": "./tools/step4_view_http_logs.sh",
     "logs:crash": "adb logcat | grep -i -E \"(FATAL EXCEPTION|AndroidRuntime|SIGABRT|SIGSEGV|CRASH)\"",
     "patch:phonepehelper": "./tools/patch_phonepehelper.sh",
-    "graph": "python3 src/cache/cache_manager.py graph",
-    "status": "python3 src/cache/cache_manager.py status",
-    "reset": "python3 src/cache/cache_manager.py reset",
-    "rebuild": "python3 src/cache/cache_manager.py rebuild",
-    "rebuild-only": "python3 src/cache/cache_manager.py rebuild --only",
-    "merge": "python3 src/cache/cache_manager.py rebuild --only phonepe_merged",
-    "decomp": "python3 src/cache/cache_manager.py rebuild --only phonepe_decompiled",
-    "sigbypass": "python3 src/cache/cache_manager.py sigbypass"
+    "graph": "python3 src/cache-manager/cache_manager.py graph",
+    "status": "python3 src/cache-manager/cache_manager.py status",
+    "reset": "python3 src/cache-manager/cache_manager.py reset",
+    "rebuild": "python3 src/cache-manager/cache_manager.py rebuild",
+    "rebuild-only": "python3 src/cache-manager/cache_manager.py rebuild --only",
+    "merge": "python3 src/cache-manager/cache_manager.py rebuild --only phonepe_merged",
+    "decomp": "python3 src/cache-manager/cache_manager.py rebuild --only phonepe_decompiled",
+    "sigbypass": "python3 src/cache-manager/cache_manager.py sigbypass",
+    "https": "python3 src/cache-manager/cache_manager.py https"
   }
 }
