@@ -14,9 +14,11 @@ public final class ModuleInit {
 
     public static void init(Context context) {
         if (context == null) {
+            Log.w(TAG, "PhonePeHelper init skipped: context null");
             return;
         }
         if (initialized) {
+            Log.i(TAG, "PhonePeHelper already initialized");
             return;
         }
         initialized = true;

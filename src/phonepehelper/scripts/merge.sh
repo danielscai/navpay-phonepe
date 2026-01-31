@@ -136,8 +136,7 @@ if "Lcom/phonepehelper/ModuleInit;->init" in method:
     sys.exit(0)
 
 snippet = (
-    "    sget-object v0, Lcom/sigbypass/HookEntry;->appContext:Landroid/content/Context;\n"
-    "    invoke-static {v0}, Lcom/phonepehelper/ModuleInit;->init(Landroid/content/Context;)V\n"
+    "    invoke-static {p0}, Lcom/phonepehelper/ModuleInit;->init(Landroid/content/Context;)V\n"
 )
 
 inserted = False

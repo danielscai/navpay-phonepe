@@ -27,7 +27,7 @@ DEFAULT_ACTIVITY = ".launch.core.main.ui.MainActivity"
 SIGBYPASS_LOG_TAG = "SigBypass"
 HTTPS_LOG_TAG = "HttpInterceptor"
 PPHELPER_LOG_TAG = "PPHelper"
-PPHELPER_LOG_MATCH = "PhonePeHelper initialized"
+PPHELPER_LOG_MATCH = ("PhonePeHelper initialized", "PhonePeHelper already initialized")
 SIGBYPASS_LOGIN_ACTIVITY = "com.phonepe.login.internal.ui.views.LoginActivity"
 DEFAULT_TIMEOUT_SEC = 12
 
@@ -606,6 +606,8 @@ def phonepehelper_test(
     pid_path = work_dir / "pidof.txt"
     diag_path = work_dir / "logcat_injection.txt"
 
+    run([adb, "-s", device, "shell", "am", "force-stop", package])
+    subprocess.call([adb, "-s", device, "uninstall", package])
     run([adb, "-s", device, "install", "-r", str(signed_apk)])
     run([adb, "-s", device, "logcat", "-c"])
 
@@ -620,7 +622,7 @@ def phonepehelper_test(
             continue
 
         logs = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-s", PPHELPER_LOG_TAG], text=True)
-        if PPHELPER_LOG_MATCH in logs:
+        if any(m in logs for m in PPHELPER_LOG_MATCH):
             return
 
     pid = subprocess.check_output([adb, "-s", device, "shell", "pidof", package], text=True).strip()
