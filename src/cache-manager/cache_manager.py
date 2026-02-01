@@ -32,6 +32,39 @@ SIGBYPASS_LOGIN_ACTIVITY = "com.phonepe.login.internal.ui.views.LoginActivity"
 DEFAULT_TIMEOUT_SEC = 12
 DEFAULT_TEST_MODE = "sigbypass"
 
+COLOR_RESET = "\033[0m"
+COLOR_BLUE = "\033[0;34m"
+COLOR_GREEN = "\033[0;32m"
+COLOR_YELLOW = "\033[1;33m"
+COLOR_RED = "\033[0;31m"
+COLOR_DIM = "\033[2m"
+
+
+def log_step(msg: str):
+    print(f"{COLOR_BLUE}== {msg} =={COLOR_RESET}")
+
+
+def log_info(msg: str):
+    print(f"{COLOR_GREEN}[INFO]{COLOR_RESET} {msg}")
+
+
+def log_warn(msg: str):
+    print(f"{COLOR_YELLOW}[WARN]{COLOR_RESET} {msg}")
+
+
+def log_error(msg: str):
+    print(f"{COLOR_RED}[FAIL]{COLOR_RESET} {msg}")
+
+
+def log_run(cmd):
+    cmd_str = " ".join(cmd)
+    print(f"{COLOR_DIM}[RUN]{COLOR_RESET} {cmd_str}")
+
+
+def log_cmd_output(label: str, line: str):
+    label_str = f"[{label}]"
+    print(f"{COLOR_DIM}{label_str}{COLOR_RESET} {line.rstrip()}")
+
 MODULE_DEFAULTS = {
     "phonepe_sigbypass": {
         "label": "SIGBYPASS",
@@ -182,8 +215,24 @@ def copy_path(src_path: Path, src_root: Path, dst_root: Path):
 
 
 def run(cmd, cwd=None, env=None):
-    print(f"[RUN] {' '.join(cmd)}")
-    subprocess.check_call(cmd, cwd=cwd, env=env)
+    log_run(cmd)
+    label = Path(cmd[0]).name if cmd else "cmd"
+    proc = subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        if line.strip():
+            log_cmd_output(label, line)
+    proc.wait()
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, cmd)
 
 
 def adb_path():
@@ -345,12 +394,12 @@ def refresh_cache_paths(cache_path: Path, source_root: Path, reset_paths, added_
     if not source_root.exists():
         raise RuntimeError(f"Source decompiled cache not found: {source_root}")
 
-    print(f"[{label}] target={cache_path}")
-    print(f"[{label}] source={source_root}")
+    log_info(f"[{label}] target={cache_path}")
+    log_info(f"[{label}] source={source_root}")
     if reset_paths:
-        print(f"[{label}] reset_paths={len(reset_paths)}")
+        log_info(f"[{label}] reset_paths={len(reset_paths)}")
     if added_paths:
-        print(f"[{label}] added_paths={len(added_paths)}")
+        log_info(f"[{label}] added_paths={len(added_paths)}")
 
     if not cache_path.exists():
         shutil.copytree(source_root, cache_path)
@@ -361,7 +410,7 @@ def refresh_cache_paths(cache_path: Path, source_root: Path, reset_paths, added_
                 if src.exists():
                     continue
                 if dst.exists():
-                    print(f"[{label}] delete added {dst}")
+                    log_info(f"[{label}] delete added {dst}")
                     if dst.is_dir():
                         ensure_writable(dst)
                         delete_cache_dir(dst)
@@ -380,7 +429,7 @@ def refresh_cache_paths(cache_path: Path, source_root: Path, reset_paths, added_
                         copy_path(src, source_root, cache_path)
                 else:
                     for dst in cache_path.glob(rel):
-                        print(f"[{label}] remove missing {dst}")
+                        log_info(f"[{label}] remove missing {dst}")
                         if dst.is_dir():
                             ensure_writable(dst)
                             delete_cache_dir(dst)
@@ -391,12 +440,12 @@ def refresh_cache_paths(cache_path: Path, source_root: Path, reset_paths, added_
                 src = source_root / rel
                 dst = cache_path / rel
                 if src.exists():
-                    print(f"[{label}] copy {src}")
+                    log_info(f"[{label}] copy {src}")
                     ensure_writable(dst)
                     copy_path(src, source_root, cache_path)
                 else:
                     if dst.exists():
-                        print(f"[{label}] remove missing {dst}")
+                        log_info(f"[{label}] remove missing {dst}")
                         if dst.is_dir():
                             ensure_writable(dst)
                             delete_cache_dir(dst)
@@ -533,16 +582,17 @@ def sigbypass_compile(cache_path: Path, work_dir: Path, unsigned_apk: str, align
     run([str(apksigner), "sign", "--ks", str(keystore), "--ks-pass", "pass:android", "--out", str(signed), str(aligned)], env=env)
     run([str(apksigner), "verify", "-v", str(signed)], env=env)
 
-def sigbypass_test(
+def unified_test(
     signed_apk: Path,
     package: str,
     activity: str,
+    login_activity: str,
     log_tag: str,
     timeout_sec: int,
     serial: str,
-    login_activity: Optional[str] = None,
     clear_data: bool = False,
-    start_retries: int = 1,
+    start_retries: int = 3,
+    check_interval: int = 1,
 ):
     if not signed_apk.exists():
         raise RuntimeError(f"Signed APK not found: {signed_apk}")
@@ -552,6 +602,21 @@ def sigbypass_test(
     work_dir = signed_apk.parent
     logcat_path = work_dir / f"logcat_{log_tag}.txt"
     dumpsys_path = work_dir / "dumpsys_activities.txt"
+
+    run([adb, "-s", device, "shell", "am", "force-stop", package])
+    stopped = False
+    for _ in range(5):
+        try:
+            out = subprocess.check_output([adb, "-s", device, "shell", "pidof", package], text=True).strip()
+        except subprocess.CalledProcessError:
+            out = ""
+        if not out:
+            stopped = True
+            break
+        time.sleep(1)
+        run([adb, "-s", device, "shell", "am", "force-stop", package])
+    if not stopped:
+        raise RuntimeError(f"Failed to stop app before install: {package}")
 
     run([adb, "-s", device, "logcat", "-c"])
     run([adb, "-s", device, "install", "-r", str(signed_apk)])
@@ -569,86 +634,75 @@ def sigbypass_test(
             break
         time.sleep(1)
 
+    log_step(f"Test: wait for activities + log tag '{log_tag}'")
     deadline = datetime.now().timestamp() + timeout_sec
     found_log = False
-    found_login = login_activity is None
+    found_activity = False
+    found_login = False
     last_log = ""
     last_dumpsys = ""
+    last_crash = ""
+    crash_path = work_dir / "logcat_crash.txt"
     while datetime.now().timestamp() < deadline:
-        out = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-s", log_tag], text=True)
-        if out.strip():
-            last_log = out
-            found_log = True
-        if login_activity:
-            dumpsys = subprocess.check_output([adb, "-s", device, "shell", "dumpsys", "activity", "activities"], text=True)
-            last_dumpsys = dumpsys
-            if login_activity in dumpsys:
-                found_login = True
-        if found_log and found_login:
-            break
-        time.sleep(1)
+        dumpsys = subprocess.check_output([adb, "-s", device, "shell", "dumpsys", "activity", "activities"], text=True)
+        last_dumpsys = dumpsys
+        if activity in dumpsys:
+            found_activity = True
+        if login_activity in dumpsys:
+            found_login = True
+        try:
+            pid = subprocess.check_output([adb, "-s", device, "shell", "pidof", package], text=True).strip()
+        except subprocess.CalledProcessError:
+            pid = ""
+        if not pid:
+            crash = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-b", "crash"], text=True)
+            last_crash = crash
+            if crash.strip():
+                crash_path.write_text(crash, encoding="utf-8")
+                lines = [ln for ln in crash.splitlines() if ln.strip()]
+                if lines:
+                    log_error("Crash log (latest, max 10 lines):")
+                    for ln in lines[-10:]:
+                        log_error(ln)
+            log_error("TEST RESULT: FAILED (app exited)")
+            raise RuntimeError(f"App process not running; possible crash. See: {crash_path}")
+        if found_activity and found_login:
+            if found_activity and found_login:
+                log_info(f"[TEST] activities ready: {activity} + {login_activity}")
+            out = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-s", log_tag], text=True)
+            if out.strip():
+                last_log = out
+                found_log = True
+                break
+        time.sleep(check_interval)
+
+    if not found_activity or not found_login:
+        dumpsys_path.write_text(last_dumpsys or "", encoding="utf-8")
+        log_error("TEST RESULT: FAILED (activity check)")
+        raise RuntimeError(
+            f"Activity check failed (activity={activity}, login={login_activity}). "
+            f"See: {dumpsys_path}"
+        )
+    crash = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-b", "crash"], text=True)
+    if crash.strip():
+        last_crash = crash
+        crash_path.write_text(crash, encoding="utf-8")
+        lines = [ln for ln in crash.splitlines() if ln.strip()]
+        if lines:
+            log_error("Crash log (latest, max 10 lines):")
+            for ln in lines[-10:]:
+                log_error(ln)
+        log_error("TEST RESULT: FAILED (crash detected)")
+        raise RuntimeError(f"Crash detected in logcat crash buffer. See: {crash_path}")
     if not found_log:
         logcat_path.write_text(last_log or "", encoding="utf-8")
+        log_error("TEST RESULT: FAILED (log tag not found)")
         raise RuntimeError(
             f"No log output for tag '{log_tag}' within {timeout_sec}s. "
             f"See: {logcat_path}"
         )
-    if not found_login:
-        dumpsys_path.write_text(last_dumpsys or "", encoding="utf-8")
-        raise RuntimeError(
-            f"Login activity not detected in task stack: {login_activity}. "
-            f"See: {dumpsys_path}"
-        )
-
-def phonepehelper_test(
-    signed_apk: Path,
-    package: str,
-    activity: str,
-    serial: str,
-    retries: int = 3,
-    sleep_sec: int = 8,
-):
-    if not signed_apk.exists():
-        raise RuntimeError(f"Signed APK not found: {signed_apk}")
-    adb = adb_path()
-    device = select_device(adb, serial)
-
-    work_dir = signed_apk.parent
-    logcat_path = work_dir / "logcat_pphelper.txt"
-    dumpsys_path = work_dir / "dumpsys_activities.txt"
-    pid_path = work_dir / "pidof.txt"
-    diag_path = work_dir / "logcat_injection.txt"
-
-    run([adb, "-s", device, "shell", "am", "force-stop", package])
-    subprocess.call([adb, "-s", device, "uninstall", package])
-    run([adb, "-s", device, "install", "-r", str(signed_apk)])
-    run([adb, "-s", device, "logcat", "-c"])
-
-    for _ in range(retries):
-        run([adb, "-s", device, "shell", "am", "force-stop", package])
-        run([adb, "-s", device, "shell", "am", "start", "-n", f"{package}/{activity}"])
-        time.sleep(sleep_sec)
-
-        try:
-            subprocess.check_output([adb, "-s", device, "shell", "pidof", package], text=True)
-        except subprocess.CalledProcessError:
-            continue
-
-        logs = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-s", PPHELPER_LOG_TAG], text=True)
-        if any(m in logs for m in PPHELPER_LOG_MATCH):
-            return
-
-    pid = subprocess.check_output([adb, "-s", device, "shell", "pidof", package], text=True).strip()
-    pid_path.write_text(pid or "", encoding="utf-8")
-    dumpsys = subprocess.check_output([adb, "-s", device, "shell", "dumpsys", "activity", "activities"], text=True)
-    dumpsys_path.write_text(dumpsys or "", encoding="utf-8")
-    diag = subprocess.check_output([adb, "-s", device, "logcat", "-d"], text=True)
-    diag_path.write_text(diag or "", encoding="utf-8")
-    logcat_path.write_text(
-        subprocess.check_output([adb, "-s", device, "logcat", "-d", "-s", PPHELPER_LOG_TAG], text=True),
-        encoding="utf-8",
-    )
-    raise RuntimeError(f"PPHelper logs not found. See: {logcat_path}")
+    log_info(f"[TEST] injection verified: log tag '{log_tag}' present")
+    log_step(f"TEST RESULT: SUCCESS ({log_tag})")
 
 
 def rerun_app(signed_apk: Path, package: str, activity: str, serial: str, retries: int = 3):
@@ -812,10 +866,6 @@ def resolve_module_spec(manifest, name: str):
         raise RuntimeError(f"{name} missing build_dir")
 
     test_mode = cfg.get("test_mode") or default_module_option(name, "test_mode", DEFAULT_TEST_MODE)
-    test_script_cfg = cfg.get("test_script")
-    test_script = (REPO_ROOT / test_script_cfg).resolve() if test_script_cfg else None
-    if test_mode == "script" and not test_script:
-        raise RuntimeError(f"{name} test_mode=script requires test_script")
 
     return {
         "name": name,
@@ -836,7 +886,6 @@ def resolve_module_spec(manifest, name: str):
         "login_activity": cfg.get("login_activity") or default_module_option(name, "login_activity"),
         "clear_data": bool(cfg.get("clear_data", default_module_option(name, "clear_data", False))),
         "test_mode": test_mode,
-        "test_script": test_script,
         "supports_rerun": bool(cfg.get("supports_rerun", default_module_option(name, "supports_rerun", False))),
     }
 
@@ -877,39 +926,17 @@ def module_compile(spec, delete_first: bool):
 def module_test(spec, delete_first: bool, serial: str):
     module_compile(spec, delete_first)
     signed_apk = spec["work_dir"] / spec["signed"]
-    if spec["test_mode"] == "sigbypass":
-        sigbypass_test(
+    if spec["test_mode"] in ("sigbypass", "unified"):
+        unified_test(
             signed_apk,
             spec["package"],
             spec["activity"],
+            spec["login_activity"],
             spec["log_tag"],
             spec["timeout"],
             serial,
-            spec["login_activity"],
             spec["clear_data"],
             3,
-        )
-    elif spec["test_mode"] == "phonepehelper":
-        phonepehelper_test(
-            signed_apk,
-            spec["package"],
-            spec["activity"],
-            serial,
-        )
-    elif spec["test_mode"] == "script":
-        if not spec["test_script"].exists():
-            raise RuntimeError(f"Test script not found: {spec['test_script']}")
-        if not os.access(spec["test_script"], os.X_OK):
-            raise RuntimeError(f"Test script not executable: {spec['test_script']}")
-        run(
-            [
-                str(spec["test_script"]),
-                str(signed_apk),
-                spec["package"],
-                spec["activity"],
-                serial or "",
-            ],
-            cwd=REPO_ROOT,
         )
     else:
         raise RuntimeError(f"Unknown test_mode: {spec['test_mode']}")
