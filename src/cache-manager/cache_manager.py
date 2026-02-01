@@ -214,7 +214,7 @@ def copy_path(src_path: Path, src_root: Path, dst_root: Path):
         shutil.copy2(src_path, dst_path)
 
 
-def run(cmd, cwd=None, env=None):
+def run(cmd, cwd=None, env=None, check: bool = True):
     log_run(cmd)
     label = Path(cmd[0]).name if cmd else "cmd"
     proc = subprocess.Popen(
@@ -231,7 +231,7 @@ def run(cmd, cwd=None, env=None):
         if line.strip():
             log_cmd_output(label, line)
     proc.wait()
-    if proc.returncode != 0:
+    if proc.returncode != 0 and check:
         raise subprocess.CalledProcessError(proc.returncode, cmd)
 
 
@@ -578,9 +578,50 @@ def sigbypass_compile(cache_path: Path, work_dir: Path, unsigned_apk: str, align
 
     build_jobs = max(1, os.cpu_count() or 1)
     run(["apktool", "b", "-j", str(build_jobs), "-nc", str(cache_path), "-o", str(unsigned)], env=env)
+    ensure_primary_dex_first(unsigned)
     run([str(zipalign), "-f", "4", str(unsigned), str(aligned)], env=env)
     run([str(apksigner), "sign", "--ks", str(keystore), "--ks-pass", "pass:android", "--out", str(signed), str(aligned)], env=env)
     run([str(apksigner), "verify", "-v", str(signed)], env=env)
+
+
+def ensure_primary_dex_first(apk_path: Path):
+    import re
+    import zipfile
+    from tempfile import NamedTemporaryFile
+
+    if not apk_path.exists():
+        return
+
+    dex_pattern = re.compile(r"^classes(?:\d+)?\.dex$")
+    with zipfile.ZipFile(apk_path, "r") as zf:
+        infos = zf.infolist()
+        dex_infos = [i for i in infos if dex_pattern.match(i.filename)]
+        if not dex_infos:
+            return
+        first_dex = dex_infos[0].filename
+        if first_dex == "classes.dex":
+            return
+        log_warn(f"Reordering dex entries in {apk_path.name}: primary was {first_dex}")
+
+        def dex_key(name: str):
+            if name == "classes.dex":
+                return 0
+            m = re.match(r"^classes(\d+)\.dex$", name)
+            return int(m.group(1)) if m else 9999
+
+        ordered_dex = sorted(dex_infos, key=lambda i: dex_key(i.filename))
+        dex_names = {i.filename for i in dex_infos}
+        other_infos = [i for i in infos if i.filename not in dex_names]
+
+        with NamedTemporaryFile(delete=False, suffix=".apk", dir=str(apk_path.parent)) as tmp:
+            temp_path = Path(tmp.name)
+        with zipfile.ZipFile(temp_path, "w") as out:
+            for info in ordered_dex + other_infos:
+                data = zf.read(info.filename)
+                out.writestr(info, data)
+
+        apk_path.unlink()
+        temp_path.rename(apk_path)
 
 def unified_test(
     signed_apk: Path,
@@ -619,6 +660,9 @@ def unified_test(
         raise RuntimeError(f"Failed to stop app before install: {package}")
 
     run([adb, "-s", device, "logcat", "-c"])
+    # Important: uninstall then reinstall to avoid stale app state.
+    # We observed flaky start/log detection unless the old APK is removed first.
+    run([adb, "-s", device, "uninstall", package], check=False)
     run([adb, "-s", device, "install", "-r", str(signed_apk)])
     if clear_data:
         run([adb, "-s", device, "shell", "pm", "clear", package])
@@ -626,23 +670,31 @@ def unified_test(
     for _ in range(max(1, start_retries)):
         run([adb, "-s", device, "shell", "am", "force-stop", package])
         out = subprocess.check_output(
-            [adb, "-s", device, "shell", "am", "start", "-n", f"{package}/{activity}"],
+            [adb, "-s", device, "shell", "am", "start", "-W", "-n", f"{package}/{activity}"],
             text=True,
         )
         last_start_out = out or ""
         if "Error:" not in last_start_out and "Exception" not in last_start_out:
             break
         time.sleep(1)
+    if last_start_out.strip():
+        for line in last_start_out.splitlines():
+            if "Warning" in line or "Error" in line:
+                log_warn(f"[am start] {line.strip()}")
 
     log_step(f"Test: wait for activities + log tag '{log_tag}'")
     deadline = datetime.now().timestamp() + timeout_sec
     found_log = False
     found_activity = False
     found_login = False
+    seen_pid = False
+    missing_pid_count = 0
     last_log = ""
     last_dumpsys = ""
     last_crash = ""
+    last_android = ""
     crash_path = work_dir / "logcat_crash.txt"
+    start_time = datetime.now().timestamp()
     while datetime.now().timestamp() < deadline:
         dumpsys = subprocess.check_output([adb, "-s", device, "shell", "dumpsys", "activity", "activities"], text=True)
         last_dumpsys = dumpsys
@@ -654,18 +706,45 @@ def unified_test(
             pid = subprocess.check_output([adb, "-s", device, "shell", "pidof", package], text=True).strip()
         except subprocess.CalledProcessError:
             pid = ""
+        if pid:
+            seen_pid = True
+            missing_pid_count = 0
         if not pid:
+            # Give logcat a moment to flush crash info
+            time.sleep(1)
             crash = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-b", "crash"], text=True)
+            android_rt = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-s", "AndroidRuntime"], text=True)
+            activity_mgr = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-s", "ActivityManager"], text=True)
             last_crash = crash
-            if crash.strip():
-                crash_path.write_text(crash, encoding="utf-8")
-                lines = [ln for ln in crash.splitlines() if ln.strip()]
+            last_android = android_rt
+            combined = "\n".join([crash.strip(), android_rt.strip()]).strip()
+            debug_blob = "\n".join([crash.strip(), android_rt.strip(), activity_mgr.strip()]).strip()
+            if debug_blob:
+                crash_path.write_text(debug_blob + "\n", encoding="utf-8")
+            if combined:
+                lines = [ln for ln in combined.splitlines() if ln.strip()]
                 if lines:
                     log_error("Crash log (latest, max 10 lines):")
                     for ln in lines[-10:]:
                         log_error(ln)
-            log_error("TEST RESULT: FAILED (app exited)")
-            raise RuntimeError(f"App process not running; possible crash. See: {crash_path}")
+                log_error("TEST RESULT: FAILED (crash detected)")
+                raise RuntimeError(f"Crash detected. See: {crash_path}")
+            elapsed = datetime.now().timestamp() - start_time
+            missing_pid_count += 1
+            if seen_pid and missing_pid_count >= 3 and (found_activity or found_login):
+                if debug_blob:
+                    crash_path.write_text(debug_blob + "\n", encoding="utf-8")
+                log_error("TEST RESULT: FAILED (app exited)")
+                log_error("Debug cmds: adb logcat -d -b crash; adb logcat -d -s AndroidRuntime; adb logcat -d -s ActivityManager")
+                raise RuntimeError(f"App process not running after activity appeared. See: {crash_path}")
+            if elapsed > timeout_sec:
+                if debug_blob:
+                    crash_path.write_text(debug_blob + "\n", encoding="utf-8")
+                log_error("TEST RESULT: FAILED (app did not start)")
+                log_error("Debug cmds: adb logcat -d -b crash; adb logcat -d -s AndroidRuntime; adb logcat -d -s ActivityManager")
+                raise RuntimeError(f"App process not running within timeout. See: {crash_path}")
+            time.sleep(check_interval)
+            continue
         if found_activity and found_login:
             if found_activity and found_login:
                 log_info(f"[TEST] activities ready: {activity} + {login_activity}")
@@ -684,16 +763,23 @@ def unified_test(
             f"See: {dumpsys_path}"
         )
     crash = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-b", "crash"], text=True)
-    if crash.strip():
+    android_rt = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-s", "AndroidRuntime"], text=True)
+    activity_mgr = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-s", "ActivityManager"], text=True)
+    if crash.strip() or android_rt.strip():
         last_crash = crash
-        crash_path.write_text(crash, encoding="utf-8")
-        lines = [ln for ln in crash.splitlines() if ln.strip()]
+        last_android = android_rt
+        combined = "\n".join([crash.strip(), android_rt.strip()]).strip()
+        debug_blob = "\n".join([crash.strip(), android_rt.strip(), activity_mgr.strip()]).strip()
+        if debug_blob:
+            crash_path.write_text(debug_blob + "\n", encoding="utf-8")
+        lines = [ln for ln in combined.splitlines() if ln.strip()]
         if lines:
             log_error("Crash log (latest, max 10 lines):")
             for ln in lines[-10:]:
                 log_error(ln)
         log_error("TEST RESULT: FAILED (crash detected)")
-        raise RuntimeError(f"Crash detected in logcat crash buffer. See: {crash_path}")
+        log_error("Debug cmds: adb logcat -d -b crash; adb logcat -d -s AndroidRuntime; adb logcat -d -s ActivityManager")
+        raise RuntimeError(f"Crash detected. See: {crash_path}")
     if not found_log:
         logcat_path.write_text(last_log or "", encoding="utf-8")
         log_error("TEST RESULT: FAILED (log tag not found)")
