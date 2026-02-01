@@ -66,32 +66,44 @@ def log_cmd_output(label: str, line: str):
     print(f"{COLOR_DIM}{label_str}{COLOR_RESET} {line.rstrip()}")
 
 MODULE_DEFAULTS = {
+    "phonepe_from_device": {
+        "path": "cache/phonepe_from_device",
+    },
+    "phonepe_merged": {
+        "path": "cache/phonepe_merged",
+    },
+    "phonepe_decompiled": {
+        "path": "cache/phonepe_decompiled",
+    },
     "phonepe_sigbypass": {
         "label": "SIGBYPASS",
+        "path": "cache/phonepe_sigbypass",
         "build_dir": SIGBYPASS_BUILD_DIR,
         "log_tag": SIGBYPASS_LOG_TAG,
         "login_activity": SIGBYPASS_LOGIN_ACTIVITY,
-        "clear_data": True,
-        "test_mode": "sigbypass",
-        "supports_rerun": False,
+        "test_mode": "unified",
+        "source_cache": "phonepe_decompiled",
+        "inject_script": "src/signature_bypass/scripts/inject.sh",
     },
     "phonepe_https_interceptor": {
         "label": "HTTPS",
+        "path": "cache/phonepe_https_interceptor",
         "build_dir": HTTPS_BUILD_DIR,
         "log_tag": HTTPS_LOG_TAG,
-        "login_activity": None,
-        "clear_data": False,
-        "test_mode": "sigbypass",
-        "supports_rerun": True,
+        "login_activity": SIGBYPASS_LOGIN_ACTIVITY,
+        "test_mode": "unified",
+        "source_cache": "phonepe_sigbypass",
+        "inject_script": "src/https_interceptor/scripts/inject.sh",
     },
     "phonepe_phonepehelper": {
         "label": "PPHELPER",
+        "path": "cache/phonepe_phonepehelper",
         "build_dir": PHONEPEHELPER_BUILD_DIR,
         "log_tag": PPHELPER_LOG_TAG,
-        "login_activity": None,
-        "clear_data": False,
-        "test_mode": "phonepehelper",
-        "supports_rerun": False,
+        "login_activity": SIGBYPASS_LOGIN_ACTIVITY,
+        "test_mode": "unified",
+        "source_cache": "phonepe_https_interceptor",
+        "inject_script": "src/phonepehelper/scripts/inject.sh",
     },
 }
 
@@ -101,7 +113,7 @@ def load_manifest():
         raise FileNotFoundError(f"Missing manifest: {MANIFEST_PATH}")
     data = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     for name, cfg in data.items():
-        if "deps" not in cfg or "path" not in cfg:
+        if "deps" not in cfg:
             raise ValueError(f"Invalid manifest entry: {name}")
     return data
 
@@ -154,27 +166,6 @@ def set_writable(path: Path):
     except Exception:
         pass
 
-
-def set_readonly(path: Path):
-    if not path.exists():
-        return
-    for root, dirs, files in os.walk(path, topdown=False):
-        for name in files:
-            p = Path(root) / name
-            try:
-                p.chmod(p.stat().st_mode & ~0o222)
-            except Exception:
-                pass
-        for name in dirs:
-            p = Path(root) / name
-            try:
-                p.chmod(p.stat().st_mode & ~0o222)
-            except Exception:
-                pass
-    try:
-        path.chmod(path.stat().st_mode & ~0o222)
-    except Exception:
-        pass
 
 def ensure_writable(path: Path):
     if not path.exists():
@@ -330,7 +321,6 @@ def build_phonepe_from_device(cache_path: Path, package: str, serial: str):
         "apk_paths": apk_paths,
     }
     write_meta(cache_path / "meta.json", meta)
-    set_readonly(cache_path)
 
 
 def build_phonepe_merged(cache_path: Path, input_path: Path, package: str, serial: str):
@@ -360,7 +350,6 @@ def build_phonepe_merged(cache_path: Path, input_path: Path, package: str, seria
         "input_cache": str(input_path),
     }
     write_meta(cache_path / "meta.json", meta)
-    set_readonly(cache_path)
 
 
 def build_phonepe_decompiled(cache_path: Path, merged_cache: Path):
@@ -380,7 +369,6 @@ def build_phonepe_decompiled(cache_path: Path, merged_cache: Path):
         "input_cache": str(merged_cache),
     }
     write_meta(cache_path / "meta.json", meta)
-    set_readonly(cache_path)
 
 def has_wildcards(rel: str) -> bool:
     return "*" in rel or "?" in rel or "[" in rel
@@ -631,7 +619,6 @@ def unified_test(
     log_tag: str,
     timeout_sec: int,
     serial: str,
-    clear_data: bool = False,
     start_retries: int = 3,
     check_interval: int = 1,
 ):
@@ -664,8 +651,6 @@ def unified_test(
     # We observed flaky start/log detection unless the old APK is removed first.
     run([adb, "-s", device, "uninstall", package], check=False)
     run([adb, "-s", device, "install", "-r", str(signed_apk)])
-    if clear_data:
-        run([adb, "-s", device, "shell", "pm", "clear", package])
     last_start_out = ""
     for _ in range(max(1, start_retries)):
         run([adb, "-s", device, "shell", "am", "force-stop", package])
@@ -791,28 +776,6 @@ def unified_test(
     log_step(f"TEST RESULT: SUCCESS ({log_tag})")
 
 
-def rerun_app(signed_apk: Path, package: str, activity: str, serial: str, retries: int = 3):
-    if not signed_apk.exists():
-        raise RuntimeError(f"Signed APK not found: {signed_apk}")
-    adb = adb_path()
-    device = select_device(adb, serial)
-
-    run([adb, "-s", device, "install", "-r", str(signed_apk)])
-
-    last_out = ""
-    for _ in range(retries):
-        run([adb, "-s", device, "shell", "am", "force-stop", package])
-        out = subprocess.check_output(
-            [adb, "-s", device, "shell", "am", "start", "-n", f"{package}/{activity}"],
-            text=True,
-        )
-        last_out = out or ""
-        if "Error:" not in last_out and "Exception" not in last_out:
-            return
-        time.sleep(1)
-    raise RuntimeError(f"Failed to start activity after {retries} attempts: {last_out.strip()}")
-
-
 def cmd_graph(manifest):
     rev = build_reverse_deps(manifest)
     roots = [name for name, cfg in manifest.items() if not cfg.get("deps")]
@@ -828,7 +791,7 @@ def cmd_graph(manifest):
 
 def cmd_status(manifest):
     for name, cfg in manifest.items():
-        path = resolve_cache_path(cfg["path"])
+        path = resolve_manifest_path(manifest, name)
         status = "present" if path.exists() else "missing"
         meta = path / "meta.json"
         meta_info = ""
@@ -844,7 +807,7 @@ def cmd_status(manifest):
 def delete_with_downstream(name, manifest, rev):
     for child in rev.get(name, []):
         delete_with_downstream(child, manifest, rev)
-    path = resolve_cache_path(manifest[name]["path"])
+    path = resolve_manifest_path(manifest, name)
     delete_cache_dir(path)
 
 
@@ -866,7 +829,7 @@ def cmd_reset(manifest, target=None):
         delete_with_downstream(target, manifest, rev)
     else:
         for name in topo_sort(manifest)[::-1]:
-            path = resolve_cache_path(manifest[name]["path"])
+            path = resolve_manifest_path(manifest, name)
             delete_cache_dir(path)
 
 
@@ -875,21 +838,21 @@ def cmd_rebuild(manifest, target=None, serial=None, package=None, with_downstrea
     package = package or DEFAULT_PACKAGE
 
     def build_one(name):
-        path = resolve_cache_path(manifest[name]["path"])
+        path = resolve_manifest_path(manifest, name)
         if name == "phonepe_from_device":
             build_phonepe_from_device(path, package, serial)
         elif name == "phonepe_merged":
-            input_path = resolve_cache_path(manifest["phonepe_from_device"]["path"])
+            input_path = resolve_manifest_path(manifest, "phonepe_from_device")
             build_phonepe_merged(path, input_path, package, serial)
         elif name == "phonepe_decompiled":
-            merged_path = resolve_cache_path(manifest["phonepe_merged"]["path"])
+            merged_path = resolve_manifest_path(manifest, "phonepe_merged")
             build_phonepe_decompiled(path, merged_path)
         elif name == "phonepe_sigbypass":
             cfg = manifest[name]
-            source_cache = cfg.get("source_cache")
-            if not source_cache or source_cache not in manifest:
+            source_cache = resolve_cfg_value(name, cfg, "source_cache", required=True)
+            if source_cache not in manifest:
                 raise RuntimeError("phonepe_sigbypass missing valid source_cache in manifest")
-            source_root = resolve_cache_path(manifest[source_cache]["path"])
+            source_root = resolve_manifest_path(manifest, source_cache)
             source_subdir = cfg.get("source_subdir")
             if source_subdir:
                 source_root = source_root / source_subdir
@@ -922,17 +885,31 @@ def cmd_rebuild(manifest, target=None, serial=None, package=None, with_downstrea
 def default_module_option(name, key, fallback=None):
     return MODULE_DEFAULTS.get(name, {}).get(key, fallback)
 
+def resolve_cfg_value(name, cfg, key, fallback=None, required: bool = False):
+    if key in cfg:
+        return cfg[key]
+    value = default_module_option(name, key, fallback)
+    if required and value is None:
+        raise RuntimeError(f"{name} missing {key}")
+    return value
+
+def resolve_manifest_path(manifest, name: str) -> Path:
+    cfg = manifest.get(name)
+    if not cfg:
+        raise RuntimeError(f"{name} missing from manifest")
+    rel = resolve_cfg_value(name, cfg, "path", required=True)
+    return resolve_cache_path(rel)
 
 def resolve_module_spec(manifest, name: str):
     cfg = manifest.get(name)
     if not cfg:
         raise RuntimeError(f"{name} missing from manifest")
-    source_cache = cfg.get("source_cache")
-    if not source_cache or source_cache not in manifest:
+    source_cache = resolve_cfg_value(name, cfg, "source_cache", required=True)
+    if source_cache not in manifest:
         raise RuntimeError(f"{name} missing valid source_cache in manifest")
 
-    cache_path = resolve_cache_path(cfg["path"])
-    source_root = resolve_cache_path(manifest[source_cache]["path"])
+    cache_path = resolve_manifest_path(manifest, name)
+    source_root = resolve_manifest_path(manifest, source_cache)
     source_subdir = cfg.get("source_subdir")
     if source_subdir:
         source_root = source_root / source_subdir
@@ -942,20 +919,16 @@ def resolve_module_spec(manifest, name: str):
     if not reset_paths:
         raise RuntimeError(f"{name} missing reset_paths in manifest")
 
-    inject_script_cfg = cfg.get("inject_script")
-    if not inject_script_cfg:
-        raise RuntimeError(f"{name} missing inject_script in manifest")
+    inject_script_cfg = resolve_cfg_value(name, cfg, "inject_script", required=True)
     inject_script = (REPO_ROOT / inject_script_cfg).resolve()
 
-    build_dir = cfg.get("build_dir") or default_module_option(name, "build_dir")
-    if not build_dir:
-        raise RuntimeError(f"{name} missing build_dir")
+    build_dir = resolve_cfg_value(name, cfg, "build_dir", required=True)
 
-    test_mode = cfg.get("test_mode") or default_module_option(name, "test_mode", DEFAULT_TEST_MODE)
+    test_mode = resolve_cfg_value(name, cfg, "test_mode", DEFAULT_TEST_MODE)
 
     return {
         "name": name,
-        "label": cfg.get("label") or default_module_option(name, "label", name.upper()),
+        "label": resolve_cfg_value(name, cfg, "label", name.upper()),
         "cache_path": cache_path,
         "source_root": source_root,
         "reset_paths": reset_paths,
@@ -967,12 +940,10 @@ def resolve_module_spec(manifest, name: str):
         "signed": cfg.get("signed") or DEFAULT_SIGNED_APK,
         "package": cfg.get("package") or DEFAULT_PACKAGE,
         "activity": cfg.get("activity") or DEFAULT_ACTIVITY,
-        "log_tag": cfg.get("log_tag") or default_module_option(name, "log_tag"),
+        "log_tag": resolve_cfg_value(name, cfg, "log_tag"),
         "timeout": cfg.get("timeout_sec") or DEFAULT_TIMEOUT_SEC,
-        "login_activity": cfg.get("login_activity") or default_module_option(name, "login_activity"),
-        "clear_data": bool(cfg.get("clear_data", default_module_option(name, "clear_data", False))),
+        "login_activity": resolve_cfg_value(name, cfg, "login_activity"),
         "test_mode": test_mode,
-        "supports_rerun": bool(cfg.get("supports_rerun", default_module_option(name, "supports_rerun", False))),
     }
 
 
@@ -1011,6 +982,10 @@ def module_compile(spec, delete_first: bool):
 
 def module_test(spec, delete_first: bool, serial: str):
     module_compile(spec, delete_first)
+    run_test(spec, serial)
+
+
+def run_test(spec, serial: str):
     signed_apk = spec["work_dir"] / spec["signed"]
     if spec["test_mode"] in ("sigbypass", "unified"):
         unified_test(
@@ -1021,7 +996,6 @@ def module_test(spec, delete_first: bool, serial: str):
             spec["log_tag"],
             spec["timeout"],
             serial,
-            spec["clear_data"],
             3,
         )
     else:
@@ -1029,10 +1003,7 @@ def module_test(spec, delete_first: bool, serial: str):
 
 
 def module_rerun(spec, serial: str):
-    if not spec["supports_rerun"]:
-        raise RuntimeError(f"Rerun not supported for module: {spec['name']}")
-    signed_apk = spec["work_dir"] / spec["signed"]
-    rerun_app(signed_apk, spec["package"], spec["activity"], serial)
+    run_test(spec, serial)
 
 
 def run_module_action(spec, action: str, delete_first: bool, serial: str):
@@ -1069,7 +1040,7 @@ def main():
     sigbypass = sub.add_parser("sigbypass")
     sigbypass.add_argument(
         "action",
-        choices=["pre-cache", "inject", "compile", "test"],
+        choices=["pre-cache", "inject", "compile", "test", "rerun"],
         nargs="?",
         default="test",
     )
@@ -1089,7 +1060,7 @@ def main():
     phonepehelper = sub.add_parser("phonepehelper")
     phonepehelper.add_argument(
         "action",
-        choices=["pre-cache", "inject", "compile", "test"],
+        choices=["pre-cache", "inject", "compile", "test", "rerun"],
         nargs="?",
         default="test",
     )

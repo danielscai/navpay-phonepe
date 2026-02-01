@@ -1,26 +1,15 @@
 {
   "phonepe_from_device": {
-    "deps": [],
-    "path": "cache/phonepe_from_device"
+    "deps": []
   },
   "phonepe_merged": {
-    "deps": ["phonepe_from_device"],
-    "path": "cache/phonepe_merged"
+    "deps": ["phonepe_from_device"]
   },
   "phonepe_decompiled": {
-    "deps": ["phonepe_merged"],
-    "path": "cache/phonepe_decompiled"
+    "deps": ["phonepe_merged"]
   },
   "phonepe_sigbypass": {
     "deps": ["phonepe_decompiled"],
-    "path": "cache/phonepe_sigbypass",
-    "build_dir": "cache/phonepe_sigbypass_build",
-    "label": "SIGBYPASS",
-    "log_tag": "SigBypass",
-    "login_activity": "com.phonepe.login.internal.ui.views.LoginActivity",
-    "clear_data": true,
-    "test_mode": "unified",
-    "source_cache": "phonepe_decompiled",
     "source_subdir": "base_decompiled_clean",
     "reset_paths": [
       "smali/com/phonepe/app/PhonePeApplication.smali"
@@ -29,21 +18,10 @@
       "smali_classes*",
       "lib/arm64-v8a/libpine.so",
       "lib/armeabi-v7a/libpine.so"
-    ],
-    "inject_script": "src/signature_bypass/scripts/inject.sh",
-    "readonly": false
+    ]
   },
   "phonepe_https_interceptor": {
     "deps": ["phonepe_sigbypass"],
-    "path": "cache/phonepe_https_interceptor",
-    "build_dir": "cache/phonepe_https_interceptor_build",
-    "label": "HTTPS",
-    "log_tag": "HttpInterceptor",
-    "login_activity": "com.phonepe.login.internal.ui.views.LoginActivity",
-    "clear_data": false,
-    "test_mode": "unified",
-    "supports_rerun": true,
-    "source_cache": "phonepe_sigbypass",
     "reset_paths": [
       "smali*/okhttp3/OkHttpClient$Builder.smali",
       "AndroidManifest.xml",
@@ -51,27 +29,15 @@
     ],
     "added_paths": [
       "smali_classes*"
-    ],
-    "inject_script": "src/https_interceptor/scripts/inject.sh",
-    "readonly": false
+    ]
   },
   "phonepe_phonepehelper": {
     "deps": ["phonepe_https_interceptor"],
-    "path": "cache/phonepe_phonepehelper",
-    "build_dir": "cache/phonepe_phonepehelper_build",
-    "label": "PPHELPER",
-    "log_tag": "PPHelper",
-    "login_activity": "com.phonepe.login.internal.ui.views.LoginActivity",
-    "clear_data": false,
-    "test_mode": "unified",
-    "source_cache": "phonepe_https_interceptor",
     "reset_paths": [
       "smali_classes*/com/sigbypass/HookEntry.smali"
     ],
     "added_paths": [
       "smali_classes*"
-    ],
-    "inject_script": "src/phonepehelper/scripts/inject.sh",
-    "readonly": false
+    ]
   }
 }
