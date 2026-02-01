@@ -14,6 +14,12 @@
   "phonepe_sigbypass": {
     "deps": ["phonepe_decompiled"],
     "path": "cache/phonepe_sigbypass",
+    "build_dir": "cache/phonepe_sigbypass_build",
+    "label": "SIGBYPASS",
+    "log_tag": "SigBypass",
+    "login_activity": "com.phonepe.login.internal.ui.views.LoginActivity",
+    "clear_data": true,
+    "test_mode": "sigbypass",
     "source_cache": "phonepe_decompiled",
     "source_subdir": "base_decompiled_clean",
     "reset_paths": [
@@ -24,12 +30,18 @@
       "lib/arm64-v8a/libpine.so",
       "lib/armeabi-v7a/libpine.so"
     ],
-    "inject_script": "src/signature_bypass/tools/merge.sh",
+    "inject_script": "src/signature_bypass/scripts/inject.sh",
     "readonly": false
   },
   "phonepe_https_interceptor": {
     "deps": ["phonepe_sigbypass"],
     "path": "cache/phonepe_https_interceptor",
+    "build_dir": "cache/phonepe_https_interceptor_build",
+    "label": "HTTPS",
+    "log_tag": "HttpInterceptor",
+    "clear_data": false,
+    "test_mode": "sigbypass",
+    "supports_rerun": true,
     "source_cache": "phonepe_sigbypass",
     "reset_paths": [
       "smali*/okhttp3/OkHttpClient$Builder.smali",
@@ -39,12 +51,17 @@
     "added_paths": [
       "smali_classes*"
     ],
-    "inject_script": "tools/patch_https_interceptor.sh",
+    "inject_script": "src/https_interceptor/scripts/inject.sh",
     "readonly": false
   },
   "phonepe_phonepehelper": {
     "deps": ["phonepe_https_interceptor"],
     "path": "cache/phonepe_phonepehelper",
+    "build_dir": "cache/phonepe_phonepehelper_build",
+    "label": "PPHELPER",
+    "log_tag": "PPHelper",
+    "clear_data": false,
+    "test_mode": "phonepehelper",
     "source_cache": "phonepe_https_interceptor",
     "reset_paths": [
       "smali_classes*/com/sigbypass/HookEntry.smali"
@@ -52,7 +69,7 @@
     "added_paths": [
       "smali_classes*"
     ],
-    "inject_script": "tools/patch_phonepehelper.sh",
+    "inject_script": "src/phonepehelper/scripts/inject.sh",
     "readonly": false
   }
 }
