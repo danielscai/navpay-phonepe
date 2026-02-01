@@ -423,7 +423,13 @@ def pre_cache(cache_path: Path, source_root: Path, reset_paths, added_paths, del
     if not cache_path.exists():
         shutil.copytree(source_root, cache_path)
     else:
+        warn_missing_top_level(cache_path, source_root, label)
         refresh_cache_paths(cache_path, source_root, reset_paths, added_paths, label)
+        src_apktool = source_root / "apktool.yml"
+        dst_apktool = cache_path / "apktool.yml"
+        if src_apktool.exists() and not dst_apktool.exists():
+            copy_path(src_apktool, source_root, cache_path)
+    validate_cache_integrity(cache_path, source_root, label)
     meta = {
         "created_at": datetime.now().isoformat(),
         "source": str(source_root),
@@ -431,6 +437,51 @@ def pre_cache(cache_path: Path, source_root: Path, reset_paths, added_paths, del
         "delete": bool(delete_first),
     }
     write_meta(cache_path / "meta.json", meta)
+
+def warn_missing_top_level(cache_path: Path, source_root: Path, label: str):
+    if not cache_path.exists() or not source_root.exists():
+        return
+    src_items = {p.name for p in source_root.iterdir()}
+    cache_items = {p.name for p in cache_path.iterdir()}
+    missing = sorted(src_items - cache_items)
+    if missing:
+        preview = ", ".join(missing[:6])
+        suffix = "" if len(missing) <= 6 else f" (+{len(missing) - 6} more)"
+        raise RuntimeError(
+            f"[{label}] cache missing top-level items vs source: {preview}{suffix}. "
+            f"Re-run with --delete for a full rebuild."
+        )
+
+def validate_cache_integrity(cache_path: Path, source_root: Path, label: str):
+    missing_apktool = (source_root / "apktool.yml").exists() and not (cache_path / "apktool.yml").exists()
+    missing_smali = (source_root / "smali").exists() and not (cache_path / "smali").exists()
+    empty_smali = []
+    for root, _, files in os.walk(cache_path):
+        for name in files:
+            if not name.endswith(".smali"):
+                continue
+            p = Path(root) / name
+            try:
+                if p.stat().st_size == 0:
+                    empty_smali.append(p)
+            except Exception:
+                continue
+
+    if missing_apktool or empty_smali:
+        details = []
+        if missing_apktool:
+            details.append("missing apktool.yml")
+        if missing_smali:
+            details.append("missing smali/")
+        if empty_smali:
+            rels = [str(p.relative_to(cache_path)) for p in empty_smali[:5]]
+            suffix = "" if len(empty_smali) <= 5 else f" (+{len(empty_smali) - 5} more)"
+            details.append(f"empty smali: {', '.join(rels)}{suffix}")
+        detail_msg = "; ".join(details)
+        raise RuntimeError(
+            f"[{label}] cache integrity check failed: {detail_msg}. "
+            f"Check upstream cache: {source_root} or re-run pre-cache with --delete."
+        )
 
 def inject(cache_path: Path, inject_script: Path, reset_paths, added_paths, label: str):
     if not cache_path.exists():
@@ -476,7 +527,8 @@ def sigbypass_compile(cache_path: Path, work_dir: Path, unsigned_apk: str, align
     if env.get("JAVA_HOME"):
         env["PATH"] = f"{env['JAVA_HOME']}/bin:" + env.get("PATH", "")
 
-    run(["apktool", "b", str(cache_path), "-o", str(unsigned)], env=env)
+    build_jobs = max(1, os.cpu_count() or 1)
+    run(["apktool", "b", "-j", str(build_jobs), "-nc", str(cache_path), "-o", str(unsigned)], env=env)
     run([str(zipalign), "-f", "4", str(unsigned), str(aligned)], env=env)
     run([str(apksigner), "sign", "--ks", str(keystore), "--ks-pass", "pass:android", "--out", str(signed), str(aligned)], env=env)
     run([str(apksigner), "verify", "-v", str(signed)], env=env)

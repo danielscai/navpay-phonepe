@@ -19,7 +19,8 @@
     "log_tag": "SigBypass",
     "login_activity": "com.phonepe.login.internal.ui.views.LoginActivity",
     "clear_data": true,
-    "test_mode": "sigbypass",
+    "test_mode": "script",
+    "test_script": "src/signature_bypass/scripts/test.sh",
     "source_cache": "phonepe_decompiled",
     "source_subdir": "base_decompiled_clean",
     "reset_paths": [
@@ -40,7 +41,8 @@
     "label": "HTTPS",
     "log_tag": "HttpInterceptor",
     "clear_data": false,
-    "test_mode": "sigbypass",
+    "test_mode": "script",
+    "test_script": "src/https_interceptor/scripts/test.sh",
     "supports_rerun": true,
     "source_cache": "phonepe_sigbypass",
     "reset_paths": [
@@ -61,7 +63,8 @@
     "label": "PPHELPER",
     "log_tag": "PPHelper",
     "clear_data": false,
-    "test_mode": "phonepehelper",
+    "test_mode": "script",
+    "test_script": "src/phonepehelper/scripts/test.sh",
     "source_cache": "phonepe_https_interceptor",
     "reset_paths": [
       "smali_classes*/com/sigbypass/HookEntry.smali"

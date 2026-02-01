@@ -33,15 +33,10 @@ spec = importlib.util.spec_from_file_location("cache_manager", cm_path)
 cm = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cm)
 
-cm.sigbypass_test(
+cm.phonepehelper_test(
     signed_apk,
     package,
     activity,
-    cm.SIGBYPASS_LOG_TAG,
-    cm.DEFAULT_TIMEOUT_SEC,
     serial,
-    cm.SIGBYPASS_LOGIN_ACTIVITY,
-    True,
-    3,
 )
 PYCODE

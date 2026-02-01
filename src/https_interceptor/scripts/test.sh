@@ -3,8 +3,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-ROOT_DIR="$(cd "$PROJECT_DIR/../.." && pwd)"
+MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$(cd "$MODULE_DIR/../.." && pwd)"
 
 SIGNED_APK="${1:-}"
 PACKAGE_NAME="${2:-}"
@@ -37,11 +37,11 @@ cm.sigbypass_test(
     signed_apk,
     package,
     activity,
-    cm.SIGBYPASS_LOG_TAG,
+    cm.HTTPS_LOG_TAG,
     cm.DEFAULT_TIMEOUT_SEC,
     serial,
-    cm.SIGBYPASS_LOGIN_ACTIVITY,
-    True,
+    None,
+    False,
     3,
 )
 PYCODE
