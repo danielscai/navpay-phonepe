@@ -1067,17 +1067,32 @@ def main():
     rebuild.add_argument("--package")
 
     sigbypass = sub.add_parser("sigbypass")
-    sigbypass.add_argument("action", choices=["pre-cache", "inject", "compile", "test"])
+    sigbypass.add_argument(
+        "action",
+        choices=["pre-cache", "inject", "compile", "test"],
+        nargs="?",
+        default="test",
+    )
     sigbypass.add_argument("--serial")
     sigbypass.add_argument("-d", "--delete", action="store_true", default=False)
 
     https = sub.add_parser("https")
-    https.add_argument("action", choices=["pre-cache", "inject", "compile", "test", "rerun"])
+    https.add_argument(
+        "action",
+        choices=["pre-cache", "inject", "compile", "test", "rerun"],
+        nargs="?",
+        default="test",
+    )
     https.add_argument("--serial")
     https.add_argument("-d", "--delete", action="store_true", default=False)
 
     phonepehelper = sub.add_parser("phonepehelper")
-    phonepehelper.add_argument("action", choices=["pre-cache", "inject", "compile", "test"])
+    phonepehelper.add_argument(
+        "action",
+        choices=["pre-cache", "inject", "compile", "test"],
+        nargs="?",
+        default="test",
+    )
     phonepehelper.add_argument("--serial")
     phonepehelper.add_argument("-d", "--delete", action="store_true", default=False)
 

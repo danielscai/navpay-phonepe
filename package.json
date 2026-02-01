@@ -22,8 +22,8 @@
     "rebuild-only": "python3 src/cache-manager/cache_manager.py rebuild --only",
     "merge": "python3 src/cache-manager/cache_manager.py rebuild --only phonepe_merged",
     "decomp": "python3 src/cache-manager/cache_manager.py rebuild --only phonepe_decompiled",
-    "sigbypass": "python3 src/cache-manager/cache_manager.py sigbypass test",
-    "https": "python3 src/cache-manager/cache_manager.py https test",
-    "pehelp": "python3 src/cache-manager/cache_manager.py phonepehelper test"
+    "sigbypass": "python3 src/cache-manager/cache_manager.py sigbypass",
+    "https": "python3 src/cache-manager/cache_manager.py https",
+    "pehelp": "python3 src/cache-manager/cache_manager.py phonepehelper"
   }
 }
