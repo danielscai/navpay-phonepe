@@ -14,6 +14,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
 MANIFEST_PATH = SCRIPT_DIR / "cache_manifest.json"
+EMULATOR_CONFIG_PATH = SCRIPT_DIR / "emulators.json"
 
 DEFAULT_PACKAGE = "com.phonepe.app"
 DEFAULT_SERIAL = "emulator-5554"
@@ -31,6 +32,7 @@ PPHELPER_LOG_MATCH = ("PhonePeHelper initialized", "PhonePeHelper already initia
 SIGBYPASS_LOGIN_ACTIVITY = "com.phonepe.login.internal.ui.views.LoginActivity"
 DEFAULT_TIMEOUT_SEC = 12
 DEFAULT_TEST_MODE = "sigbypass"
+DEFAULT_EMULATOR_BOOT_TIMEOUT = 20
 
 COLOR_RESET = "\033[0m"
 COLOR_BLUE = "\033[0;34m"
@@ -116,6 +118,28 @@ def load_manifest():
         if "deps" not in cfg:
             raise ValueError(f"Invalid manifest entry: {name}")
     return data
+
+
+def load_emulators():
+    if not EMULATOR_CONFIG_PATH.exists():
+        return []
+    data = json.loads(EMULATOR_CONFIG_PATH.read_text(encoding="utf-8"))
+    emulators = data.get("emulators", [])
+    if not isinstance(emulators, list):
+        raise ValueError("Invalid emulators config: 'emulators' must be a list")
+    return emulators
+
+
+def emulator_path():
+    android_sdk = os.environ.get("ANDROID_HOME") or os.path.expanduser("~/Library/Android/sdk")
+    candidates = [
+        Path(android_sdk) / "emulator" / "emulator",
+    ]
+    for p in candidates:
+        if p.exists():
+            return str(p)
+    return "emulator"
+
 
 
 def resolve_cache_path(rel_path: str) -> Path:
@@ -232,6 +256,140 @@ def adb_path():
     if adb.exists():
         return str(adb)
     return "adb"
+
+def list_connected_devices(adb: str):
+    out = subprocess.check_output([adb, "devices"], text=True)
+    return {
+        line.split()[0]
+        for line in out.splitlines()
+        if line.endswith("device") and not line.startswith("List")
+    }
+
+def list_devices_with_details(adb: str):
+    out = subprocess.check_output([adb, "devices", "-l"], text=True)
+    devices = []
+    for line in out.splitlines():
+        if not line.strip() or line.startswith("List"):
+            continue
+        parts = line.split()
+        if len(parts) < 2 or parts[1] != "device":
+            continue
+        info = {"serial": parts[0]}
+        for part in parts[2:]:
+            if ":" in part:
+                k, v = part.split(":", 1)
+                info[k] = v
+        devices.append(info)
+    return devices
+
+def is_boot_completed(adb: str, serial: str) -> bool:
+    try:
+        out = subprocess.check_output(
+            [adb, "-s", serial, "shell", "getprop", "sys.boot_completed"],
+            text=True,
+        ).strip()
+        return out == "1"
+    except Exception:
+        return False
+
+def avd_exists(avd_name: str) -> bool:
+    avd_dir = Path.home() / ".android" / "avd" / f"{avd_name}.avd"
+    return avd_dir.exists()
+
+def find_emulator_by_module(emulators, module_name: str):
+    for cfg in emulators:
+        if module_name in cfg.get("modules", []):
+            return cfg
+    return None
+
+def find_emulator_by_avd(emulators, avd_name: str):
+    for cfg in emulators:
+        if cfg.get("avd_name") == avd_name:
+            return cfg
+    return None
+
+def get_avd_name(adb: str, serial: str) -> str:
+    try:
+        out = subprocess.check_output([adb, "-s", serial, "emu", "avd", "name"], text=True)
+        lines = [ln.strip() for ln in out.splitlines() if ln.strip()]
+        for ln in lines[::-1]:
+            if ln.upper() == "OK":
+                continue
+            return ln
+    except Exception:
+        pass
+    for prop in ("ro.boot.qemu.avd_name", "ro.kernel.qemu.avd_name"):
+        try:
+            out = subprocess.check_output([adb, "-s", serial, "shell", "getprop", prop], text=True).strip()
+        except Exception:
+            out = ""
+        if out:
+            return out
+    return ""
+
+def find_serial_for_avd(adb: str, avd_name: str) -> str:
+    for info in list_devices_with_details(adb):
+        if info.get("avd") == avd_name:
+            return info["serial"]
+    for serial in list_connected_devices(adb):
+        if not serial.startswith("emulator-"):
+            continue
+        if get_avd_name(adb, serial) == avd_name:
+            return serial
+    return ""
+
+def ensure_emulator_running(emulator_cfg, adb: str, timeout_sec: int = DEFAULT_EMULATOR_BOOT_TIMEOUT):
+    avd_name = emulator_cfg.get("avd_name")
+    if not avd_name:
+        raise RuntimeError("Emulator config missing avd_name")
+
+    serial = find_serial_for_avd(adb, avd_name)
+    if serial:
+        return serial
+
+    if not avd_exists(avd_name):
+        raise RuntimeError(f"AVD not found: {avd_name}. Create it before running tests.")
+
+    emulator_bin = emulator_path()
+    cmd = [emulator_bin, "-avd", avd_name]
+    extra_args = emulator_cfg.get("args", [])
+    if extra_args:
+        cmd += list(extra_args)
+    log_info(f"Starting emulator {avd_name}")
+    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    deadline = time.time() + timeout_sec
+    while time.time() < deadline:
+        serial = find_serial_for_avd(adb, avd_name)
+        if not serial:
+            time.sleep(1)
+            continue
+        if not is_boot_completed(adb, serial):
+            time.sleep(1)
+            continue
+        return serial
+    raise RuntimeError(f"Emulator {avd_name} did not boot to home within {timeout_sec}s")
+
+def resolve_test_serial(spec, serial: str):
+    adb = adb_path()
+    emulators = load_emulators()
+    if serial:
+        if serial in list_connected_devices(adb):
+            return serial
+        return serial
+
+    cfg = find_emulator_by_module(emulators, spec["name"])
+    if cfg:
+        return ensure_emulator_running(cfg, adb)
+
+    if DEFAULT_SERIAL:
+        if DEFAULT_SERIAL in list_connected_devices(adb):
+            return DEFAULT_SERIAL
+
+    devices = list_connected_devices(adb)
+    if devices:
+        return sorted(devices)[0]
+    raise RuntimeError("No adb devices found for test/rerun")
 
 def find_build_tool(name: str) -> Path:
     sdk = os.environ.get("ANDROID_HOME") or os.path.expanduser("~/Library/Android/sdk")
@@ -981,6 +1139,7 @@ def module_compile(spec, delete_first: bool):
 
 
 def module_test(spec, delete_first: bool, serial: str):
+    serial = resolve_test_serial(spec, serial)
     module_compile(spec, delete_first)
     run_test(spec, serial)
 
@@ -1003,6 +1162,7 @@ def run_test(spec, serial: str):
 
 
 def module_rerun(spec, serial: str):
+    serial = resolve_test_serial(spec, serial)
     run_test(spec, serial)
 
 
