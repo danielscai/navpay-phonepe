@@ -423,7 +423,7 @@ def pre_cache(cache_path: Path, source_root: Path, reset_paths, added_paths, del
     if not cache_path.exists():
         shutil.copytree(source_root, cache_path)
     else:
-        warn_missing_top_level(cache_path, source_root, label)
+        require_top_level_match(cache_path, source_root, label)
         refresh_cache_paths(cache_path, source_root, reset_paths, added_paths, label)
         src_apktool = source_root / "apktool.yml"
         dst_apktool = cache_path / "apktool.yml"
@@ -438,7 +438,7 @@ def pre_cache(cache_path: Path, source_root: Path, reset_paths, added_paths, del
     }
     write_meta(cache_path / "meta.json", meta)
 
-def warn_missing_top_level(cache_path: Path, source_root: Path, label: str):
+def require_top_level_match(cache_path: Path, source_root: Path, label: str):
     if not cache_path.exists() or not source_root.exists():
         return
     src_items = {p.name for p in source_root.iterdir()}
