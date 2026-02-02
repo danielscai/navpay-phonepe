@@ -315,6 +315,111 @@ app.get('/api/stats', (req, res) => {
     }
 });
 
+// 检查字符串是否只包含 ASCII 字符
+function isAsciiSafe(str) {
+    if (typeof str !== 'string') return false;
+    for (let i = 0; i < str.length; i++) {
+        if (str.charCodeAt(i) > 127) return false;
+    }
+    return true;
+}
+
+// API: 代理请求 (用于 curl 执行功能)
+app.post('/api/proxy', async (req, res) => {
+    try {
+        const { method, url, headers, body } = req.body;
+
+        if (!url) {
+            return res.status(400).json({ success: false, error: 'URL is required' });
+        }
+
+        const startTime = Date.now();
+        const skippedHeaders = [];
+
+        // 构建请求选项
+        const fetchOptions = {
+            method: method || 'GET',
+            headers: {},
+        };
+
+        // 添加 headers
+        if (headers && typeof headers === 'object') {
+            for (const [key, value] of Object.entries(headers)) {
+                // 跳过一些不应该转发的 headers
+                const lowerKey = key.toLowerCase();
+                if (['host', 'content-length', 'connection'].includes(lowerKey)) continue;
+
+                // 检查 header value 是否包含非 ASCII 字符（已脱敏的敏感数据）
+                if (!isAsciiSafe(value)) {
+                    console.log(`[PROXY] Skipping header "${key}": contains masked/non-ASCII characters`);
+                    skippedHeaders.push(key);
+                    continue; // 跳过此 header，不发送
+                }
+
+                fetchOptions.headers[key] = value;
+            }
+        }
+
+        // 添加 body
+        if (body && ['POST', 'PUT', 'PATCH'].includes(fetchOptions.method)) {
+            fetchOptions.body = body;
+        }
+
+        console.log(`[PROXY] ${fetchOptions.method} ${url}`);
+
+        const response = await fetch(url, fetchOptions);
+        const duration = Date.now() - startTime;
+
+        // 读取响应
+        const responseHeaders = {};
+        response.headers.forEach((value, key) => {
+            responseHeaders[key] = value;
+        });
+
+        let responseBody;
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            try {
+                responseBody = await response.json();
+                responseBody = JSON.stringify(responseBody, null, 2);
+            } catch {
+                responseBody = await response.text();
+            }
+        } else {
+            responseBody = await response.text();
+        }
+
+        // 限制响应体大小
+        if (responseBody.length > 1024 * 1024) {
+            responseBody = responseBody.substring(0, 1024 * 1024) + '\n... (truncated)';
+        }
+
+        const result = {
+            success: true,
+            data: {
+                statusCode: response.status,
+                statusText: response.statusText,
+                headers: responseHeaders,
+                body: responseBody,
+                duration: duration,
+            }
+        };
+
+        // 如果有跳过的 headers，添加警告信息
+        if (skippedHeaders.length > 0) {
+            result.skippedHeaders = skippedHeaders;
+        }
+
+        res.json(result);
+    } catch (error) {
+        console.error('[PROXY] Error:', error.message);
+        res.json({
+            success: false,
+            error: error.message,
+        });
+    }
+});
+
 // 格式化日志用于前端显示
 function formatLogForClient(log) {
     return {

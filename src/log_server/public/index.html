@@ -344,6 +344,319 @@
             margin-bottom: 12px;
         }
 
+        /* 请求编辑器 - 紧凑版 */
+        .request-editor {
+            background: #0d1b2a;
+            border: 1px solid #0f3460;
+            border-radius: 6px;
+            margin-bottom: 16px;
+        }
+
+        .request-url-bar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-bottom: 1px solid #0f3460;
+        }
+
+        .request-method-select {
+            padding: 6px 8px;
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            border-radius: 4px;
+            color: #4ecca3;
+            font-weight: bold;
+            font-size: 12px;
+            cursor: pointer;
+            min-width: 70px;
+        }
+
+        .request-method-select:focus {
+            outline: none;
+            border-color: #4ecca3;
+        }
+
+        .request-url-input {
+            flex: 1;
+            padding: 6px 10px;
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+        }
+
+        .request-url-input:focus {
+            outline: none;
+            border-color: #4ecca3;
+        }
+
+        .request-send-btn {
+            padding: 6px 16px;
+            background: #4ecca3;
+            border: none;
+            border-radius: 4px;
+            color: #1a1a2e;
+            font-weight: bold;
+            font-size: 13px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .request-send-btn:hover {
+            background: #3db892;
+        }
+
+        .request-send-btn:disabled {
+            background: #0f3460;
+            color: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .request-send-btn.loading {
+            background: #17a2b8;
+        }
+
+        .request-copy-btn {
+            padding: 6px 10px;
+            background: transparent;
+            border: 1px solid #0f3460;
+            border-radius: 4px;
+            color: #6c757d;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .request-copy-btn:hover {
+            border-color: #4ecca3;
+            color: #4ecca3;
+        }
+
+        .request-tabs {
+            display: flex;
+            gap: 0;
+            padding: 0 12px;
+            border-bottom: 1px solid #0f3460;
+            background: #111a33;
+        }
+
+        .request-tab {
+            padding: 8px 16px;
+            background: transparent;
+            border: none;
+            color: #6c757d;
+            font-size: 12px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+        }
+
+        .request-tab:hover {
+            color: #adb5bd;
+        }
+
+        .request-tab.active {
+            color: #4ecca3;
+            border-bottom-color: #4ecca3;
+        }
+
+        .request-tab .tab-count {
+            background: #0f3460;
+            padding: 1px 6px;
+            border-radius: 8px;
+            font-size: 10px;
+            margin-left: 4px;
+        }
+
+        .request-panel {
+            display: none;
+            padding: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .request-panel.active {
+            display: block;
+        }
+
+        .request-body-textarea {
+            width: 100%;
+            min-height: 80px;
+            padding: 10px;
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            resize: vertical;
+        }
+
+        .request-body-textarea:focus {
+            outline: none;
+            border-color: #4ecca3;
+        }
+
+        .request-header-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 6px;
+            align-items: center;
+        }
+
+        .request-header-row input {
+            flex: 1;
+            padding: 5px 8px;
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            border-radius: 3px;
+            color: #e0e0e0;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+        }
+
+        .request-header-row input:first-child {
+            flex: 0.4;
+            color: #4ecca3;
+        }
+
+        .request-header-row input:focus {
+            outline: none;
+            border-color: #4ecca3;
+        }
+
+        .request-header-row .btn-remove {
+            padding: 3px 8px;
+            background: transparent;
+            border: 1px solid transparent;
+            color: #6c757d;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+
+        .request-header-row .btn-remove:hover {
+            border-color: #e94560;
+            color: #e94560;
+        }
+
+        .btn-add-row {
+            padding: 4px 12px;
+            background: transparent;
+            border: 1px dashed #0f3460;
+            border-radius: 3px;
+            color: #6c757d;
+            font-size: 11px;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .btn-add-row:hover {
+            border-color: #4ecca3;
+            color: #4ecca3;
+        }
+
+        /* 响应区域 */
+        .response-section {
+            background: #0d1b2a;
+            border: 1px solid #0f3460;
+            border-radius: 6px;
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+
+        .response-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: #111a33;
+            border-bottom: 1px solid #0f3460;
+        }
+
+        .response-status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .response-status-code {
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 13px;
+        }
+
+        .response-status-code.s2xx { background: #4ecca3; color: #1a1a2e; }
+        .response-status-code.s3xx { background: #17a2b8; color: #fff; }
+        .response-status-code.s4xx { background: #ffc107; color: #1a1a2e; }
+        .response-status-code.s5xx { background: #e94560; color: #fff; }
+        .response-status-code.error { background: #e94560; color: #fff; }
+
+        .response-meta {
+            font-size: 12px;
+            color: #6c757d;
+        }
+
+        .response-tabs {
+            display: flex;
+            background: #0a1525;
+            border-bottom: 1px solid #0f3460;
+        }
+
+        .response-tab {
+            padding: 6px 14px;
+            background: transparent;
+            border: none;
+            color: #6c757d;
+            font-size: 12px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+        }
+
+        .response-tab:hover {
+            color: #adb5bd;
+        }
+
+        .response-tab.active {
+            color: #4ecca3;
+            border-bottom-color: #4ecca3;
+        }
+
+        .response-body {
+            max-height: 250px;
+            overflow: auto;
+        }
+
+        .response-body pre {
+            margin: 0;
+            padding: 12px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .response-loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            color: #6c757d;
+            font-size: 13px;
+        }
+
+        .response-loading .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid #0f3460;
+            border-top-color: #4ecca3;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 10px;
+        }
+
         .header-count {
             background: #0f3460;
             padding: 2px 8px;
@@ -512,6 +825,357 @@
             overflow-x: auto;
             white-space: pre-wrap;
             word-break: break-all;
+        }
+
+        /* curl 命令面板 */
+        .curl-section {
+            background: #0d1b2a;
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            margin-top: 16px;
+        }
+
+        .curl-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid #0f3460;
+            background: #111a33;
+            border-radius: 8px 8px 0 0;
+        }
+
+        .curl-header-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #4ecca3;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .curl-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .curl-body {
+            padding: 16px;
+        }
+
+        .curl-command {
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            border-radius: 4px;
+            padding: 12px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            color: #e0e0e0;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 200px;
+            overflow-y: auto;
+            position: relative;
+        }
+
+        .curl-editable {
+            width: 100%;
+            min-height: 100px;
+            background: #1a1a2e;
+            border: 1px solid #4ecca3;
+            border-radius: 4px;
+            padding: 12px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            color: #e0e0e0;
+            resize: vertical;
+        }
+
+        .curl-editable:focus {
+            outline: none;
+            border-color: #6fe8c0;
+        }
+
+        .curl-params {
+            margin-bottom: 16px;
+        }
+
+        .curl-param-group {
+            margin-bottom: 12px;
+        }
+
+        .curl-param-label {
+            font-size: 12px;
+            color: #6c757d;
+            margin-bottom: 4px;
+        }
+
+        .curl-param-input {
+            width: 100%;
+            padding: 8px 12px;
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+        }
+
+        .curl-param-input:focus {
+            outline: none;
+            border-color: #4ecca3;
+        }
+
+        .curl-headers-editor {
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .curl-header-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+            align-items: center;
+        }
+
+        .curl-header-row input {
+            flex: 1;
+            padding: 6px 10px;
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+        }
+
+        .curl-header-row input:focus {
+            outline: none;
+            border-color: #4ecca3;
+        }
+
+        .curl-header-row .btn-icon {
+            padding: 4px 8px;
+            font-size: 14px;
+            background: transparent;
+            border: 1px solid #0f3460;
+            color: #6c757d;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .curl-header-row .btn-icon:hover {
+            border-color: #e94560;
+            color: #e94560;
+        }
+
+        .btn-add-header {
+            padding: 4px 12px;
+            font-size: 12px;
+            background: transparent;
+            border: 1px dashed #0f3460;
+            color: #6c757d;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .btn-add-header:hover {
+            border-color: #4ecca3;
+            color: #4ecca3;
+        }
+
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .btn-icon-only {
+            padding: 6px 10px;
+            background: transparent;
+            border: 1px solid #0f3460;
+        }
+
+        .btn-icon-only:hover {
+            background: #0f3460;
+        }
+
+        .copy-success {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #4ecca3;
+            color: #1a1a2e;
+            padding: 12px 24px;
+            border-radius: 4px;
+            font-weight: 600;
+            z-index: 1000;
+            animation: fadeInOut 2s ease-in-out;
+        }
+
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateY(-10px); }
+            15% { opacity: 1; transform: translateY(0); }
+            85% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(-10px); }
+        }
+
+        .curl-mode-toggle {
+            display: flex;
+            gap: 4px;
+            background: #0f3460;
+            border-radius: 4px;
+            padding: 2px;
+        }
+
+        .curl-mode-btn {
+            padding: 4px 12px;
+            font-size: 12px;
+            border: none;
+            background: transparent;
+            color: #6c757d;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+
+        .curl-mode-btn.active {
+            background: #4ecca3;
+            color: #1a1a2e;
+        }
+
+        /* 响应结果区域 */
+        .curl-response {
+            margin-top: 16px;
+            border: 1px solid #0f3460;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .curl-response-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: #111a33;
+            border-bottom: 1px solid #0f3460;
+        }
+
+        .curl-response-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .curl-response-status .status-code {
+            font-weight: bold;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .curl-response-status .status-code.success {
+            background: #4ecca3;
+            color: #1a1a2e;
+        }
+
+        .curl-response-status .status-code.redirect {
+            background: #17a2b8;
+            color: #fff;
+        }
+
+        .curl-response-status .status-code.client-error {
+            background: #ffc107;
+            color: #1a1a2e;
+        }
+
+        .curl-response-status .status-code.server-error {
+            background: #e94560;
+            color: #fff;
+        }
+
+        .curl-response-status .status-code.error {
+            background: #e94560;
+            color: #fff;
+        }
+
+        .curl-response-meta {
+            font-size: 12px;
+            color: #6c757d;
+        }
+
+        .curl-response-body {
+            max-height: 300px;
+            overflow: auto;
+        }
+
+        .curl-response-body pre {
+            margin: 0;
+            padding: 12px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .curl-response-tabs {
+            display: flex;
+            border-bottom: 1px solid #0f3460;
+            background: #0d1b2a;
+        }
+
+        .curl-response-tab {
+            padding: 8px 16px;
+            font-size: 12px;
+            color: #6c757d;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+        }
+
+        .curl-response-tab:hover {
+            color: #adb5bd;
+        }
+
+        .curl-response-tab.active {
+            color: #4ecca3;
+            border-bottom-color: #4ecca3;
+        }
+
+        .curl-loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            color: #6c757d;
+        }
+
+        .curl-loading .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #0f3460;
+            border-top-color: #4ecca3;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 12px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .btn-execute {
+            background: #17a2b8;
+            color: #fff;
+        }
+
+        .btn-execute:hover {
+            background: #138496;
+        }
+
+        .btn-execute:disabled {
+            background: #0f3460;
+            color: #6c757d;
+            cursor: not-allowed;
         }
 
         /* 空状态 */
@@ -749,35 +1413,46 @@
                     </div>
                 ` : ''}
 
-                <div class="detail-section">
-                    <div class="detail-title">
-                        URL
-                        <span class="headers-toggle" onclick="toggleHeadersAll('headers-${log.id}-section', this)">展开请求/响应头<span class="toggle-icon">▸</span></span>
+                <div class="request-editor" id="request-editor-${log.id}">
+                    <div class="request-url-bar">
+                        <select class="request-method-select" id="req-method-${log.id}">
+                            <option value="GET" ${log.method === 'GET' ? 'selected' : ''}>GET</option>
+                            <option value="POST" ${log.method === 'POST' ? 'selected' : ''}>POST</option>
+                            <option value="PUT" ${log.method === 'PUT' ? 'selected' : ''}>PUT</option>
+                            <option value="DELETE" ${log.method === 'DELETE' ? 'selected' : ''}>DELETE</option>
+                            <option value="PATCH" ${log.method === 'PATCH' ? 'selected' : ''}>PATCH</option>
+                        </select>
+                        <input type="text" class="request-url-input" id="req-url-${log.id}" value="${escapeHtml(log.url)}">
+                        <button class="request-send-btn" id="req-send-${log.id}" onclick="sendRequest(${log.id})">发送</button>
+                        <button class="request-copy-btn" onclick="copyAsCurl(${log.id})" title="复制为 cURL">📋</button>
                     </div>
-                    <div class="detail-url">${escapeHtml(log.url)}</div>
-                </div>
-
-                <div class="detail-section headers-section" id="headers-${log.id}-section">
-                    <div class="detail-title">请求 / 响应头</div>
-                    <div class="detail-columns headers-fixed">
-                        <div>
-                            <div class="column-title">请求头 <span class="header-count">${requestHeaderCount} 个</span></div>
-                            ${renderHeaders(log.requestHeaders, 0)}
+                    <div class="request-tabs">
+                        <button class="request-tab active" onclick="switchRequestTab(${log.id}, 'headers', this)">
+                            Headers<span class="tab-count">${requestHeaderCount}</span>
+                        </button>
+                        <button class="request-tab" onclick="switchRequestTab(${log.id}, 'body', this)">Body</button>
+                        <button class="request-tab" onclick="switchRequestTab(${log.id}, 'resp-headers', this)">
+                            响应头<span class="tab-count">${responseHeaderCount}</span>
+                        </button>
+                    </div>
+                    <div class="request-panel active" id="req-panel-headers-${log.id}">
+                        <div id="req-headers-${log.id}">
+                            ${renderEditableHeaderRows(log.requestHeaders, log.id)}
                         </div>
-                        <div>
-                            <div class="column-title">响应头 <span class="header-count">${responseHeaderCount} 个</span></div>
-                            ${renderHeaders(log.responseHeaders, 0)}
-                        </div>
+                        <button class="btn-add-row" onclick="addHeaderRow(${log.id})">+ Header</button>
+                    </div>
+                    <div class="request-panel" id="req-panel-body-${log.id}">
+                        <textarea class="request-body-textarea" id="req-body-${log.id}" placeholder="请求体 (JSON/Form/Text)">${escapeHtml(log.requestBody || '')}</textarea>
+                    </div>
+                    <div class="request-panel" id="req-panel-resp-headers-${log.id}">
+                        ${renderResponseHeadersReadonly(log.responseHeaders)}
                     </div>
                 </div>
 
-                <div class="detail-section">
-                    <div class="column-title">请求体</div>
-                    <div class="json-viewer">${formatBody(log.requestBody)}</div>
-                </div>
+                <div id="response-container-${log.id}"></div>
 
                 <div class="detail-section">
-                    <div class="column-title">响应体</div>
+                    <div class="column-title">原始响应体</div>
                     <div class="json-viewer">${formatBody(log.responseBody)}</div>
                 </div>
 
@@ -1015,8 +1690,290 @@
             }, 300);
         });
 
+        // ===== 请求编辑器功能 =====
+
+        // 渲染可编辑的 header 行
+        function renderEditableHeaderRows(headers, logId) {
+            if (!headers || Object.keys(headers).length === 0) {
+                return '<div style="color: #6c757d; font-size: 12px; padding: 8px 0;">无请求头</div>';
+            }
+
+            const skipHeaders = ['content-length', 'host', 'connection', 'accept-encoding'];
+            return Object.entries(headers)
+                .filter(([key]) => !skipHeaders.includes(key.toLowerCase()))
+                .map(([key, value]) => `
+                    <div class="request-header-row">
+                        <input type="text" value="${escapeHtml(key)}" placeholder="Name">
+                        <input type="text" value="${escapeHtml(value)}" placeholder="Value">
+                        <button class="btn-remove" onclick="this.parentElement.remove()">×</button>
+                    </div>
+                `).join('');
+        }
+
+        // 渲染只读响应头
+        function renderResponseHeadersReadonly(headers) {
+            if (!headers || Object.keys(headers).length === 0) {
+                return '<div style="color: #6c757d; font-size: 12px;">无响应头</div>';
+            }
+            return `<div style="font-family: monospace; font-size: 12px; line-height: 1.6;">
+                ${Object.entries(headers).map(([key, value]) =>
+                    `<div><span style="color: #4ecca3;">${escapeHtml(key)}</span>: ${escapeHtml(value)}</div>`
+                ).join('')}
+            </div>`;
+        }
+
+        // 添加 header 行
+        function addHeaderRow(logId) {
+            const container = document.getElementById(`req-headers-${logId}`);
+            // 移除空提示
+            const emptyHint = container.querySelector('div[style*="color: #6c757d"]');
+            if (emptyHint) emptyHint.remove();
+
+            const row = document.createElement('div');
+            row.className = 'request-header-row';
+            row.innerHTML = `
+                <input type="text" value="" placeholder="Name">
+                <input type="text" value="" placeholder="Value">
+                <button class="btn-remove" onclick="this.parentElement.remove()">×</button>
+            `;
+            container.appendChild(row);
+        }
+
+        // 切换请求 tab
+        function switchRequestTab(logId, tab, btn) {
+            const panels = ['headers', 'body', 'resp-headers'];
+            panels.forEach(p => {
+                const panel = document.getElementById(`req-panel-${p}-${logId}`);
+                if (panel) panel.classList.remove('active');
+            });
+
+            const tabs = btn.parentElement.querySelectorAll('.request-tab');
+            tabs.forEach(t => t.classList.remove('active'));
+
+            btn.classList.add('active');
+            const panel = document.getElementById(`req-panel-${tab}-${logId}`);
+            if (panel) panel.classList.add('active');
+        }
+
+        // 发送请求
+        async function sendRequest(logId) {
+            const btn = document.getElementById(`req-send-${logId}`);
+            const container = document.getElementById(`response-container-${logId}`);
+
+            // 收集请求参数
+            const method = document.getElementById(`req-method-${logId}`).value;
+            const url = document.getElementById(`req-url-${logId}`).value;
+            const body = document.getElementById(`req-body-${logId}`).value;
+
+            const headers = {};
+            const headerRows = document.querySelectorAll(`#req-headers-${logId} .request-header-row`);
+            headerRows.forEach(row => {
+                const inputs = row.querySelectorAll('input');
+                if (inputs[0] && inputs[1] && inputs[0].value.trim()) {
+                    headers[inputs[0].value] = inputs[1].value;
+                }
+            });
+
+            // 显示 loading
+            btn.disabled = true;
+            btn.textContent = '发送中...';
+            btn.classList.add('loading');
+
+            container.innerHTML = `
+                <div class="response-section">
+                    <div class="response-loading">
+                        <div class="spinner"></div>
+                        <span>正在发送请求...</span>
+                    </div>
+                </div>
+            `;
+
+            try {
+                const response = await fetch('/api/proxy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ method, url, headers, body }),
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    renderResponse(logId, result.data, result.skippedHeaders);
+                } else {
+                    renderResponseError(logId, result.error);
+                }
+            } catch (error) {
+                renderResponseError(logId, error.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '发送';
+                btn.classList.remove('loading');
+            }
+        }
+
+        // 渲染响应
+        function renderResponse(logId, data, skippedHeaders) {
+            const container = document.getElementById(`response-container-${logId}`);
+            const statusClass = getStatusCodeClass(data.statusCode);
+
+            let warningHtml = '';
+            if (skippedHeaders && skippedHeaders.length > 0) {
+                warningHtml = `
+                    <div style="background: rgba(255, 193, 7, 0.1); border-bottom: 1px solid #0f3460; padding: 8px 12px; font-size: 12px; color: #ffc107;">
+                        ⚠️ 已跳过脱敏的 Headers: <code style="background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 3px;">${skippedHeaders.join('</code>, <code style="background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 3px;">')}</code>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = `
+                <div class="response-section">
+                    ${warningHtml}
+                    <div class="response-header">
+                        <div class="response-status">
+                            <span class="response-status-code ${statusClass}">${data.statusCode}</span>
+                            <span>${data.statusText}</span>
+                        </div>
+                        <div class="response-meta">${data.duration}ms</div>
+                    </div>
+                    <div class="response-tabs">
+                        <button class="response-tab active" onclick="switchResponseTab(${logId}, 'body', this)">Body</button>
+                        <button class="response-tab" onclick="switchResponseTab(${logId}, 'headers', this)">Headers (${Object.keys(data.headers).length})</button>
+                    </div>
+                    <div class="response-body">
+                        <div id="resp-body-${logId}">
+                            <pre>${formatJsonBody(data.body)}</pre>
+                        </div>
+                        <div id="resp-headers-${logId}" style="display:none;">
+                            <pre>${formatHeadersDisplay(data.headers)}</pre>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 渲染错误
+        function renderResponseError(logId, error) {
+            const container = document.getElementById(`response-container-${logId}`);
+            container.innerHTML = `
+                <div class="response-section">
+                    <div class="response-header">
+                        <div class="response-status">
+                            <span class="response-status-code error">错误</span>
+                        </div>
+                    </div>
+                    <div class="response-body">
+                        <pre style="color: #e94560;">${escapeHtml(error)}</pre>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 切换响应 tab
+        function switchResponseTab(logId, tab, btn) {
+            const bodyDiv = document.getElementById(`resp-body-${logId}`);
+            const headersDiv = document.getElementById(`resp-headers-${logId}`);
+            const tabs = btn.parentElement.querySelectorAll('.response-tab');
+
+            tabs.forEach(t => t.classList.remove('active'));
+            btn.classList.add('active');
+
+            bodyDiv.style.display = tab === 'body' ? 'block' : 'none';
+            headersDiv.style.display = tab === 'headers' ? 'block' : 'none';
+        }
+
+        // 状态码样式
+        function getStatusCodeClass(code) {
+            if (code >= 200 && code < 300) return 's2xx';
+            if (code >= 300 && code < 400) return 's3xx';
+            if (code >= 400 && code < 500) return 's4xx';
+            if (code >= 500) return 's5xx';
+            return 'error';
+        }
+
+        // 格式化 JSON body
+        function formatJsonBody(body) {
+            if (!body) return '<span class="muted">空</span>';
+            const text = String(body).trim();
+            if (looksLikeJson(text)) {
+                try {
+                    const parsed = JSON.parse(text);
+                    return syntaxHighlight(JSON.stringify(parsed, null, 2));
+                } catch (e) {}
+            }
+            return escapeHtml(body);
+        }
+
+        // 格式化 headers 显示
+        function formatHeadersDisplay(headers) {
+            if (!headers || Object.keys(headers).length === 0) {
+                return '<span class="muted">无</span>';
+            }
+            return Object.entries(headers)
+                .map(([key, value]) => `<span class="json-key">${escapeHtml(key)}</span>: ${escapeHtml(value)}`)
+                .join('\n');
+        }
+
+        // 复制为 curl
+        function copyAsCurl(logId) {
+            const method = document.getElementById(`req-method-${logId}`).value;
+            const url = document.getElementById(`req-url-${logId}`).value;
+            const body = document.getElementById(`req-body-${logId}`).value;
+
+            const parts = ['curl'];
+            if (method !== 'GET') parts.push(`-X ${method}`);
+            parts.push(`'${url}'`);
+
+            const headerRows = document.querySelectorAll(`#req-headers-${logId} .request-header-row`);
+            headerRows.forEach(row => {
+                const inputs = row.querySelectorAll('input');
+                if (inputs[0] && inputs[1] && inputs[0].value.trim()) {
+                    parts.push(`-H '${inputs[0].value}: ${inputs[1].value}'`);
+                }
+            });
+
+            if (body && body.trim()) {
+                parts.push(`-d '${body.replace(/'/g, "'\\''")}'`);
+            }
+
+            const curlCmd = parts.join(' \\\n  ');
+
+            navigator.clipboard.writeText(curlCmd).then(() => {
+                showToast('✓ 已复制 cURL 命令');
+            }).catch(() => {
+                const ta = document.createElement('textarea');
+                ta.value = curlCmd;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast('✓ 已复制 cURL 命令');
+            });
+        }
+
+        // 显示提示
+        function showToast(msg) {
+            const toast = document.createElement('div');
+            toast.className = 'copy-success';
+            toast.textContent = msg;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2000);
+        }
+
         // 初始化
         initWebSocket();
+    </script>
+
+    <!-- livereload 热加载支持 (仅开发模式) -->
+    <script>
+        (function() {
+            const script = document.createElement('script');
+            script.src = 'http://' + (location.host.split(':')[0] || 'localhost') + ':35729/livereload.js?snipver=1';
+            script.async = true;
+            script.onerror = function() {
+                console.log('[Dev] livereload 未启动，跳过热加载');
+            };
+            document.body.appendChild(script);
+        })();
     </script>
 </body>
 </html>
