@@ -1141,8 +1141,7 @@ pev70 的拦截器完全依赖标准 OkHttp API，因此必须与标准 okhttp3 
 | Header 添加行为受限 | Hook `Request$Builder.addHeader()` → HookUtil.addHeader() | `decompiled/pev70_apktool/smali_classes3/okhttp3/Request$Builder.smali` |
 | 请求/响应校验影响日志 | Hook ChecksumInterceptorCore → 强制通过 | `decompiled/pev70_apktool/smali_classes2/com/phonepe/network/external/rest/interceptors/ChecksumInterceptorCore.smali` |
 
-### 迁移建议（我们的落地方案）
-1. **复用 pev70 的 okhttp3 包**（`smali_classes3/okhttp3/*`），覆盖 PhonePe 原版混淆 okhttp3，确保 `url()/method()/headers()/body()` 等标准 API 可用。  
+### 迁移建议（我们的落地方案） 
 2. **修改 `OkHttpClient$Builder.build()`**，直接转到我们自己的 `HookUtil.build()`（与 pev70 一致）。  
 3. **拷贝/复用 HttpJsonInterceptor 逻辑**，或让我们的拦截器编译时依赖 pev70 这套 okhttp3，从根源避免 API 不匹配。  
 4. **同步应用辅助 Hook**：`Util.isSensitiveHeader()`、`Request$Builder.addHeader()`、`ChecksumInterceptorCore` 相关 Hook，确保日志可见、请求不会被完整性验证拦截。

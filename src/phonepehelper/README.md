@@ -69,10 +69,6 @@ adb logcat -s PPHelper
 - `PhonePeHelper initialized`
 - Activity 生命周期日志（created/started/resumed...）
 
-## 说明
-
-- 该实现仅用于研究验证，不包含实际远程上报逻辑。
-- 如需扩展为“更接近 pev70 的行为链路”，可以在 `PhonePeHelper` 中接入你自己的 Sync/HTTP 管道。
 
 ## 推荐入口（tools）
 

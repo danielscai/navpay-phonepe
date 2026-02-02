@@ -27,12 +27,14 @@
       "AndroidManifest.xml",
       "res/xml/network_security_config.xml"
     ],
+    "uninstall_before_install": false,
     "added_paths": [
       "smali_classes*"
     ]
   },
   "phonepe_phonepehelper": {
     "deps": ["phonepe_https_interceptor"],
+    "uninstall_before_install": false,
     "reset_paths": [
       "smali_classes*/com/sigbypass/HookEntry.smali"
     ],

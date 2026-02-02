@@ -779,6 +779,7 @@ def unified_test(
     serial: str,
     start_retries: int = 3,
     check_interval: int = 1,
+    uninstall_before_install: bool = True,
 ):
     if not signed_apk.exists():
         raise RuntimeError(f"Signed APK not found: {signed_apk}")
@@ -807,7 +808,9 @@ def unified_test(
     run([adb, "-s", device, "logcat", "-c"])
     # Important: uninstall then reinstall to avoid stale app state.
     # We observed flaky start/log detection unless the old APK is removed first.
-    run([adb, "-s", device, "uninstall", package], check=False)
+    # Can be disabled per-module via uninstall_before_install: false in manifest.
+    if uninstall_before_install:
+        run([adb, "-s", device, "uninstall", package], check=False)
     run([adb, "-s", device, "install", "-r", str(signed_apk)])
     last_start_out = ""
     for _ in range(max(1, start_retries)):
@@ -1102,6 +1105,7 @@ def resolve_module_spec(manifest, name: str):
         "timeout": cfg.get("timeout_sec") or DEFAULT_TIMEOUT_SEC,
         "login_activity": resolve_cfg_value(name, cfg, "login_activity"),
         "test_mode": test_mode,
+        "uninstall_before_install": cfg.get("uninstall_before_install", True),
     }
 
 
@@ -1155,7 +1159,8 @@ def run_test(spec, serial: str):
             spec["log_tag"],
             spec["timeout"],
             serial,
-            3,
+            start_retries=3,
+            uninstall_before_install=spec.get("uninstall_before_install", True),
         )
     else:
         raise RuntimeError(f"Unknown test_mode: {spec['test_mode']}")
