@@ -3,7 +3,7 @@
     {
       "name": "phonepe_nologin",
       "avd_name": "phonepe_nologin",
-      "modules": ["phonepe_sigbypass", "phonepe_https_interceptor"]
+      "modules": ["phonepe_https_interceptor","phonepe_sigbypass"]
     },
     {
       "name": "phonepe_loggedin",

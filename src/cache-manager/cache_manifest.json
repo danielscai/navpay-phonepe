@@ -27,7 +27,7 @@
       "AndroidManifest.xml",
       "res/xml/network_security_config.xml"
     ],
-    "uninstall_before_install": false,
+    "uninstall_before_install": true,
     "added_paths": [
       "smali_classes*"
     ]

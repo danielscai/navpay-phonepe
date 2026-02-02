@@ -219,7 +219,69 @@ path.write_text(new_text)
 PYCODE
 fi
 
-log_step "3.1 允许本地明文日志上报"
+log_step "3.1 禁用 OkHttp 敏感 Header 脱敏"
+
+# 查找 Util.smali 文件
+UTIL_SMALI=$(find "$TARGET_DIR" -path "*/okhttp3/internal/Util.smali" | head -1)
+if [ -z "$UTIL_SMALI" ] || [ ! -f "$UTIL_SMALI" ]; then
+    log_warn "找不到 okhttp3/internal/Util.smali，跳过敏感 header 脱敏禁用"
+else
+    # 检查是否已修改（方法体只有 return 0x0）
+    if rg -q 'const/4 v0, 0x0\s+return v0\s+\.end method' "$UTIL_SMALI"; then
+        log_warn "敏感 header 检查方法已被 patch，跳过修改"
+    else
+        log_info "查找并修改敏感 header 检查方法..."
+
+        python3 - "$UTIL_SMALI" <<'PYCODE'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text()
+
+# The method name is obfuscated (e.g., "r" instead of "isSensitiveHeader")
+# We find it by looking for a method that:
+# 1. Takes String and returns boolean: (Ljava/lang/String;)Z
+# 2. Contains "Authorization" string check
+# Pattern matches: .method public static final X(Ljava/lang/String;)Z ... "Authorization" ... .end method
+pattern = re.compile(
+    r'(?ms)^(\.method public static final )(\w+)(\(Ljava/lang/String;\)Z.*?const-string[^\n]+"Authorization".*?^\.end method)\s*',
+)
+
+match = pattern.search(text)
+if not match:
+    print("Warning: Could not find isSensitiveHeader method (obfuscated) to replace", file=sys.stderr)
+    sys.exit(0)  # Non-fatal, continue
+
+method_name = match.group(2)
+print(f"Found sensitive header check method: Util.{method_name}()")
+
+# Replace with a simple method that always returns false
+replacement = f"""\
+.method public static final {method_name}(Ljava/lang/String;)Z
+    .locals 1
+    .param p0    # Ljava/lang/String;
+        .annotation build Lorg/jetbrains/annotations/NotNull;
+        .end annotation
+    .end param
+
+    # Always return false to disable header redaction
+    # This allows full logging of Authorization, Cookie, Proxy-Authorization, Set-Cookie
+    const/4 v0, 0x0
+
+    return v0
+.end method
+"""
+
+new_text = pattern.sub(replacement, text, count=1)
+path.write_text(new_text)
+print(f"Successfully patched Util.{method_name}() to always return false")
+PYCODE
+    fi
+fi
+
+log_step "3.2 允许本地明文日志上报"
 
 MANIFEST_FILE="$TARGET_DIR/AndroidManifest.xml"
 NSC_DIR="$TARGET_DIR/res/xml"
