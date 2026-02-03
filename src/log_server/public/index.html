@@ -116,6 +116,9 @@
             cursor: pointer;
             font-size: 14px;
             transition: all 0.2s;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
         }
 
         .btn-primary {
@@ -386,6 +389,17 @@
             color: #e0e0e0;
             font-family: 'Consolas', 'Monaco', monospace;
             font-size: 13px;
+            height: 30px;
+            resize: none;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            line-height: 18px;
+        }
+
+        .request-url-input.expanded {
+            white-space: pre-wrap;
+            overflow: hidden;
         }
 
         .request-url-input:focus {
@@ -1249,6 +1263,7 @@
         </div>
         <button class="btn btn-secondary" onclick="refreshLogs()">刷新</button>
         <button class="btn btn-danger" onclick="clearLogs()">清空日志</button>
+        <a class="btn btn-secondary" href="/transactions.html">交易记录展示</a>
     </div>
 
     <div class="content">
@@ -1387,6 +1402,19 @@
             logDetail.innerHTML = createDetailHTML(log);
         }
 
+        function expandUrlInput(el) {
+            if (!el) return;
+            el.classList.add('expanded');
+            el.style.height = 'auto';
+            el.style.height = `${el.scrollHeight}px`;
+        }
+
+        function collapseUrlInput(el) {
+            if (!el) return;
+            el.classList.remove('expanded');
+            el.style.height = '30px';
+        }
+
         function markActive() {
             document.querySelectorAll('.log-item').forEach(el => {
                 el.classList.toggle('active', String(el.dataset.id) === String(selectedLogId));
@@ -1422,7 +1450,7 @@
                             <option value="DELETE" ${log.method === 'DELETE' ? 'selected' : ''}>DELETE</option>
                             <option value="PATCH" ${log.method === 'PATCH' ? 'selected' : ''}>PATCH</option>
                         </select>
-                        <input type="text" class="request-url-input" id="req-url-${log.id}" value="${escapeHtml(log.url)}">
+                        <textarea class="request-url-input" id="req-url-${log.id}" onfocus="expandUrlInput(this)" onblur="collapseUrlInput(this)">${escapeHtml(log.url)}</textarea>
                         <button class="request-send-btn" id="req-send-${log.id}" onclick="sendRequest(${log.id})">发送</button>
                         <button class="request-copy-btn" onclick="copyAsCurl(${log.id})" title="复制为 cURL">📋</button>
                     </div>

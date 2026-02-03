@@ -420,6 +420,28 @@ app.post('/api/proxy', async (req, res) => {
     }
 });
 
+// 尝试格式化 JSON 字符串
+function tryFormatJson(str) {
+    if (!str || typeof str !== 'string' || str.trim() === '') {
+        return str;
+    }
+
+    const trimmed = str.trim();
+
+    // 检查是否像 JSON（以 { 或 [ 开头）
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+        return str;
+    }
+
+    try {
+        const parsed = JSON.parse(trimmed);
+        return JSON.stringify(parsed, null, 2);
+    } catch (e) {
+        // 不是有效 JSON，返回原始字符串
+        return str;
+    }
+}
+
 // 格式化日志用于前端显示
 function formatLogForClient(log) {
     return {
@@ -433,9 +455,9 @@ function formatLogForClient(log) {
         statusMessage: log.status_message,
         durationMs: log.duration_ms,
         requestHeaders: parseHeaders(log.request_headers),
-        requestBody: log.request_body,
+        requestBody: tryFormatJson(log.request_body),
         responseHeaders: parseHeaders(log.response_headers),
-        responseBody: log.response_body,
+        responseBody: tryFormatJson(log.response_body),
         error: log.error,
         tokenDetected: !!log.token_detected,
         tokenInfo: log.token_info,
