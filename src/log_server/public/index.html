@@ -211,21 +211,22 @@
             user-select: none;
         }
 
-        .method-badge {
+        .log-id {
+            font-size: 12px;
+            color: #94a3b8;
+            background: rgba(148, 163, 184, 0.12);
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            border-radius: 6px;
             padding: 2px 6px;
-            border-radius: 4px;
-            font-size: 10px;
-            font-weight: bold;
-            min-width: 36px;
-            text-align: center;
+            font-family: "JetBrains Mono", "Fira Code", "Source Code Pro", monospace;
             flex: 0 0 auto;
         }
 
-        .method-GET { background: #4ecca3; color: #1a1a2e; }
-        .method-POST { background: #ffc107; color: #1a1a2e; }
-        .method-PUT { background: #17a2b8; color: #fff; }
-        .method-DELETE { background: #e94560; color: #fff; }
-        .method-PATCH { background: #6f42c1; color: #fff; }
+        .log-id.method-GET { background: #4ecca3; color: #1a1a2e; border-color: #4ecca3; }
+        .log-id.method-POST { background: #ffc107; color: #1a1a2e; border-color: #ffc107; }
+        .log-id.method-PUT { background: #17a2b8; color: #fff; border-color: #17a2b8; }
+        .log-id.method-DELETE { background: #e94560; color: #fff; border-color: #e94560; }
+        .log-id.method-PATCH { background: #6f42c1; color: #fff; border-color: #6f42c1; }
 
         .status-badge {
             width: 8px;
@@ -251,6 +252,12 @@
             overflow: hidden;
         }
 
+        .log-host {
+            color: #8898a7;
+            white-space: nowrap;
+            flex: 0 0 auto;
+        }
+
         .url-start,
         .url-end {
             color: #adb5bd;
@@ -273,18 +280,21 @@
             flex: 0 0 auto;
         }
 
-        .url-host {
-            background: #0f3460;
-            color: #e0f7ef;
-            padding: 2px 6px;
-            border-radius: 4px;
-        }
-
         .url-tail {
             background: #1f2a4a;
             color: #d0d7e2;
             padding: 2px 6px;
             border-radius: 4px;
+            flex: 1 1 auto;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .url-tail-strong {
+            color: #ffffff;
+            font-weight: 600;
         }
 
         .log-meta {
@@ -1397,7 +1407,7 @@
             return `
                 <div class="${itemClass}" data-id="${log.id}" onclick="selectLog('${log.id}')">
                     <div class="log-header">
-                        <span class="method-badge ${methodClass}">${log.method}</span>
+                        <span class="log-id ${methodClass}">#${log.id}</span>
                         <span class="status-badge ${statusClass}" title="${log.statusCode || 'ERR'}"></span>
                         <span class="log-url" title="${escapeHtml(log.url)}">${shortenUrl(log.url)}</span>
                         <div class="log-meta">
@@ -1629,37 +1639,60 @@
                 (text.startsWith('[') && text.endsWith(']'));
         }
 
-        function shortenUrl(url) {
+        function shortenUrl(url, maxPathLength = 90) {
             if (!url) return '';
             const str = String(url);
-            let host = '';
             let tail = str;
+            let hasQuery = false;
+            let hasHash = false;
             try {
                 const u = new URL(str);
-                host = u.host;
-                tail = (u.pathname || '/') + (u.search || '');
+                hasQuery = !!u.search;
+                hasHash = !!u.hash;
+                tail = (u.pathname || '/') + (u.search || '') + (u.hash || '');
             } catch (e) {
                 const noScheme = str.replace(/^https?:\/\//, '');
                 const slash = noScheme.indexOf('/');
                 if (slash > -1) {
-                    host = noScheme.slice(0, slash);
                     tail = noScheme.slice(slash);
                 } else {
-                    host = noScheme;
                     tail = '';
                 }
             }
             const path = tail.startsWith('/') ? tail : `/${tail}`;
-            const parts = path.split('/').filter(Boolean);
-            let displayPath = '';
-            if (parts.length === 0) {
-                displayPath = '/';
-            } else if (parts.length === 1) {
-                displayPath = `/${parts[0]}`;
-            } else {
-                displayPath = `/${parts[0]}/…/${parts[parts.length - 1]}`;
+            const [pathOnly, queryAndHash = ''] = path.split(/(?=[?#])/);
+            const parts = pathOnly.split('/').filter(Boolean);
+            const last = parts.length ? parts[parts.length - 1] : '';
+            const prev = parts.length > 1 ? parts[parts.length - 2] : '';
+            const basePath = parts.length > 2 ? `/${parts[0]}/…/` : '/';
+            const strongTwo = [prev, last].filter(Boolean).join('/');
+            const strongOne = last || '';
+            let displayPath = `${basePath}${strongTwo || ''}`;
+            if (displayPath.length > maxPathLength && strongOne) {
+                displayPath = `${basePath}${strongOne}`;
             }
-            return `<span class="url-host">${escapeHtml(host)}</span><span class="url-end url-tail">${escapeHtml(displayPath)}</span>`;
+            const queryMarker = (hasQuery || hasHash || queryAndHash) ? ' ?…' : '';
+            displayPath += queryMarker;
+            if (displayPath.length > maxPathLength) {
+                const head = Math.floor(maxPathLength * 0.6);
+                const tailLen = maxPathLength - head - 1;
+                displayPath = `${displayPath.slice(0, head)}…${displayPath.slice(-tailLen)}`;
+            }
+            let strongPath = (displayPath.includes(strongTwo) && strongTwo) ? strongTwo : strongOne;
+            if (strongPath && displayPath.includes(strongPath)) {
+                displayPath = displayPath.replace(
+                    strongPath,
+                    `<span class="url-tail-strong">${escapeHtml(strongPath)}</span>`
+                );
+            } else {
+                displayPath = escapeHtml(displayPath);
+            }
+            return `<span class="url-end url-tail">${displayPath}</span>`;
+        }
+
+        function copyText(text) {
+            if (!text) return;
+            navigator.clipboard?.writeText(text).catch(() => {});
         }
 
         // 切换原始日志

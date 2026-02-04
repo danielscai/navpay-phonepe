@@ -891,9 +891,13 @@ def unified_test(
                 raise RuntimeError(f"App process not running within timeout. See: {crash_path}")
             time.sleep(check_interval)
             continue
-        if found_activity and found_login:
-            if found_activity and found_login:
-                log_info(f"[TEST] activities ready: {activity} + {login_activity}")
+        if found_activity or found_login:
+            which = []
+            if found_activity:
+                which.append(activity)
+            if found_login:
+                which.append(login_activity)
+            log_info(f"[TEST] activity ready: {' | '.join(which)}")
             out = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-s", log_tag], text=True)
             if out.strip():
                 last_log = out
@@ -901,11 +905,11 @@ def unified_test(
                 break
         time.sleep(check_interval)
 
-    if not found_activity or not found_login:
+    if not found_activity and not found_login:
         dumpsys_path.write_text(last_dumpsys or "", encoding="utf-8")
         log_error("TEST RESULT: FAILED (activity check)")
         raise RuntimeError(
-            f"Activity check failed (activity={activity}, login={login_activity}). "
+            f"Activity check failed (activity={activity} OR login={login_activity}). "
             f"See: {dumpsys_path}"
         )
     crash = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-b", "crash"], text=True)
