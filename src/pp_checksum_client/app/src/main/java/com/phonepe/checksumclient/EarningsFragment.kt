@@ -9,6 +9,9 @@ import com.phonepe.checksumclient.databinding.FragmentEarningsBinding
 import kotlinx.coroutines.launch
 
 class EarningsFragment : Fragment(R.layout.fragment_earnings) {
+    interface AuthHost {
+        fun onAuthInvalid()
+    }
     private var _binding: FragmentEarningsBinding? = null
     private val binding get() = _binding!!
     private lateinit var adapter: EarningsAdapter
@@ -40,6 +43,10 @@ class EarningsFragment : Fragment(R.layout.fragment_earnings) {
                 binding.earningsTotal.text = "Total: ${result.total}"
                 adapter.submit(result.earnings)
             } catch (e: Exception) {
+                if (e is AuthException) {
+                    (activity as? AuthHost)?.onAuthInvalid()
+                    return@launch
+                }
                 binding.earningsTotal.text = "Total: 0"
                 adapter.submit(emptyList())
             }

@@ -9,6 +9,9 @@ import com.phonepe.checksumclient.databinding.FragmentOrdersBinding
 import kotlinx.coroutines.launch
 
 class OrdersFragment : Fragment(R.layout.fragment_orders) {
+    interface AuthHost {
+        fun onAuthInvalid()
+    }
     private var _binding: FragmentOrdersBinding? = null
     private val binding get() = _binding!!
     private lateinit var myAdapter: OrdersAdapter
@@ -43,13 +46,21 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
             try {
                 val myOrders = apiClient.getMyOrders()
                 myAdapter.submit(myOrders)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                if (e is AuthException) {
+                    (activity as? AuthHost)?.onAuthInvalid()
+                    return@launch
+                }
                 myAdapter.submit(emptyList())
             }
             try {
                 val openOrders = apiClient.getOpenOrders()
                 openAdapter.submit(openOrders)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                if (e is AuthException) {
+                    (activity as? AuthHost)?.onAuthInvalid()
+                    return@launch
+                }
                 openAdapter.submit(emptyList())
             }
         }
@@ -60,7 +71,11 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
         lifecycleScope.launch {
             try {
                 apiClient.claimOrder(order.id)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                if (e is AuthException) {
+                    (activity as? AuthHost)?.onAuthInvalid()
+                    return@launch
+                }
             }
             refreshAll()
         }

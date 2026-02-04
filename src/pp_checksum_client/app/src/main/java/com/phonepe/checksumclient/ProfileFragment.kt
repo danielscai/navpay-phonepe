@@ -46,6 +46,10 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
                 currentPhone = profile.phone
                 binding.profileStatus.text = "Loaded"
             } catch (e: Exception) {
+                if (e is AuthException) {
+                    (activity as? Callback)?.onLogout()
+                    return@launch
+                }
                 binding.profileStatus.text = e.message ?: "Load failed"
             }
         }
@@ -67,6 +71,10 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
                 binding.emailInput.setText(profile.email)
                 binding.profileStatus.text = "Saved"
             } catch (e: Exception) {
+                if (e is AuthException) {
+                    (activity as? Callback)?.onLogout()
+                    return@launch
+                }
                 binding.profileStatus.text = e.message ?: "Save failed"
             }
         }

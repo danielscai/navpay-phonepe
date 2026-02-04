@@ -4,7 +4,7 @@ import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import com.phonepe.checksumclient.databinding.ActivityMainBinding
 
-class MainActivity : AppCompatActivity(), LoginFragment.Callback, ProfileFragment.Callback {
+class MainActivity : AppCompatActivity(), LoginFragment.Callback, ProfileFragment.Callback, OrdersFragment.AuthHost, EarningsFragment.AuthHost {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var authManager: AuthManager
@@ -58,6 +58,11 @@ class MainActivity : AppCompatActivity(), LoginFragment.Callback, ProfileFragmen
     }
 
     override fun onLogout() {
+        binding.bottomNav.visibility = android.view.View.GONE
+        showFragment(LoginFragment())
+    }
+
+    override fun onAuthInvalid() {
         binding.bottomNav.visibility = android.view.View.GONE
         showFragment(LoginFragment())
     }

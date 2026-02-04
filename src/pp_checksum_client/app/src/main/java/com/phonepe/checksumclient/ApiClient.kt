@@ -109,6 +109,10 @@ class ApiClient(private val authManager: AuthManager) {
             .build()
         val resp = client.newCall(req).execute()
         val body = resp.body?.string().orEmpty()
+        if (resp.code == 401) {
+            authManager.clear()
+            throw AuthException("token_invalid")
+        }
         if (!resp.isSuccessful) {
             throw RuntimeException("request failed: ${resp.code} $body")
         }
@@ -124,6 +128,10 @@ class ApiClient(private val authManager: AuthManager) {
             .build()
         val resp = client.newCall(req).execute()
         val body = resp.body?.string().orEmpty()
+        if (resp.code == 401) {
+            authManager.clear()
+            throw AuthException("token_invalid")
+        }
         if (!resp.isSuccessful) {
             throw RuntimeException("request failed: ${resp.code} $body")
         }
@@ -173,3 +181,5 @@ class ApiClient(private val authManager: AuthManager) {
         const val BASE_URL = "http://10.0.2.2:3000"
     }
 }
+
+class AuthException(message: String) : RuntimeException(message)
