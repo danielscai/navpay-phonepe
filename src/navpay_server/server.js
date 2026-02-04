@@ -147,7 +147,7 @@ app.put("/me", authMiddleware, (req, res) => {
   res.json({ username: user.username, name: user.name, phone: user.phone, email: user.email });
 });
 
-app.get(["/orders", "/orders/my"], authMiddleware, (req, res) => {
+app.get("/orders/my", authMiddleware, (req, res) => {
   const userOrders = orders.filter((o) => o.assignedTo === req.user).map(formatOrder);
   res.json({ orders: userOrders });
 });
