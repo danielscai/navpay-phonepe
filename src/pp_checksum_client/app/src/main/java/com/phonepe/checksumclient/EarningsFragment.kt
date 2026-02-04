@@ -7,6 +7,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.phonepe.checksumclient.databinding.FragmentEarningsBinding
 import kotlinx.coroutines.launch
+import android.widget.Toast
 
 class EarningsFragment : Fragment(R.layout.fragment_earnings) {
     interface AuthHost {
@@ -47,10 +48,14 @@ class EarningsFragment : Fragment(R.layout.fragment_earnings) {
                     (activity as? AuthHost)?.onAuthInvalid()
                     return@launch
                 }
-                binding.earningsTotal.text = "Total: 0"
-                adapter.submit(emptyList())
+                showError("服务不可用，请稍后重试")
             }
         }
+    }
+
+    private fun showError(message: String) {
+        if (!isAdded) return
+        Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
     }
 
     override fun onDestroyView() {

@@ -7,6 +7,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.phonepe.checksumclient.databinding.FragmentOrdersBinding
 import kotlinx.coroutines.launch
+import android.widget.Toast
 
 class OrdersFragment : Fragment(R.layout.fragment_orders) {
     interface AuthHost {
@@ -52,7 +53,8 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
                     (activity as? AuthHost)?.onAuthInvalid()
                     return@launch
                 }
-                myAdapter.submit(emptyList())
+                showError("服务不可用，请稍后重试")
+                return@launch
             }
             try {
                 val openOrders = apiClient.getOpenOrders()
@@ -62,7 +64,8 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
                     (activity as? AuthHost)?.onAuthInvalid()
                     return@launch
                 }
-                openAdapter.submit(emptyList())
+                showError("服务不可用，请稍后重试")
+                return@launch
             } finally {
                 if (isAdded) {
                     binding.ordersRefresh.isEnabled = true
@@ -81,9 +84,16 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
                     (activity as? AuthHost)?.onAuthInvalid()
                     return@launch
                 }
+                showError("抢单失败，请稍后重试")
+                return@launch
             }
             refreshAll()
         }
+    }
+
+    private fun showError(message: String) {
+        if (!isAdded) return
+        Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
     }
 
     override fun onDestroyView() {
