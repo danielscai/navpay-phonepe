@@ -15,7 +15,7 @@ def fetch_checksum(payload):
     body = json.dumps(payload)
     host = "http://127.0.0.1:8088/api/checksum"
     last_err = None
-    for _ in range(10):
+    for _ in range(5):
         try:
             proc = subprocess.run(
                 [
@@ -38,7 +38,7 @@ def fetch_checksum(payload):
             last_err = proc.stderr.strip() or f"curl exit {proc.returncode}"
         except Exception as exc:
             last_err = exc
-        time.sleep(0.2)
+        time.sleep(0.1)
     raise RuntimeError(f"checksum fetch failed: {last_err}")
 
 
