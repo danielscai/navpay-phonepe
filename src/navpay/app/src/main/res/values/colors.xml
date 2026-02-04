@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#1E222B</color>
+
+    <color name="ink_900">#171B23</color>
+    <color name="ink_800">#1F2430</color>
+    <color name="ink_700">#2A3140</color>
+    <color name="linen_50">#F7F4EF</color>
+    <color name="ivory_50">#FFFDF9</color>
+    <color name="stone_200">#E3DDD4</color>
+    <color name="stone_400">#A39C92</color>
+    <color name="amber_500">#FFB347</color>
+    <color name="amber_700">#E39A2E</color>
+    <color name="teal_500">#2EC4B6</color>
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+
+    <color name="status_neutral">#9AA3B2</color>
+    <color name="status_open">#2EC4B6</color>
+    <color name="status_claimed">#FFB347</color>
+    <color name="status_paid">#2BB673</color>
+    <color name="status_refunded">#E25353</color>
+    <color name="status_pending">#5FA8FF</color>
+</resources>
