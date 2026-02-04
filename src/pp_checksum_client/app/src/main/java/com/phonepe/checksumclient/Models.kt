@@ -18,7 +18,11 @@ data class Order(
     val amount: Double,
     val currency: String,
     val status: String,
-    val createdAt: String
+    val createdAt: String,
+    val paymentApp: String,
+    val assignedTo: String?,
+    val claimedAt: String?,
+    val claimExpiresAt: Long?
 )
 
 data class Earning(

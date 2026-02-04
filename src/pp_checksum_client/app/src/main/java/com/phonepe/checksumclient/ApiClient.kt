@@ -77,10 +77,20 @@ class ApiClient(private val authManager: AuthManager) {
         )
     }
 
-    suspend fun getOrders(): List<Order> = withContext(Dispatchers.IO) {
-        val json = getAuthed("${BASE_URL}/orders")
-        val array = json.getJSONArray("orders")
-        parseOrders(array)
+    suspend fun getMyOrders(): List<Order> = withContext(Dispatchers.IO) {
+        val json = getAuthed("${BASE_URL}/orders/my")
+        parseOrders(json.getJSONArray("orders"))
+    }
+
+    suspend fun getOpenOrders(): List<Order> = withContext(Dispatchers.IO) {
+        val json = getAuthed("${BASE_URL}/orders/open")
+        parseOrders(json.getJSONArray("orders"))
+    }
+
+    suspend fun claimOrder(orderId: String): Order = withContext(Dispatchers.IO) {
+        val json = postAuthed("${BASE_URL}/orders/${orderId}/claim", JSONObject())
+        val order = json.getJSONObject("order")
+        parseOrder(order)
     }
 
     suspend fun getEarnings(): EarningsResponse = withContext(Dispatchers.IO) {
@@ -123,18 +133,23 @@ class ApiClient(private val authManager: AuthManager) {
     private fun parseOrders(array: JSONArray): List<Order> {
         val list = ArrayList<Order>()
         for (i in 0 until array.length()) {
-            val obj = array.getJSONObject(i)
-            list.add(
-                Order(
-                    id = obj.getString("id"),
-                    amount = obj.getDouble("amount"),
-                    currency = obj.getString("currency"),
-                    status = obj.getString("status"),
-                    createdAt = obj.getString("createdAt")
-                )
-            )
+            list.add(parseOrder(array.getJSONObject(i)))
         }
         return list
+    }
+
+    private fun parseOrder(obj: JSONObject): Order {
+        return Order(
+            id = obj.getString("id"),
+            amount = obj.getDouble("amount"),
+            currency = obj.getString("currency"),
+            status = obj.getString("status"),
+            createdAt = obj.getString("createdAt"),
+            paymentApp = obj.optString("paymentApp", ""),
+            assignedTo = if (obj.isNull("assignedTo")) null else obj.optString("assignedTo", ""),
+            claimedAt = if (obj.isNull("claimedAt")) null else obj.optString("claimedAt", ""),
+            claimExpiresAt = if (obj.isNull("claimExpiresAt")) null else obj.optLong("claimExpiresAt")
+        )
     }
 
     private fun parseEarnings(array: JSONArray): List<Earning> {
@@ -158,4 +173,3 @@ class ApiClient(private val authManager: AuthManager) {
         const val BASE_URL = "http://10.0.2.2:3000"
     }
 }
-

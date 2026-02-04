@@ -11,7 +11,8 @@ import kotlinx.coroutines.launch
 class OrdersFragment : Fragment(R.layout.fragment_orders) {
     private var _binding: FragmentOrdersBinding? = null
     private val binding get() = _binding!!
-    private lateinit var adapter: OrdersAdapter
+    private lateinit var myAdapter: OrdersAdapter
+    private lateinit var openAdapter: OpenOrdersAdapter
     private lateinit var authManager: AuthManager
     private lateinit var apiClient: ApiClient
 
@@ -20,26 +21,48 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
         _binding = FragmentOrdersBinding.bind(view)
         authManager = AuthManager(requireContext())
         apiClient = ApiClient(authManager)
-        adapter = OrdersAdapter()
-        binding.ordersList.layoutManager = LinearLayoutManager(requireContext())
-        binding.ordersList.adapter = adapter
+        myAdapter = OrdersAdapter()
+        openAdapter = OpenOrdersAdapter { order -> claimOrder(order) }
 
-        binding.ordersRefresh.setOnClickListener { loadOrders() }
-        loadOrders()
+        binding.ordersList.layoutManager = LinearLayoutManager(requireContext())
+        binding.ordersList.adapter = myAdapter
+        binding.openOrdersList.layoutManager = LinearLayoutManager(requireContext())
+        binding.openOrdersList.adapter = openAdapter
+
+        binding.ordersRefresh.setOnClickListener { refreshAll() }
+        refreshAll()
     }
 
-    private fun loadOrders() {
+    private fun refreshAll() {
         if (!authManager.isTokenValid()) {
-            adapter.submit(emptyList())
+            myAdapter.submit(emptyList())
+            openAdapter.submit(emptyList())
             return
         }
         lifecycleScope.launch {
             try {
-                val orders = apiClient.getOrders()
-                adapter.submit(orders)
-            } catch (e: Exception) {
-                adapter.submit(emptyList())
+                val myOrders = apiClient.getMyOrders()
+                myAdapter.submit(myOrders)
+            } catch (_: Exception) {
+                myAdapter.submit(emptyList())
             }
+            try {
+                val openOrders = apiClient.getOpenOrders()
+                openAdapter.submit(openOrders)
+            } catch (_: Exception) {
+                openAdapter.submit(emptyList())
+            }
+        }
+    }
+
+    private fun claimOrder(order: Order) {
+        if (!authManager.isTokenValid()) return
+        lifecycleScope.launch {
+            try {
+                apiClient.claimOrder(order.id)
+            } catch (_: Exception) {
+            }
+            refreshAll()
         }
     }
 

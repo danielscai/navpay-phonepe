@@ -7,4 +7,10 @@
     <color name="teal_700">#018786</color>
     <color name="white">#FFFFFF</color>
     <color name="black">#000000</color>
+
+    <color name="status_neutral">#9E9E9E</color>
+    <color name="status_claimed">#FB8C00</color>
+    <color name="status_paid">#2E7D32</color>
+    <color name="status_refunded">#C62828</color>
+    <color name="status_pending">#1976D2</color>
 </resources>

@@ -14,20 +14,20 @@
         android:padding="12dp">
 
         <com.google.android.material.textview.MaterialTextView
-            android:id="@+id/orderId"
+            android:id="@+id/openOrderId"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:text="ORD-0000"
             android:textStyle="bold"
             app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toStartOf="@id/orderStatus" />
+            app:layout_constraintEnd_toStartOf="@id/openOrderStatus" />
 
         <com.google.android.material.textview.MaterialTextView
-            android:id="@+id/orderStatus"
+            android:id="@+id/openOrderStatus"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="PAID"
+            android:text="UNASSIGNED"
             android:textColor="@color/white"
             android:paddingLeft="8dp"
             android:paddingRight="8dp"
@@ -38,39 +38,38 @@
             app:layout_constraintEnd_toEndOf="parent" />
 
         <com.google.android.material.textview.MaterialTextView
-            android:id="@+id/orderAmount"
+            android:id="@+id/openOrderAmount"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
             android:text="INR 0.00"
-            app:layout_constraintTop_toBottomOf="@id/orderId"
+            app:layout_constraintTop_toBottomOf="@id/openOrderId"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toStartOf="@id/orderTime" />
+            app:layout_constraintEnd_toStartOf="@id/openOrderTime" />
 
         <com.google.android.material.textview.MaterialTextView
-            android:id="@+id/orderTime"
+            android:id="@+id/openOrderTime"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="2026-01-01"
-            app:layout_constraintTop_toBottomOf="@id/orderStatus"
+            app:layout_constraintTop_toBottomOf="@id/openOrderStatus"
             app:layout_constraintEnd_toEndOf="parent" />
 
         <com.google.android.material.textview.MaterialTextView
-            android:id="@+id/orderApp"
+            android:id="@+id/openOrderApp"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
             android:text="App: PE"
-            app:layout_constraintTop_toBottomOf="@id/orderAmount"
+            app:layout_constraintTop_toBottomOf="@id/openOrderAmount"
             app:layout_constraintStart_toStartOf="parent" />
 
-        <com.google.android.material.textview.MaterialTextView
-            android:id="@+id/orderCountdown"
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/openOrderClaim"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text=""
-            android:textStyle="bold"
-            app:layout_constraintTop_toBottomOf="@id/orderAmount"
+            android:text="Claim"
+            app:layout_constraintTop_toBottomOf="@id/openOrderAmount"
             app:layout_constraintEnd_toEndOf="parent" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
