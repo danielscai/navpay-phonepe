@@ -179,17 +179,52 @@ app.get("/earnings", authMiddleware, (req, res) => {
   res.json({ total, earnings: user.earnings });
 });
 
-function renderLayout(title, content) {
+function formatInIST(isoOrMillis) {
+  if (!isoOrMillis) return "-";
+  const date = typeof isoOrMillis === "number" ? new Date(isoOrMillis) : new Date(isoOrMillis);
+  const fmt = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
+  return fmt.format(date).replace(/\//g, "-");
+}
+
+function paginate(items, page, pageSize) {
+  const total = items.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const current = Math.min(Math.max(page, 1), totalPages);
+  const start = (current - 1) * pageSize;
+  return {
+    items: items.slice(start, start + pageSize),
+    current,
+    totalPages,
+    total
+  };
+}
+
+function renderLayout(title, active, content) {
   return `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
   <title>${title}</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 24px; color: #1a1a1a; }
+    body { font-family: Arial, sans-serif; margin: 0; color: #1a1a1a; background: #f7f8fb; }
+    .layout { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+    .sidebar { background: #0f172a; color: #e2e8f0; padding: 20px; }
+    .sidebar h2 { margin: 0 0 16px; font-size: 18px; }
+    .nav a { display: block; padding: 10px 12px; margin-bottom: 6px; border-radius: 8px; color: #cbd5f5; text-decoration: none; }
+    .nav a.active { background: #1e293b; color: #fff; }
+    .content { padding: 24px; }
+    .card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 2px 10px rgba(15,23,42,0.06); }
     table { border-collapse: collapse; width: 100%; margin-top: 12px; }
     th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-    th { background: #f5f5f5; }
+    th { background: #f1f5f9; }
     .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
     .UNASSIGNED { background: #eee; }
     .CLAIMED { background: #ffe0b2; }
@@ -197,67 +232,100 @@ function renderLayout(title, content) {
     .REFUNDED { background: #ffcdd2; }
     .PENDING_PAYMENT { background: #bbdefb; }
     a { color: #0d47a1; text-decoration: none; }
+    .meta { color: #64748b; font-size: 12px; }
+    .pager { margin-top: 12px; display: flex; gap: 8px; align-items: center; }
+    .pager a { padding: 4px 8px; border-radius: 6px; background: #e2e8f0; }
   </style>
 </head>
 <body>
-  <h1>${title}</h1>
-  ${content}
+  <div class="layout">
+    <aside class="sidebar">
+      <h2>NavPay 管理台</h2>
+      <div class="nav">
+        <a href="/" class="${active === "users" ? "active" : ""}">用户列表</a>
+        <a href="/orders" class="${active === "orders" ? "active" : ""}">订单列表</a>
+      </div>
+    </aside>
+    <main class="content">
+      <h1>${title}</h1>
+      <div class="card">
+        ${content}
+      </div>
+    </main>
+  </div>
 </body>
 </html>`;
 }
 
-app.get("/admin", (req, res) => {
-  const rows = Array.from(users.values()).map((u) =>
-    `<tr><td><a href="/admin/users/${u.username}">${u.username}</a></td><td>${u.name}</td><td>${u.phone}</td><td>${u.email}</td><td>${u.claimFailures.length}</td></tr>`
+app.get("/", (req, res) => {
+  const page = parseInt(req.query.page || "1", 10);
+  const size = parseInt(req.query.size || "10", 10);
+  const list = Array.from(users.values());
+  const { items, current, totalPages, total } = paginate(list, page, size);
+  const pagedRows = items.map((u) =>
+    `<tr><td><a href="/users/${u.username}">${u.username}</a></td><td>${u.name}</td><td>${u.phone}</td><td>${u.email}</td><td>${u.claimFailures.length}</td></tr>`
   ).join("");
   const content = `
-    <p><a href="/admin/orders">All Orders</a></p>
     <table>
       <thead><tr><th>Username</th><th>Name</th><th>Phone</th><th>Email</th><th>Claim Failures</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-  res.send(renderLayout("NavPay Admin - Users", content));
+      <tbody>${pagedRows || "<tr><td colspan=\"5\">暂无数据</td></tr>"}</tbody>
+    </table>
+    <div class="pager">
+      <span class="meta">共 ${total} 条</span>
+      ${current > 1 ? `<a href="/?page=${current - 1}&size=${size}">上一页</a>` : ""}
+      <span class="meta">第 ${current} / ${totalPages} 页</span>
+      ${current < totalPages ? `<a href="/?page=${current + 1}&size=${size}">下一页</a>` : ""}
+    </div>`;
+  res.send(renderLayout("用户列表", "users", content));
 });
 
-app.get("/admin/users/:username", (req, res) => {
+app.get("/users/:username", (req, res) => {
   const user = users.get(req.params.username);
   if (!user) return res.status(404).send("User not found");
   const userOrders = orders.filter((o) => o.assignedTo === user.username);
   const ordersRows = userOrders.map((o) =>
-    `<tr><td>${o.id}</td><td>${o.amount}</td><td>${o.currency}</td><td><span class="pill ${o.status}">${o.status}</span></td><td>${o.paymentApp}</td><td>${o.createdAt}</td></tr>`
+    `<tr><td>${o.id}</td><td>${o.amount}</td><td>${o.currency}</td><td><span class="pill ${o.status}">${o.status}</span></td><td>${o.paymentApp}</td><td>${formatInIST(o.createdAt)}</td></tr>`
   ).join("");
   const failuresRows = user.claimFailures.map((f) =>
-    `<tr><td>${f.orderId}</td><td>${f.claimedAt || "-"}</td><td>${f.releasedAt}</td></tr>`
+    `<tr><td>${f.orderId}</td><td>${formatInIST(f.claimedAt) || "-"}</td><td>${formatInIST(f.releasedAt)}</td></tr>`
   ).join("");
   const content = `
-    <p><a href="/admin">Back to Users</a></p>
-    <h2>Profile</h2>
-    <p>${user.name} (${user.username})</p>
+    <p class="meta"><a href="/">返回用户列表</a></p>
+    <h2>用户信息</h2>
+    <p>${user.name}（${user.username}）</p>
     <p>${user.phone} | ${user.email}</p>
-    <h2>Orders</h2>
+    <h2>订单明细</h2>
     <table>
       <thead><tr><th>ID</th><th>Amount</th><th>Currency</th><th>Status</th><th>App</th><th>Created</th></tr></thead>
-      <tbody>${ordersRows || "<tr><td colspan=\"6\">No orders</td></tr>"}</tbody>
+      <tbody>${ordersRows || "<tr><td colspan=\"6\">暂无订单</td></tr>"}</tbody>
     </table>
-    <h2>Claim Failures</h2>
+    <h2>抢单未完成记录</h2>
     <table>
       <thead><tr><th>Order</th><th>Claimed At</th><th>Released At</th></tr></thead>
-      <tbody>${failuresRows || "<tr><td colspan=\"3\">No failures</td></tr>"}</tbody>
+      <tbody>${failuresRows || "<tr><td colspan=\"3\">暂无记录</td></tr>"}</tbody>
     </table>`;
-  res.send(renderLayout(`NavPay Admin - ${user.username}`, content));
+  res.send(renderLayout(`用户详情 - ${user.username}`, "users", content));
 });
 
-app.get("/admin/orders", (req, res) => {
-  const rows = orders.map((o) =>
-    `<tr><td>${o.id}</td><td>${o.amount}</td><td>${o.currency}</td><td><span class="pill ${o.status}">${o.status}</span></td><td>${o.paymentApp}</td><td>${o.assignedTo || "-"}</td><td>${o.createdAt}</td></tr>`
+app.get("/orders", (req, res) => {
+  const page = parseInt(req.query.page || "1", 10);
+  const size = parseInt(req.query.size || "10", 10);
+  const { items, current, totalPages, total } = paginate(orders, page, size);
+  const rows = items.map((o) =>
+    `<tr><td>${o.id}</td><td>${o.amount}</td><td>${o.currency}</td><td><span class="pill ${o.status}">${o.status}</span></td><td>${o.paymentApp}</td><td>${o.assignedTo || "-"}</td><td>${formatInIST(o.createdAt)}</td></tr>`
   ).join("");
   const content = `
-    <p><a href="/admin">Back to Users</a></p>
     <table>
       <thead><tr><th>ID</th><th>Amount</th><th>Currency</th><th>Status</th><th>App</th><th>User</th><th>Created</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-  res.send(renderLayout("NavPay Admin - Orders", content));
+      <tbody>${rows || "<tr><td colspan=\"7\">暂无数据</td></tr>"}</tbody>
+    </table>
+    <div class="pager">
+      <span class="meta">共 ${total} 条</span>
+      ${current > 1 ? `<a href="/orders?page=${current - 1}&size=${size}">上一页</a>` : ""}
+      <span class="meta">第 ${current} / ${totalPages} 页</span>
+      ${current < totalPages ? `<a href="/orders?page=${current + 1}&size=${size}">下一页</a>` : ""}
+    </div>`;
+  res.send(renderLayout("订单列表", "orders", content));
 });
 
 const port = process.env.PORT || 3000;
