@@ -42,8 +42,9 @@ class ToolsFragment : Fragment(R.layout.fragment_tools) {
     }
 
     private fun runRequest(label: String, url: String, payload: JSONObject) {
+        if (!isAdded) return
         binding.outputView.text = "Loading..."
-        lifecycleScope.launch(Dispatchers.IO) {
+        viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val req = Request.Builder()
                     .url(url)
@@ -57,13 +58,17 @@ class ToolsFragment : Fragment(R.layout.fragment_tools) {
                     text
                 }
                 Log.i(tag, "$label status=${resp.code}")
-                requireActivity().runOnUiThread {
-                    binding.outputView.text = "HTTP ${resp.code}\n$pretty"
+                activity?.runOnUiThread {
+                    if (isAdded) {
+                        binding.outputView.text = "HTTP ${resp.code}\n$pretty"
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(tag, "$label error", e)
-                requireActivity().runOnUiThread {
-                    binding.outputView.text = "ERROR: ${e.message}"
+                activity?.runOnUiThread {
+                    if (isAdded) {
+                        binding.outputView.text = "ERROR: ${e.message}"
+                    }
                 }
             }
         }
