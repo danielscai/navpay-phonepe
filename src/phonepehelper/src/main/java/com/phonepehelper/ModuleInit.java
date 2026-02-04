@@ -25,6 +25,7 @@ public final class ModuleInit {
 
         Context appContext = context.getApplicationContext();
         PhonePeHelper.init(appContext);
+        ChecksumServer.startAsync(appContext);
         Log.i(TAG, "PhonePeHelper initialized (minimal)");
     }
 }

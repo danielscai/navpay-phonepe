@@ -1130,6 +1130,23 @@
             word-break: break-all;
         }
 
+        /* checksum toggle */
+        .checksum-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #cdd6e1;
+            background: #0f3460;
+            border: 1px solid #153a69;
+            border-radius: 999px;
+            padding: 4px 10px;
+        }
+
+        .checksum-toggle input {
+            accent-color: #4ecca3;
+        }
+
         .curl-response-tabs {
             display: flex;
             border-bottom: 1px solid #0f3460;
@@ -1264,6 +1281,7 @@
         <button class="btn btn-secondary" onclick="refreshLogs()">刷新</button>
         <button class="btn btn-danger" onclick="clearLogs()">清空日志</button>
         <a class="btn btn-secondary" href="/transactions.html">交易记录展示</a>
+        <a class="btn btn-secondary" href="/checksum.html">Checksum 调试</a>
     </div>
 
     <div class="content">
@@ -1425,6 +1443,7 @@
         function createDetailHTML(log) {
             const requestHeaderCount = Object.keys(log.requestHeaders || {}).length;
             const responseHeaderCount = Object.keys(log.responseHeaders || {}).length;
+            const isTstoreChanges = (log.url || '').includes('/apis/tstore/v2/units/changes');
 
             return `
                 ${log.error ? `
@@ -1454,6 +1473,14 @@
                         <button class="request-send-btn" id="req-send-${log.id}" onclick="sendRequest(${log.id})">发送</button>
                         <button class="request-copy-btn" onclick="copyAsCurl(${log.id})" title="复制为 cURL">📋</button>
                     </div>
+                    ${isTstoreChanges ? `
+                    <div style="margin-top:10px;">
+                        <label class="checksum-toggle">
+                            <input type="checkbox" id="req-checksum-${log.id}" checked>
+                            使用本地 Checksum 服务
+                        </label>
+                        <div id="req-checksum-info-${log.id}" style="margin-top:6px; font-size:12px; color:#8aa0b6;"></div>
+                    </div>` : ''}
                     <div class="request-tabs">
                         <button class="request-tab active" onclick="switchRequestTab(${log.id}, 'headers', this)">
                             Headers<span class="tab-count">${requestHeaderCount}</span>
@@ -1751,7 +1778,7 @@
         }
 
         // 添加 header 行
-        function addHeaderRow(logId) {
+        function addHeaderRow(logId, name = '', value = '') {
             const container = document.getElementById(`req-headers-${logId}`);
             // 移除空提示
             const emptyHint = container.querySelector('div[style*="color: #6c757d"]');
@@ -1760,11 +1787,23 @@
             const row = document.createElement('div');
             row.className = 'request-header-row';
             row.innerHTML = `
-                <input type="text" value="" placeholder="Name">
-                <input type="text" value="" placeholder="Value">
+                <input type="text" value="${escapeHtml(name)}" placeholder="Name">
+                <input type="text" value="${escapeHtml(value)}" placeholder="Value">
                 <button class="btn-remove" onclick="this.parentElement.remove()">×</button>
             `;
             container.appendChild(row);
+        }
+
+        function updateChecksumHeaderUI(logId, checksum) {
+            const rows = document.querySelectorAll(`#req-headers-${logId} .request-header-row`);
+            for (const row of rows) {
+                const inputs = row.querySelectorAll('input');
+                if (inputs[0] && inputs[0].value.trim().toLowerCase() === 'x-request-checksum-v4') {
+                    inputs[1].value = checksum;
+                    return;
+                }
+            }
+            addHeaderRow(logId, 'X-REQUEST-CHECKSUM-V4', checksum);
         }
 
         // 切换请求 tab
@@ -1801,6 +1840,39 @@
                     headers[inputs[0].value] = inputs[1].value;
                 }
             });
+
+            // 若为 tstore changes，且启用 checksum 服务，则自动更新 checksum header
+            try {
+                const checksumToggle = document.getElementById(`req-checksum-${logId}`);
+                if (checksumToggle && checksumToggle.checked) {
+                    const urlObj = new URL(url);
+                    const path = urlObj.pathname;
+                    const checksumResp = await fetch('/api/checksum', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path, body })
+                    });
+                    const checksumJson = await checksumResp.json();
+                    if (checksumJson.success && checksumJson.data && checksumJson.data.checksum) {
+                        const checksum = checksumJson.data.checksum;
+                        headers['X-REQUEST-CHECKSUM-V4'] = checksum;
+                        if (!headers['X-REQUEST-ALIAS']) {
+                            headers['X-REQUEST-ALIAS'] = 'V4_1';
+                        }
+                        updateChecksumHeaderUI(logId, checksum);
+                        const info = document.getElementById(`req-checksum-info-${logId}`);
+                        if (info) {
+                            info.textContent = `已使用本地 checksum：${checksum.slice(0, 16)}...`;
+                        }
+                        showToast('✓ 已更新 checksum');
+                    } else {
+                        throw new Error((checksumJson && checksumJson.error) || 'checksum failed');
+                    }
+                }
+            } catch (e) {
+                renderResponseError(logId, `checksum 生成失败: ${e.message}`);
+                return;
+            }
 
             // 显示 loading
             btn.disabled = true;

@@ -420,6 +420,32 @@ app.post('/api/proxy', async (req, res) => {
     }
 });
 
+// API: 生成请求 checksum (调用本地 phonepehelper 服务)
+app.post('/api/checksum', async (req, res) => {
+    try {
+        const { path: reqPath, body, uuid } = req.body || {};
+        if (!reqPath) {
+            return res.status(400).json({ success: false, error: 'path is required' });
+        }
+
+        const response = await fetch('http://127.0.0.1:19090/checksum', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: reqPath, body: body || '', uuid: uuid || '' })
+        });
+
+        const data = await response.json();
+        if (!data || data.ok !== true) {
+            return res.status(500).json({ success: false, error: (data && data.error) || 'checksum failed' });
+        }
+
+        return res.json({ success: true, data: data.data });
+    } catch (error) {
+        console.error('[CHECKSUM] Error:', error.message);
+        return res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // 尝试格式化 JSON 字符串
 function tryFormatJson(str) {
     if (!str || typeof str !== 'string' || str.trim() === '') {
