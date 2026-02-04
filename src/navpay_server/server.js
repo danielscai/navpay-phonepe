@@ -5,6 +5,7 @@ const app = express();
 app.use(express.json({ limit: "1mb" }));
 
 const TOKEN_TTL_MS = 1000 * 60 * 30; // 30 minutes
+const CLAIM_TTL_MS = 1000 * 60 * 5; // 5 minutes
 
 const users = new Map([
   ["alice", {
@@ -13,14 +14,11 @@ const users = new Map([
     name: "Alice Chen",
     phone: "+91-90000-00001",
     email: "alice@example.com",
-    orders: [
-      { id: "ORD-1001", amount: 1299.0, currency: "INR", status: "PAID", createdAt: "2026-02-01T10:12:00Z" },
-      { id: "ORD-1002", amount: 499.0, currency: "INR", status: "REFUNDED", createdAt: "2026-02-02T08:05:00Z" }
-    ],
     earnings: [
       { id: "EARN-7001", amount: 88.5, currency: "INR", note: "Referral bonus", createdAt: "2026-02-01T12:00:00Z" },
       { id: "EARN-7002", amount: 120.0, currency: "INR", note: "Cashback", createdAt: "2026-02-03T12:20:00Z" }
-    ]
+    ],
+    claimFailures: []
   }],
   ["bob", {
     username: "bob",
@@ -28,14 +26,21 @@ const users = new Map([
     name: "Bob Singh",
     phone: "+91-90000-00002",
     email: "bob@example.com",
-    orders: [
-      { id: "ORD-2001", amount: 250.0, currency: "INR", status: "PAID", createdAt: "2026-01-30T15:30:00Z" }
-    ],
     earnings: [
       { id: "EARN-8001", amount: 60.0, currency: "INR", note: "Cashback", createdAt: "2026-02-02T09:10:00Z" }
-    ]
+    ],
+    claimFailures: []
   }]
 ]);
+
+const orders = [
+  { id: "ORD-1001", amount: 1299.0, currency: "INR", status: "PAID", createdAt: "2026-02-01T10:12:00Z", paymentApp: "PE", assignedTo: "alice", claimedAt: null, claimExpiresAt: null },
+  { id: "ORD-1002", amount: 499.0, currency: "INR", status: "REFUNDED", createdAt: "2026-02-02T08:05:00Z", paymentApp: "PE", assignedTo: "alice", claimedAt: null, claimExpiresAt: null },
+  { id: "ORD-2001", amount: 250.0, currency: "INR", status: "PAID", createdAt: "2026-01-30T15:30:00Z", paymentApp: "PE", assignedTo: "bob", claimedAt: null, claimExpiresAt: null },
+  { id: "ORD-3001", amount: 699.0, currency: "INR", status: "UNASSIGNED", createdAt: "2026-02-03T07:20:00Z", paymentApp: "PE", assignedTo: null, claimedAt: null, claimExpiresAt: null },
+  { id: "ORD-3002", amount: 199.0, currency: "INR", status: "UNASSIGNED", createdAt: "2026-02-03T11:45:00Z", paymentApp: "PE", assignedTo: null, claimedAt: null, claimExpiresAt: null },
+  { id: "ORD-4001", amount: 999.0, currency: "INR", status: "PENDING_PAYMENT", createdAt: "2026-02-03T12:10:00Z", paymentApp: "PE", assignedTo: "bob", claimedAt: "2026-02-03T12:10:00Z", claimExpiresAt: null }
+];
 
 const tokens = new Map();
 
@@ -64,6 +69,45 @@ function authMiddleware(req, res, next) {
   req.user = entry.username;
   next();
 }
+
+function refreshExpiredClaims() {
+  const now = Date.now();
+  for (const order of orders) {
+    if (order.status === "CLAIMED" && order.claimExpiresAt && now > order.claimExpiresAt) {
+      const user = order.assignedTo ? users.get(order.assignedTo) : null;
+      if (user) {
+        user.claimFailures.push({
+          orderId: order.id,
+          claimedAt: order.claimedAt,
+          releasedAt: new Date(now).toISOString()
+        });
+      }
+      order.status = "UNASSIGNED";
+      order.assignedTo = null;
+      order.claimedAt = null;
+      order.claimExpiresAt = null;
+    }
+  }
+}
+
+function formatOrder(order) {
+  return {
+    id: order.id,
+    amount: order.amount,
+    currency: order.currency,
+    status: order.status,
+    createdAt: order.createdAt,
+    paymentApp: order.paymentApp,
+    assignedTo: order.assignedTo,
+    claimedAt: order.claimedAt,
+    claimExpiresAt: order.claimExpiresAt
+  };
+}
+
+app.use((req, res, next) => {
+  refreshExpiredClaims();
+  next();
+});
 
 app.get("/health", (req, res) => {
   res.json({ ok: true, now: new Date().toISOString() });
@@ -103,15 +147,117 @@ app.put("/me", authMiddleware, (req, res) => {
   res.json({ username: user.username, name: user.name, phone: user.phone, email: user.email });
 });
 
-app.get("/orders", authMiddleware, (req, res) => {
-  const user = users.get(req.user);
-  res.json({ orders: user.orders });
+app.get(["/orders", "/orders/my"], authMiddleware, (req, res) => {
+  const userOrders = orders.filter((o) => o.assignedTo === req.user).map(formatOrder);
+  res.json({ orders: userOrders });
+});
+
+app.get("/orders/open", authMiddleware, (req, res) => {
+  const openOrders = orders.filter((o) => o.status === "UNASSIGNED").map(formatOrder);
+  res.json({ orders: openOrders });
+});
+
+app.post("/orders/:id/claim", authMiddleware, (req, res) => {
+  const order = orders.find((o) => o.id === req.params.id);
+  if (!order) {
+    return res.status(404).json({ error: "order_not_found" });
+  }
+  if (order.status !== "UNASSIGNED") {
+    return res.status(409).json({ error: "order_not_available" });
+  }
+  const now = Date.now();
+  order.status = "CLAIMED";
+  order.assignedTo = req.user;
+  order.claimedAt = new Date(now).toISOString();
+  order.claimExpiresAt = now + CLAIM_TTL_MS;
+  res.json({ ok: true, order: formatOrder(order) });
 });
 
 app.get("/earnings", authMiddleware, (req, res) => {
   const user = users.get(req.user);
   const total = user.earnings.reduce((sum, e) => sum + e.amount, 0);
   res.json({ total, earnings: user.earnings });
+});
+
+function renderLayout(title, content) {
+  return `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${title}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; color: #1a1a1a; }
+    table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background: #f5f5f5; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+    .UNASSIGNED { background: #eee; }
+    .CLAIMED { background: #ffe0b2; }
+    .PAID { background: #c8e6c9; }
+    .REFUNDED { background: #ffcdd2; }
+    .PENDING_PAYMENT { background: #bbdefb; }
+    a { color: #0d47a1; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <h1>${title}</h1>
+  ${content}
+</body>
+</html>`;
+}
+
+app.get("/admin", (req, res) => {
+  const rows = Array.from(users.values()).map((u) =>
+    `<tr><td><a href="/admin/users/${u.username}">${u.username}</a></td><td>${u.name}</td><td>${u.phone}</td><td>${u.email}</td><td>${u.claimFailures.length}</td></tr>`
+  ).join("");
+  const content = `
+    <p><a href="/admin/orders">All Orders</a></p>
+    <table>
+      <thead><tr><th>Username</th><th>Name</th><th>Phone</th><th>Email</th><th>Claim Failures</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  res.send(renderLayout("NavPay Admin - Users", content));
+});
+
+app.get("/admin/users/:username", (req, res) => {
+  const user = users.get(req.params.username);
+  if (!user) return res.status(404).send("User not found");
+  const userOrders = orders.filter((o) => o.assignedTo === user.username);
+  const ordersRows = userOrders.map((o) =>
+    `<tr><td>${o.id}</td><td>${o.amount}</td><td>${o.currency}</td><td><span class="pill ${o.status}">${o.status}</span></td><td>${o.paymentApp}</td><td>${o.createdAt}</td></tr>`
+  ).join("");
+  const failuresRows = user.claimFailures.map((f) =>
+    `<tr><td>${f.orderId}</td><td>${f.claimedAt || "-"}</td><td>${f.releasedAt}</td></tr>`
+  ).join("");
+  const content = `
+    <p><a href="/admin">Back to Users</a></p>
+    <h2>Profile</h2>
+    <p>${user.name} (${user.username})</p>
+    <p>${user.phone} | ${user.email}</p>
+    <h2>Orders</h2>
+    <table>
+      <thead><tr><th>ID</th><th>Amount</th><th>Currency</th><th>Status</th><th>App</th><th>Created</th></tr></thead>
+      <tbody>${ordersRows || "<tr><td colspan=\"6\">No orders</td></tr>"}</tbody>
+    </table>
+    <h2>Claim Failures</h2>
+    <table>
+      <thead><tr><th>Order</th><th>Claimed At</th><th>Released At</th></tr></thead>
+      <tbody>${failuresRows || "<tr><td colspan=\"3\">No failures</td></tr>"}</tbody>
+    </table>`;
+  res.send(renderLayout(`NavPay Admin - ${user.username}`, content));
+});
+
+app.get("/admin/orders", (req, res) => {
+  const rows = orders.map((o) =>
+    `<tr><td>${o.id}</td><td>${o.amount}</td><td>${o.currency}</td><td><span class="pill ${o.status}">${o.status}</span></td><td>${o.paymentApp}</td><td>${o.assignedTo || "-"}</td><td>${o.createdAt}</td></tr>`
+  ).join("");
+  const content = `
+    <p><a href="/admin">Back to Users</a></p>
+    <table>
+      <thead><tr><th>ID</th><th>Amount</th><th>Currency</th><th>Status</th><th>App</th><th>User</th><th>Created</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  res.send(renderLayout("NavPay Admin - Orders", content));
 });
 
 const port = process.env.PORT || 3000;
