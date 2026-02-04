@@ -42,6 +42,7 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
             openAdapter.submit(emptyList())
             return
         }
+        binding.ordersRefresh.isEnabled = false
         lifecycleScope.launch {
             try {
                 val myOrders = apiClient.getMyOrders()
@@ -62,6 +63,10 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
                     return@launch
                 }
                 openAdapter.submit(emptyList())
+            } finally {
+                if (isAdded) {
+                    binding.ordersRefresh.isEnabled = true
+                }
             }
         }
     }

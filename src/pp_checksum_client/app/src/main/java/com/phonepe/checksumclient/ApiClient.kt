@@ -11,7 +11,11 @@ import org.json.JSONObject
 
 class ApiClient(private val authManager: AuthManager) {
     private val jsonMedia = "application/json".toMediaType()
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
 
     suspend fun login(username: String, password: String): LoginResult = withContext(Dispatchers.IO) {
         val payload = JSONObject().apply {
