@@ -6,7 +6,8 @@ import { getClientIp } from "@/lib/http";
 
 export async function writeAuditLog(opts: {
   req: NextRequest;
-  actorUserId: string;
+  actorUserId?: string | null;
+  merchantId?: string | null;
   action: string;
   entityType?: string | null;
   entityId?: string | null;
@@ -17,7 +18,8 @@ export async function writeAuditLog(opts: {
     const ua = opts.req.headers.get("user-agent");
     await db.insert(auditLogs).values({
       id: id("al"),
-      actorUserId: opts.actorUserId,
+      actorUserId: opts.actorUserId ?? null,
+      merchantId: opts.merchantId ?? null,
       action: opts.action,
       entityType: opts.entityType ?? null,
       entityId: opts.entityId ?? null,
@@ -30,4 +32,3 @@ export async function writeAuditLog(opts: {
     // Never block business flow due to audit write failure.
   }
 }
-

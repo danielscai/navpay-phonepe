@@ -11,7 +11,7 @@ const querySchema = z.object({
   fromMs: z.coerce.number().optional(),
   toMs: z.coerce.number().optional(),
   page: z.coerce.number().min(1).default(1),
-  pageSize: z.coerce.number().min(1).max(200).default(50),
+  pageSize: z.coerce.number().min(1).max(200).default(10),
 });
 
 export async function GET(req: NextRequest) {

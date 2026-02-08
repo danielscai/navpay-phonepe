@@ -4,6 +4,8 @@ import { id } from "@/lib/id";
 import { encryptString, randomToken, sha256Hex } from "@/lib/crypto";
 import { env } from "@/lib/env";
 import { hashPassword, validateStrongPassword } from "@/lib/password";
+import { createMerchantApiKey, revokeAllMerchantApiKeys } from "@/lib/merchant-keys";
+import { getActiveMerchantApiKeyDisplay } from "@/lib/merchant-secret";
 import {
   permissions,
   rolePermissions,
@@ -40,6 +42,9 @@ const PERMS = [
 
   { key: "audit.read", description: "View audit logs" },
   { key: "tools.debug", description: "Access debug tools" },
+
+  { key: "payout.channel.read", description: "View payout payment channels & payment persons" },
+  { key: "payout.channel.write", description: "Manage payout payment channels & payment persons" },
 ];
 
 const ROLE_DEF: Record<string, string[]> = {
@@ -50,6 +55,8 @@ const ROLE_DEF: Record<string, string[]> = {
     "order.collect.write",
     "order.payout.read",
     "order.payout.write",
+    "payout.channel.read",
+    "payout.channel.write",
     "callback.read",
     "system.read",
     "audit.read",
@@ -106,8 +113,9 @@ async function linkRolePerms() {
 
 async function upsertSystemDefaults() {
   const defaults = [
-    { key: "order.collect.expire_minutes", value: "20", description: "代收订单超时分钟数" },
-    { key: "callback.max_attempts", value: "5", description: "回调最大重试次数" },
+    { key: "order.timeout_minutes", value: "10", description: "订单超时分钟数（代收/代付统一）" },
+    { key: "payout.lock_timeout_minutes", value: "10", description: "代付订单锁单超时分钟数" },
+    { key: "callback.max_attempts", value: "3", description: "回调最大重试次数" },
     { key: "callback.base_delay_seconds", value: "60", description: "回调重试基础延迟(秒)" },
     { key: "timezone.default", value: env.DEFAULT_TIMEZONE, description: "默认展示时区" },
     { key: "timezone.alt", value: "Asia/Kolkata", description: "可切换时区" },
@@ -262,7 +270,16 @@ async function createQaEnrollUser() {
 async function seedMerchantDemo() {
   const code = "M0001";
   const exists = await db.select().from(merchants).where(eq(merchants.code, code));
-  if (exists.length) return;
+  if (exists.length) {
+    const merchantId = exists[0].id;
+    const k = await getActiveMerchantApiKeyDisplay(merchantId);
+    if (!k || !k.canDecrypt) {
+      await revokeAllMerchantApiKeys(merchantId);
+      await createMerchantApiKey(merchantId);
+      console.log("seed merchant api key rotated for", code, "(APIKEY_ENCRYPTION_KEY changed?)");
+    }
+    return;
+  }
 
   const merchantId = id("mch");
   await db.insert(merchants).values({
@@ -282,16 +299,53 @@ async function seedMerchantDemo() {
     updatedAtMs: Date.now(),
   });
 
-  const secret = "sk_" + randomToken(18);
-  const secretEnc = encryptString(secret, env.APIKEY_ENCRYPTION_KEY);
-  await db.insert(merchantApiKeys).values({
-    id: id("key"),
-    merchantId,
-    keyId: "kid_" + randomToken(8),
-    secretEnc,
-    secretHash: sha256Hex(secret),
-    secretPrefix: secret.slice(0, 6),
-  });
+  await createMerchantApiKey(merchantId);
+}
+
+async function createDemoMerchantPortalUser() {
+  const username = "merchant";
+  const password = "NavPayMerchant@123456!";
+  const ok = validateStrongPassword(password);
+  if (!ok.ok) throw new Error("Seed password not strong enough: " + ok.reason);
+
+  const mch = await db.select().from(merchants).where(eq(merchants.code, "M0001")).limit(1);
+  const merchantId = mch[0]?.id;
+  if (!merchantId) return;
+
+  const existing = await db.select().from(users).where(eq(users.username, username));
+  const passwordHash = await hashPassword(password);
+  if (existing.length) {
+    await db
+      .update(users)
+      .set({
+        passwordHash,
+        passwordUpdatedAtMs: Date.now(),
+        displayName: "Demo 商户用户",
+        email: "merchant@navpay.local",
+        merchantId,
+        totpEnabled: false,
+        totpMustEnroll: true,
+        failedLoginCount: 0,
+        lockUntilMs: null as any,
+        updatedAtMs: Date.now(),
+      })
+      .where(eq(users.id, existing[0].id));
+  } else {
+    const userId = id("user");
+    await db.insert(users).values({
+      id: userId,
+      username,
+      email: "merchant@navpay.local",
+      displayName: "Demo 商户用户",
+      merchantId,
+      passwordHash,
+      passwordUpdatedAtMs: Date.now(),
+      totpEnabled: false,
+      totpMustEnroll: true,
+    } as any);
+  }
+
+  console.log("seed merchant portal user:", { username, password });
 }
 
 async function main() {
@@ -303,6 +357,7 @@ async function main() {
   await createQaUser();
   await createQaEnrollUser();
   await seedMerchantDemo();
+  await createDemoMerchantPortalUser();
 }
 
 main().catch((e) => {

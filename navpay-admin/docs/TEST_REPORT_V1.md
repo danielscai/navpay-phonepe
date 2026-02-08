@@ -14,9 +14,9 @@ yarn test:report
 ```
 
 ## 结果摘要
-- build: 通过（15.2s）
-- unit: 通过（1.3s）
-- e2e: 通过（36.2s）
+- build: 通过（11.1s）
+- unit: 通过（1.1s）
+- e2e: 通过（23.4s）
 
 ## 覆盖场景
 - 强制 2FA 首次登录与绑定（Google Authenticator TOTP）

@@ -122,6 +122,21 @@ body {
   background: rgba(52, 211, 153, 0.10);
   color: rgba(255, 255, 255, 0.82);
 }
+.np-pill-info {
+  border-color: rgba(56, 189, 248, 0.28);
+  background: rgba(56, 189, 248, 0.10);
+  color: rgba(255, 255, 255, 0.82);
+}
+.np-pill-warn {
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.12);
+  color: rgba(255, 255, 255, 0.82);
+}
+.np-pill-danger {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.12);
+  color: rgba(255, 255, 255, 0.86);
+}
 .np-pill-off {
   border-color: rgba(255, 255, 255, 0.10);
   background: rgba(255, 255, 255, 0.04);

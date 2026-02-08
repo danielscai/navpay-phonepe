@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
   await writeAuditLog({
     req,
     actorUserId: uid,
+    merchantId: u.merchantId ?? null,
     action: "account.change_password",
     entityType: "user",
     entityId: uid,
@@ -50,4 +51,3 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ ok: true });
 }
-

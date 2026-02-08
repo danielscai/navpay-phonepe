@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ListPager, ListToolbar } from "@/components/list-kit";
 
 type Row = {
   id: string;
@@ -25,6 +26,7 @@ function actionLabel(action: string): string {
     "merchant.update": "更新商户配置",
     "merchant.enable": "启用商户",
     "merchant.disable": "停用商户",
+    "merchant.secrets.rotate": "轮换商户 API Key",
     "merchant.limit_rule_create": "新增商户限额规则",
     "merchant.limit_rule_update": "修改商户限额规则",
     "merchant.limit_rule_delete": "删除商户限额规则",
@@ -32,6 +34,10 @@ function actionLabel(action: string): string {
     "collect.status_update": "更新代收订单状态",
     "payout.create": "创建代付订单",
     "payout.status_update": "更新代付订单状态",
+    "payout.lock": "代付锁单（支付个人）",
+    "payout.unlock": "代付解锁（支付个人）",
+    "payment_person.enable": "启用个人支付渠道",
+    "payment_person.disable": "禁用个人支付渠道",
     "callback.worker_run": "执行通知队列",
     "system.ip_whitelist_add": "新增 IP 白名单",
     "system.ip_whitelist_update": "修改 IP 白名单",
@@ -40,9 +46,11 @@ function actionLabel(action: string): string {
     "system.ip_whitelist_delete": "删除 IP 白名单",
     "system.config_upsert": "新增/更新系统参数",
     "tools.webhook_receiver_create": "创建 Webhook 接收器",
+    "tools.webhook_receiver_delete": "删除 Webhook 接收器",
     "account.update_profile": "更新个人资料",
     "account.change_password": "修改密码",
     "account.reset_2fa": "重置 2FA（换绑）",
+    "merchant.api_key.view": "商户查看 API Key（敏感）",
   };
   return map[action] ?? action;
 }
@@ -122,7 +130,7 @@ export default function AuditLogsClient() {
   const [err, setErr] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings>({ timezone: "Asia/Shanghai" });
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
+  const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
 
   async function load() {
@@ -153,55 +161,30 @@ export default function AuditLogsClient() {
 
   const compact = useMemo(() => rows.slice(0, 200), [rows]);
   const fmt = (ms: number) => new Date(ms).toLocaleString("zh-CN", { timeZone: settings.timezone, hour12: false });
-  const pageCount = Math.max(1, Math.ceil(total / Math.max(1, pageSize)));
-
   return (
     <div>
-      <div className="np-card p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <ListToolbar
+        left={
           <input
             className="np-input w-full md:w-[420px]"
             placeholder="搜索动作/对象（模糊）"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          <div className="flex gap-2">
-            <button className="np-btn px-3 py-2 text-sm" onClick={load}>
-              查询
-            </button>
-          </div>
-        </div>
-        {err ? <div className="mt-3 text-sm text-[var(--np-danger)]">{err}</div> : null}
-      </div>
-
-      <div className="mt-3 np-card p-3">
-        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-          <div className="text-[var(--np-muted)]">
-            共 {total} 条，当前第 {page} / {pageCount} 页
-          </div>
-          <div className="flex items-center gap-2">
-            <select
-              className="np-input h-[38px] w-[120px] text-sm"
-              value={String(pageSize)}
-              onChange={(e) => {
-                setPage(1);
-                setPageSize(Number(e.target.value));
-              }}
-              aria-label="pageSize"
-            >
-              <option value="20">20 / 页</option>
-              <option value="50">50 / 页</option>
-              <option value="100">100 / 页</option>
-            </select>
-            <button className="np-btn px-3 py-2 text-sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
-              上一页
-            </button>
-            <button className="np-btn px-3 py-2 text-sm" onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={page >= pageCount}>
-              下一页
-            </button>
-          </div>
-        </div>
-      </div>
+        }
+        right={
+          <button
+            className="np-btn px-3 py-2 text-sm"
+            onClick={() => {
+              setPage(1);
+              load();
+            }}
+          >
+            查询
+          </button>
+        }
+        error={err}
+      />
 
       <div className="mt-4 overflow-hidden rounded-2xl border border-white/10">
         <table className="w-full text-left text-sm">
@@ -249,6 +232,17 @@ export default function AuditLogsClient() {
           </tbody>
         </table>
       </div>
+
+      <ListPager
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        onPage={(p) => setPage(p)}
+        onPageSize={(ps) => {
+          setPage(1);
+          setPageSize(ps);
+        }}
+      />
     </div>
   );
 }

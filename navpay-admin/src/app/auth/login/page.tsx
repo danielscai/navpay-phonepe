@@ -7,12 +7,24 @@ import { startAuthentication } from "@simplewebauthn/browser";
 
 export default function LoginPage() {
   const router = useRouter();
+  const [tab, setTab] = useState<"passkey" | "password">("passkey");
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("NavPay@123456!");
   const [totp, setTotp] = useState("");
   const [needsOtp, setNeedsOtp] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  async function redirectAfterLogin() {
+    try {
+      const r = await fetch("/api/admin/me");
+      const j = await r.json().catch(() => null);
+      const merchantId = j?.user?.merchantId as string | null | undefined;
+      router.push(merchantId ? "/merchant" : "/admin");
+    } catch {
+      router.push("/admin");
+    }
+  }
 
   useEffect(() => {
     // If user changes credentials, restart flow.
@@ -54,7 +66,7 @@ export default function LoginPage() {
         username,
         webauthn: JSON.stringify(assertion),
       });
-      if (res?.ok) router.push("/admin");
+      if (res?.ok) await redirectAfterLogin();
       else setErr("Passkey 登录失败");
     } catch (e: any) {
       const msg = typeof e?.message === "string" ? e.message : "Passkey 登录失败";
@@ -114,7 +126,7 @@ export default function LoginPage() {
           username,
           password,
         });
-        if (res?.ok) router.push("/admin");
+        if (res?.ok) await redirectAfterLogin();
         else setErr("登录失败");
         return;
       }
@@ -130,7 +142,7 @@ export default function LoginPage() {
         password,
         totp: totp.trim() || undefined,
       });
-      if (res?.ok) router.push("/admin");
+      if (res?.ok) await redirectAfterLogin();
       else setErr("登录失败：验证码/恢复码错误");
     } finally {
       setBusy(false);
@@ -150,48 +162,85 @@ export default function LoginPage() {
             默认账号将强制启用 Google Authenticator 二次验证。
           </p>
 
-          <form className="mt-6 flex flex-col gap-3" onSubmit={handleSubmit}>
-            <label className="text-xs text-[var(--np-faint)]" htmlFor="username">
-              用户名
-            </label>
-            <input
-              id="username"
-              className="np-input"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-            <label className="text-xs text-[var(--np-faint)]" htmlFor="password">
-              密码
-            </label>
-            <input
-              id="password"
-              className="np-input"
-              value={password}
-              type="password"
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            {needsOtp ? (
-              <>
-                <label className="text-xs text-[var(--np-faint)]" htmlFor="totp">
-                  Google Authenticator 验证码 / 备用恢复码
-                </label>
-                <input id="totp" className="np-input" value={totp} onChange={(e) => setTotp(e.target.value)} />
-                <div className="text-xs text-[var(--np-faint)]">
-                  没有验证码时可输入备用恢复码（8 位，大写字母/数字）。没有恢复码请联系管理员重置 2FA。
-                </div>
-              </>
-            ) : null}
+          <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-1">
+            <div className="grid grid-cols-2 gap-1">
+              <button
+                className={[
+                  "rounded-2xl px-4 py-2 text-sm transition-colors",
+                  tab === "passkey" ? "bg-white/10 text-[var(--np-text)]" : "text-[var(--np-faint)] hover:bg-white/5",
+                ].join(" ")}
+                onClick={() => {
+                  setTab("passkey");
+                  setErr(null);
+                }}
+                type="button"
+              >
+                Passkey 登录
+              </button>
+              <button
+                className={[
+                  "rounded-2xl px-4 py-2 text-sm transition-colors",
+                  tab === "password" ? "bg-white/10 text-[var(--np-text)]" : "text-[var(--np-faint)] hover:bg-white/5",
+                ].join(" ")}
+                onClick={() => {
+                  setTab("password");
+                  setErr(null);
+                }}
+                type="button"
+              >
+                密码登录
+              </button>
+            </div>
+          </div>
 
-            {err ? <div className="text-sm text-[var(--np-danger)]">{err}</div> : null}
+          {tab === "passkey" ? (
+            <div className="mt-5 grid gap-3">
+              <label className="text-xs text-[var(--np-faint)]" htmlFor="username">
+                用户名
+              </label>
+              <input id="username" className="np-input" value={username} onChange={(e) => setUsername(e.target.value)} />
 
-            <button className="np-btn np-btn-primary mt-2" type="submit" disabled={busy}>
-              {busy ? "处理中..." : needsOtp ? "验证并登录" : "下一步"}
-            </button>
+              <div className="text-xs text-[var(--np-faint)]">
+                Passkey 登录只需要用户名，不需要密码。若账号尚未绑定 Passkey，可切换到“密码登录”进入后台后在个人设置绑定。
+              </div>
 
-            <button className="np-btn mt-2" type="button" onClick={passkeyLogin} disabled={busy}>
-              使用 Passkey 登录
-            </button>
-          </form>
+              {err ? <div className="text-sm text-[var(--np-danger)]">{err}</div> : null}
+
+              <button className="np-btn np-btn-primary mt-1" type="button" onClick={passkeyLogin} disabled={busy}>
+                {busy ? "处理中..." : "使用 Passkey 登录"}
+              </button>
+            </div>
+          ) : (
+            <form className="mt-5 flex flex-col gap-3" onSubmit={handleSubmit}>
+              <label className="text-xs text-[var(--np-faint)]" htmlFor="username2">
+                用户名
+              </label>
+              <input id="username2" className="np-input" value={username} onChange={(e) => setUsername(e.target.value)} />
+
+              <label className="text-xs text-[var(--np-faint)]" htmlFor="password">
+                密码
+              </label>
+              <input id="password" className="np-input" value={password} type="password" onChange={(e) => setPassword(e.target.value)} />
+
+              {needsOtp ? (
+                <>
+                  <label className="text-xs text-[var(--np-faint)]" htmlFor="totp">
+                    Google Authenticator 验证码 / 备用恢复码
+                  </label>
+                  <input id="totp" className="np-input" value={totp} onChange={(e) => setTotp(e.target.value)} />
+                  <div className="text-xs text-[var(--np-faint)]">
+                    没有验证码时可输入备用恢复码（8 位，大写字母/数字）。没有恢复码请联系管理员重置 2FA。
+                  </div>
+                </>
+              ) : null}
+
+              {err ? <div className="text-sm text-[var(--np-danger)]">{err}</div> : null}
+
+              <button className="np-btn np-btn-primary mt-2" type="submit" disabled={busy}>
+                {busy ? "处理中..." : needsOtp ? "验证并登录" : "下一步"}
+              </button>
+            </form>
+          )}
         </div>
 
         <div className="mt-4 text-xs text-[var(--np-faint)]">

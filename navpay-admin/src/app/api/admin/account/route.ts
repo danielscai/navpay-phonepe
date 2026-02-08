@@ -34,11 +34,15 @@ export async function PATCH(req: NextRequest) {
   const body = patchSchema.safeParse(await req.json().catch(() => null));
   if (!body.success) return NextResponse.json({ ok: false, error: "bad_request" }, { status: 400 });
 
+  const row2 = await db.select({ merchantId: users.merchantId }).from(users).where(eq(users.id, uid)).limit(1);
+  const merchantId = row2[0]?.merchantId ?? null;
+
   await db.update(users).set({ displayName: body.data.displayName, updatedAtMs: Date.now() }).where(eq(users.id, uid));
 
   await writeAuditLog({
     req,
     actorUserId: uid,
+    merchantId,
     action: "account.update_profile",
     entityType: "user",
     entityId: uid,
@@ -47,4 +51,3 @@ export async function PATCH(req: NextRequest) {
 
   return NextResponse.json({ ok: true });
 }
-

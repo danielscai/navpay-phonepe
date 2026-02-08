@@ -1,13 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { payoutOrders, merchantFees, merchants } from "@/db/schema";
+import { payoutOrders, merchantFees, merchants, paymentPersons } from "@/db/schema";
 import { id } from "@/lib/id";
 import { requireApiPerm } from "@/lib/api";
 import { feeFromBps, dec, money2 } from "@/lib/money";
-import { eq } from "drizzle-orm";
+import { and, desc, eq, like, or, sql } from "drizzle-orm";
 import { env } from "@/lib/env";
 import { writeAuditLog } from "@/lib/audit";
+import { sweepExpiredPayoutOrders } from "@/lib/order-timeout";
+import { sweepExpiredPayoutLocks } from "@/lib/payout-lock";
 
 const createSchema = z.object({
   merchantId: z.string().min(1),
@@ -21,11 +23,73 @@ const createSchema = z.object({
   remark: z.string().optional(),
 });
 
+const querySchema = z.object({
+  q: z.string().optional(),
+  status: z.string().optional(),
+  page: z.coerce.number().min(1).default(1),
+  pageSize: z.coerce.number().min(1).max(200).default(10),
+});
+
 export async function GET(req: NextRequest) {
   await requireApiPerm(req, "order.payout.read");
-  const rows = await db.select().from(payoutOrders);
-  rows.sort((a, b) => b.createdAtMs - a.createdAtMs);
-  return NextResponse.json({ ok: true, rows });
+  await sweepExpiredPayoutOrders(Date.now());
+  await sweepExpiredPayoutLocks(Date.now());
+  const u = new URL(req.url);
+  const parsed = querySchema.safeParse({
+    q: u.searchParams.get("q") ?? undefined,
+    status: u.searchParams.get("status") ?? undefined,
+    page: u.searchParams.get("page") ?? undefined,
+    pageSize: u.searchParams.get("pageSize") ?? undefined,
+  });
+  if (!parsed.success) return NextResponse.json({ ok: false, error: "bad_request" }, { status: 400 });
+
+  const conds: any[] = [];
+  const q = parsed.data.q?.trim();
+  if (q) conds.push(or(like(payoutOrders.merchantOrderNo, `%${q}%`), like(payoutOrders.id, `%${q}%`), like(merchants.code, `%${q}%`)));
+  const st = parsed.data.status?.trim();
+  if (st) conds.push(eq(payoutOrders.status, st));
+  const where = conds.length ? and(...conds) : undefined;
+
+  const totalRow = await db
+    .select({ c: sql<number>`count(*)` })
+    .from(payoutOrders)
+    .leftJoin(merchants, eq(merchants.id, payoutOrders.merchantId))
+    .where(where as any);
+  const total = Number((totalRow[0] as any)?.c ?? 0);
+
+  const offset = (parsed.data.page - 1) * parsed.data.pageSize;
+  const rows = await db
+    .select({
+      id: payoutOrders.id,
+      merchantId: payoutOrders.merchantId,
+      merchantCode: merchants.code,
+      merchantName: merchants.name,
+      merchantOrderNo: payoutOrders.merchantOrderNo,
+      amount: payoutOrders.amount,
+      fee: payoutOrders.fee,
+      status: payoutOrders.status,
+      notifyUrl: payoutOrders.notifyUrl,
+      notifyStatus: payoutOrders.notifyStatus,
+      lastNotifiedAtMs: payoutOrders.lastNotifiedAtMs,
+      lockedPaymentPersonId: payoutOrders.lockedPaymentPersonId,
+      lockMode: payoutOrders.lockMode,
+      lockedAtMs: payoutOrders.lockedAtMs,
+      lockExpiresAtMs: payoutOrders.lockExpiresAtMs,
+      lockedPaymentPersonName: paymentPersons.name,
+      beneficiaryName: payoutOrders.beneficiaryName,
+      accountNo: payoutOrders.accountNo,
+      ifsc: payoutOrders.ifsc,
+      createdAtMs: payoutOrders.createdAtMs,
+    })
+    .from(payoutOrders)
+    .leftJoin(merchants, eq(merchants.id, payoutOrders.merchantId))
+    .leftJoin(paymentPersons, eq(paymentPersons.id, payoutOrders.lockedPaymentPersonId))
+    .where(where as any)
+    .orderBy(desc(payoutOrders.createdAtMs))
+    .limit(parsed.data.pageSize)
+    .offset(offset);
+
+  return NextResponse.json({ ok: true, page: parsed.data.page, pageSize: parsed.data.pageSize, total, rows });
 }
 
 export async function POST(req: NextRequest) {

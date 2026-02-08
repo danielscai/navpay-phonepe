@@ -40,12 +40,14 @@ const NAV_MAIN = [
   { href: "/admin/merchants", label: "商户管理" },
   { href: "/admin/orders/collect", label: "代收订单" },
   { href: "/admin/orders/payout", label: "代付订单" },
-  { href: "/admin/callbacks", label: "通知队列" },
+  { href: "/admin/payout/channels", label: "支付渠道" },
 ];
 
 const NAV_SYSTEM = [
   { href: "/admin/system/config", label: "系统参数" },
   { href: "/admin/system/ip-whitelist", label: "IP 白名单" },
+  { href: "/admin/callbacks", label: "通知队列" },
+  { href: "/admin/resources", label: "资源管理" },
   { href: "/admin/audit-logs", label: "操作日志" },
   { href: "/admin/account", label: "个人设置" },
 ];
@@ -89,6 +91,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   const activeLabel = (() => {
     if (pathname.startsWith("/admin/tools")) return "调试工具";
     if (pathname.startsWith("/admin/account")) return "个人设置";
+    if (pathname.startsWith("/admin/payout/payment-persons")) return "渠道详情";
     return (
       NAV_MAIN.concat(NAV_SYSTEM)
         .sort((a, b) => b.href.length - a.href.length)

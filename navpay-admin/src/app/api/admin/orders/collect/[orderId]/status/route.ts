@@ -10,6 +10,7 @@ import { id } from "@/lib/id";
 import { dec, money2 } from "@/lib/money";
 import { env } from "@/lib/env";
 import { writeAuditLog } from "@/lib/audit";
+import { dispatchCallbackTaskImmediate, getCallbackMaxAttempts } from "@/lib/callback-dispatch";
 
 const bodySchema = z.object({
   status: z.enum(["PENDING_PAY", "PAID", "SUCCESS", "FAILED", "EXPIRED"]),
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ orderId: s
 
   await db
     .update(collectOrders)
-    .set({ status: body.data.status, updatedAtMs: Date.now() })
+    .set({ status: body.data.status, notifyStatus: "PENDING", lastNotifiedAtMs: null, updatedAtMs: Date.now() } as any)
     .where(eq(collectOrders.id, orderId));
 
   await writeAuditLog({
@@ -76,8 +77,10 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ orderId: s
     const payloadJson = JSON.stringify(payload);
     const signature = secret ? hmacSha256Base64(secret.secret, payloadJson) : "MISSING_SECRET";
 
+    const maxAttempts = await getCallbackMaxAttempts();
+    const taskId = id("cb");
     await db.insert(callbackTasks).values({
-      id: id("cb"),
+      id: taskId,
       merchantId: o.merchantId,
       orderType: "collect",
       orderId: o.id,
@@ -86,11 +89,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ orderId: s
       signature,
       status: "PENDING",
       attemptCount: 0,
-      maxAttempts: 5,
+      maxAttempts,
       nextAttemptAtMs: Date.now(),
       createdAtMs: Date.now(),
       updatedAtMs: Date.now(),
     });
+
+    // Immediate notify on success/failure/timeout to avoid cron dependency.
+    if (["SUCCESS", "FAILED", "EXPIRED"].includes(body.data.status)) {
+      await dispatchCallbackTaskImmediate(taskId);
+    }
   }
 
   return NextResponse.json({ ok: true });

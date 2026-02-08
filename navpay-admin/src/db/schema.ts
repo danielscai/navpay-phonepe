@@ -19,6 +19,8 @@ export const users = sqliteTable(
     username: text("username").notNull(),
     email: text("email"),
     displayName: text("display_name").notNull(),
+    // If set, this user is a merchant-portal user and can only access their own merchant data.
+    merchantId: text("merchant_id"),
 
     passwordHash: text("password_hash").notNull(),
     passwordUpdatedAtMs: integer("password_updated_at_ms").notNull(),
@@ -42,6 +44,7 @@ export const users = sqliteTable(
   (t) => ({
     usernameUx: uniqueIndex("users_username_ux").on(t.username),
     emailUx: uniqueIndex("users_email_ux").on(t.email),
+    merchantIdx: index("users_merchant_idx").on(t.merchantId),
   }),
 );
 
@@ -102,6 +105,8 @@ export const auditLogs = sqliteTable(
   {
     id: text("id").primaryKey(),
     actorUserId: text("actor_user_id"),
+    // Optional merchant scope. Used by merchant portal & merchant API key calls.
+    merchantId: text("merchant_id"),
     action: text("action").notNull(),
     entityType: text("entity_type"),
     entityId: text("entity_id"),
@@ -115,6 +120,7 @@ export const auditLogs = sqliteTable(
   (t) => ({
     createdIdx: index("audit_logs_created_idx").on(t.createdAtMs),
     actorIdx: index("audit_logs_actor_idx").on(t.actorUserId),
+    merchantIdx: index("audit_logs_merchant_idx").on(t.merchantId),
   }),
 );
 
@@ -223,6 +229,25 @@ export const merchantLimitRules = sqliteTable(
   }),
 );
 
+export const merchantIpWhitelist = sqliteTable(
+  "merchant_ip_whitelist",
+  {
+    id: text("id").primaryKey(),
+    merchantId: text("merchant_id").notNull(),
+    ip: text("ip").notNull(),
+    note: text("note"),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    createdAtMs: integer("created_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    merchantIdx: index("merchant_ip_whitelist_merchant_idx").on(t.merchantId),
+    enabledIdx: index("merchant_ip_whitelist_enabled_idx").on(t.enabled),
+    merchantIpUx: uniqueIndex("merchant_ip_whitelist_ux").on(t.merchantId, t.ip),
+  }),
+);
+
 export const paymentApps = sqliteTable(
   "payment_apps",
   {
@@ -260,6 +285,187 @@ export const h5Sites = sqliteTable(
   }),
 );
 
+export const paymentPersons = sqliteTable(
+  "payment_persons",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id"),
+    name: text("name").notNull(),
+    balance: text("balance").notNull().default("0.00"),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    createdAtMs: integer("created_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAtMs: integer("updated_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    nameUx: uniqueIndex("payment_persons_name_ux").on(t.name),
+    userUx: uniqueIndex("payment_persons_user_ux").on(t.userId),
+    enabledIdx: index("payment_persons_enabled_idx").on(t.enabled),
+  }),
+);
+
+export const paymentPersonBalanceLogs = sqliteTable(
+  "payment_person_balance_logs",
+  {
+    id: text("id").primaryKey(),
+    personId: text("person_id").notNull(),
+    delta: text("delta").notNull(),
+    balanceAfter: text("balance_after").notNull(),
+    reason: text("reason").notNull(),
+    refType: text("ref_type"),
+    refId: text("ref_id"),
+    createdAtMs: integer("created_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    personIdx: index("payment_person_balance_logs_person_idx").on(t.personId),
+    refUx: uniqueIndex("payment_person_balance_logs_ref_ux").on(t.personId, t.refType, t.refId),
+  }),
+);
+
+export const paymentDevices = sqliteTable(
+  "payment_devices",
+  {
+    id: text("id").primaryKey(),
+    personId: text("person_id"),
+    name: text("name").notNull(),
+    online: integer("online", { mode: "boolean" }).notNull().default(false),
+    lastSeenAtMs: integer("last_seen_at_ms"),
+    createdAtMs: integer("created_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAtMs: integer("updated_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    personIdx: index("payment_devices_person_idx").on(t.personId),
+    onlineIdx: index("payment_devices_online_idx").on(t.online),
+  }),
+);
+
+export const paymentDeviceApps = sqliteTable(
+  "payment_device_apps",
+  {
+    id: text("id").primaryKey(),
+    deviceId: text("device_id").notNull(),
+    paymentAppId: text("payment_app_id").notNull(),
+    versionCode: integer("version_code").notNull().default(1),
+    installedAtMs: integer("installed_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAtMs: integer("updated_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    ux: uniqueIndex("payment_device_apps_ux").on(t.deviceId, t.paymentAppId),
+    deviceIdx: index("payment_device_apps_device_idx").on(t.deviceId),
+  }),
+);
+
+export const bankAccounts = sqliteTable(
+  "bank_accounts",
+  {
+    id: text("id").primaryKey(),
+    personId: text("person_id").notNull(),
+    bankName: text("bank_name").notNull(),
+    alias: text("alias").notNull(),
+    accountLast4: text("account_last4").notNull(),
+    ifsc: text("ifsc"),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    createdAtMs: integer("created_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAtMs: integer("updated_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    personIdx: index("bank_accounts_person_idx").on(t.personId),
+    enabledIdx: index("bank_accounts_enabled_idx").on(t.enabled),
+  }),
+);
+
+export const bankTransactions = sqliteTable(
+  "bank_transactions",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull(),
+    direction: text("direction").notNull(), // IN | OUT
+    amount: text("amount").notNull(),
+    ref: text("ref"),
+    detailsJson: text("details_json"),
+    createdAtMs: integer("created_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    accountIdx: index("bank_transactions_account_idx").on(t.accountId),
+    createdIdx: index("bank_transactions_created_idx").on(t.createdAtMs),
+  }),
+);
+
+export const personalApiTokens = sqliteTable(
+  "personal_api_tokens",
+  {
+    id: text("id").primaryKey(),
+    personId: text("person_id").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    createdAtMs: integer("created_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    lastUsedAtMs: integer("last_used_at_ms"),
+    revokedAtMs: integer("revoked_at_ms"),
+  },
+  (t) => ({
+    hashUx: uniqueIndex("personal_api_tokens_hash_ux").on(t.tokenHash),
+    personIdx: index("personal_api_tokens_person_idx").on(t.personId),
+    revokedIdx: index("personal_api_tokens_revoked_idx").on(t.revokedAtMs),
+  }),
+);
+
+export const paymentPersonLoginLogs = sqliteTable(
+  "payment_person_login_logs",
+  {
+    id: text("id").primaryKey(),
+    personId: text("person_id").notNull(),
+    event: text("event").notNull(), // LOGIN | LOGOUT
+    ip: text("ip"),
+    userAgent: text("user_agent"),
+    createdAtMs: integer("created_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    personIdx: index("payment_person_login_logs_person_idx").on(t.personId),
+    createdIdx: index("payment_person_login_logs_created_idx").on(t.createdAtMs),
+  }),
+);
+
+export const paymentPersonReportLogs = sqliteTable(
+  "payment_person_report_logs",
+  {
+    id: text("id").primaryKey(),
+    personId: text("person_id").notNull(),
+    type: text("type").notNull(), // LOGIN | LOGOUT | DEVICE_REPORT | APP_REPORT | BANK_ACCOUNT_REPORT | TX_REPORT
+    entityType: text("entity_type"),
+    entityId: text("entity_id"),
+    metaJson: text("meta_json"),
+    createdAtMs: integer("created_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    personIdx: index("payment_person_report_logs_person_idx").on(t.personId),
+    createdIdx: index("payment_person_report_logs_created_idx").on(t.createdAtMs),
+  }),
+);
+
 export const collectOrders = sqliteTable(
   "collect_orders",
   {
@@ -276,6 +482,12 @@ export const collectOrders = sqliteTable(
     paymentAppId: text("payment_app_id"),
     h5SiteId: text("h5_site_id"),
 
+    notifyStatus: text("notify_status").notNull().default("PENDING"), // PENDING | SUCCESS | FAILED
+    lastNotifiedAtMs: integer("last_notified_at_ms"),
+
+    assignedPaymentPersonId: text("assigned_payment_person_id"),
+    assignedAtMs: integer("assigned_at_ms"),
+
     createdAtMs: integer("created_at_ms")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -286,6 +498,7 @@ export const collectOrders = sqliteTable(
   (t) => ({
     merchantIdx: index("collect_orders_merchant_idx").on(t.merchantId),
     statusIdx: index("collect_orders_status_idx").on(t.status),
+    assignedPersonIdx: index("collect_orders_assigned_person_idx").on(t.assignedPaymentPersonId),
     merchantOrderUx: uniqueIndex("collect_orders_merchant_order_ux").on(
       t.merchantId,
       t.merchantOrderNo,
@@ -310,6 +523,14 @@ export const payoutOrders = sqliteTable(
     accountNo: text("account_no").notNull(),
     ifsc: text("ifsc").notNull(),
 
+    notifyStatus: text("notify_status").notNull().default("PENDING"), // PENDING | SUCCESS | FAILED
+    lastNotifiedAtMs: integer("last_notified_at_ms"),
+
+    lockedPaymentPersonId: text("locked_payment_person_id"),
+    lockMode: text("lock_mode").notNull().default("AUTO"), // AUTO | MANUAL
+    lockedAtMs: integer("locked_at_ms"),
+    lockExpiresAtMs: integer("lock_expires_at_ms"),
+
     createdAtMs: integer("created_at_ms")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -320,6 +541,8 @@ export const payoutOrders = sqliteTable(
   (t) => ({
     merchantIdx: index("payout_orders_merchant_idx").on(t.merchantId),
     statusIdx: index("payout_orders_status_idx").on(t.status),
+    lockedPersonIdx: index("payout_orders_locked_person_idx").on(t.lockedPaymentPersonId),
+    lockExpiresIdx: index("payout_orders_lock_expires_idx").on(t.lockExpiresAtMs),
     merchantOrderUx: uniqueIndex("payout_orders_merchant_order_ux").on(
       t.merchantId,
       t.merchantOrderNo,

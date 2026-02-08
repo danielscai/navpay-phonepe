@@ -30,6 +30,11 @@ yarn dev
 - 密码: `NavPay@123456!`
 - 首次登录会强制绑定 2FA（Google Authenticator）
 
+商户后台账号（seed 生成）:
+- 用户名: `merchant`
+- 密码: `NavPayMerchant@123456!`
+- 登录后进入 `/merchant`（仅可查看自身 API Key/限额/订单/余额/操作日志，并可配置 API 调用 IP 白名单）
+
 测试账号（seed 生成，自动化测试专用）:
 - 用户名: `qa`
 - 密码: `NavPayQA@123456!`
@@ -66,6 +71,11 @@ yarn test:report
 ## 外部请求模拟
 - Webhook 接收端: `POST /api/webhook/receive/:receiverId`
 - 后台工具：`/admin/tools/webhook-simulator` 创建接收器并查看事件
+
+## Merchant API 文档（公开，无需登录）
+- 文档入口：`/docs/merchant-api`
+- 代收下单：`/docs/merchant-api/collect`（PDF：`/docs/merchant-api/collect.pdf`）
+- 代付下单：`/docs/merchant-api/payout`（PDF：`/docs/merchant-api/payout.pdf`）
 
 ## 迁移到 Postgres（预留）
 当前 ORM 与 schema 设计保持可迁移：

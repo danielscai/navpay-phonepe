@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ListPager, ListToolbar } from "@/components/list-kit";
 
 type Task = {
   id: string;
@@ -18,40 +19,73 @@ export default function CallbacksClient() {
   const [rows, setRows] = useState<Task[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [timezone, setTimezone] = useState<string>("Asia/Shanghai");
+  const [q, setQ] = useState("");
+  const [status, setStatus] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [total, setTotal] = useState(0);
 
-  async function load() {
-    const r = await fetch("/api/admin/callbacks");
+  async function query() {
+    setErr(null);
+    const sp = new URLSearchParams();
+    if (q.trim()) sp.set("q", q.trim());
+    if (status.trim()) sp.set("status", status.trim());
+    sp.set("page", String(page));
+    sp.set("pageSize", String(pageSize));
+    const r = await fetch(`/api/admin/callbacks?${sp.toString()}`);
     const j = await r.json().catch(() => null);
     if (!r.ok || !j?.ok) {
       setErr("加载失败");
       return;
     }
     setRows(j.rows ?? []);
+    setTotal(Number(j.total ?? 0));
   }
 
   useEffect(() => {
-    load();
+    query();
     (async () => {
       const r = await fetch("/api/settings");
       const j = await r.json().catch(() => null);
       if (r.ok && j?.ok && typeof j?.timezone === "string") setTimezone(j.timezone);
     })();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize]);
 
   return (
     <div>
-      <div className="np-card p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-xs text-[var(--np-faint)]">通知队列</div>
-          <button className="np-btn px-3 py-2 text-sm" onClick={load}>
-            刷新
+      <ListToolbar
+        left={
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              className="np-input w-full md:w-[320px]"
+              placeholder="搜索 URL/订单ID/类型"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+            <input
+              className="np-input w-full md:w-[180px]"
+              placeholder="状态（可选）"
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+            />
+          </div>
+        }
+        right={
+          <button
+            className="np-btn px-3 py-2 text-sm"
+            onClick={() => {
+              setPage(1);
+              query();
+            }}
+          >
+            查询
           </button>
-        </div>
-      </div>
+        }
+        error={err}
+      />
 
-      {err ? <div className="mt-4 text-sm text-[var(--np-danger)]">{err}</div> : null}
-
-      <div className="mt-6 overflow-hidden rounded-2xl border border-white/10">
+      <div className="mt-4 overflow-hidden rounded-2xl border border-white/10">
         <table className="w-full text-left text-sm">
           <thead className="bg-white/5 text-xs text-[var(--np-faint)]">
             <tr>
@@ -92,6 +126,17 @@ export default function CallbacksClient() {
           </tbody>
         </table>
       </div>
+
+      <ListPager
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        onPage={(p) => setPage(p)}
+        onPageSize={(ps) => {
+          setPage(1);
+          setPageSize(ps);
+        }}
+      />
     </div>
   );
 }

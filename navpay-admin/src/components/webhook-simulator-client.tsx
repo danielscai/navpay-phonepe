@@ -70,6 +70,21 @@ export default function WebhookSimulatorClient() {
     return `${location.origin}/api/webhook/receive/${selected}`;
   }, [selected]);
 
+  async function deleteReceiver(receiverId: string) {
+    if (!confirm("确认删除该 Webhook 接收器？将同时删除其事件记录。")) return;
+    setErr(null);
+    const h = await csrfHeader();
+    const r = await fetch(`/api/admin/webhooks/receivers/${receiverId}`, { method: "DELETE", headers: { ...h } });
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j?.ok) {
+      setErr("删除失败");
+      return;
+    }
+    setSelected(null);
+    setEvents([]);
+    await loadReceivers();
+  }
+
   return (
     <div>
       {err ? <div className="mt-4 text-sm text-[var(--np-danger)]">{err}</div> : null}
@@ -90,9 +105,16 @@ export default function WebhookSimulatorClient() {
         <div className="np-card p-4 md:col-span-2">
           <div className="flex items-center justify-between gap-4">
             <div className="text-xs text-[var(--np-faint)]">接收器</div>
-            <button className="np-btn px-3 py-2 text-xs" onClick={() => selected && loadEvents(selected)}>
-              刷新事件
-            </button>
+            <div className="flex items-center gap-2">
+              {selected ? (
+                <button className="np-btn px-3 py-2 text-xs" onClick={() => deleteReceiver(selected)}>
+                  删除
+                </button>
+              ) : null}
+              <button className="np-btn px-3 py-2 text-xs" onClick={() => selected && loadEvents(selected)}>
+                刷新事件
+              </button>
+            </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {receivers.map((r) => (

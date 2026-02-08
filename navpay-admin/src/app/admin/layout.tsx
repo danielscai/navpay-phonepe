@@ -12,6 +12,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     // In dev, no IP header likely; allow. If explicitly denied, throw.
   });
   const { user } = await requireSessionUser();
+  if (user.merchantId) redirect("/merchant");
   if (user.totpMustEnroll) {
     const passkey = await db
       .select({ id: webauthnCredentials.id })

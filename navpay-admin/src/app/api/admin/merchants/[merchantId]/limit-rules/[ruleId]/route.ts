@@ -10,7 +10,6 @@ const patchSchema = z.object({
   minAmount: z.string().optional(),
   maxAmount: z.string().optional(),
   dailyCountLimit: z.number().int().min(0).optional(),
-  enabled: z.boolean().optional(),
   note: z.string().nullable().optional(),
 });
 
@@ -33,8 +32,9 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ merchantI
       ...(body.data.minAmount !== undefined ? { minAmount: body.data.minAmount } : {}),
       ...(body.data.maxAmount !== undefined ? { maxAmount: body.data.maxAmount } : {}),
       ...(body.data.dailyCountLimit !== undefined ? { dailyCountLimit: body.data.dailyCountLimit } : {}),
-      ...(body.data.enabled !== undefined ? { enabled: body.data.enabled } : {}),
       ...(body.data.note !== undefined ? { note: body.data.note } : {}),
+      // Singleton rules are always enabled by design.
+      enabled: true,
     })
     .where(and(eq(merchantLimitRules.id, ruleId), eq(merchantLimitRules.merchantId, merchantId)));
 
@@ -42,7 +42,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ merchantI
   if (body.data.minAmount !== undefined) changes.minAmount = { from: prev?.minAmount ?? null, to: body.data.minAmount };
   if (body.data.maxAmount !== undefined) changes.maxAmount = { from: prev?.maxAmount ?? null, to: body.data.maxAmount };
   if (body.data.dailyCountLimit !== undefined) changes.dailyCountLimit = { from: prev?.dailyCountLimit ?? null, to: body.data.dailyCountLimit };
-  if (body.data.enabled !== undefined) changes.enabled = { from: prev?.enabled ?? null, to: body.data.enabled };
   if (body.data.note !== undefined) changes.note = { from: prev?.note ?? null, to: body.data.note };
 
   await writeAuditLog({
@@ -58,21 +57,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ merchantI
 }
 
 export async function DELETE(req: NextRequest, ctx: { params: Promise<{ merchantId: string; ruleId: string }> }) {
-  const { uid } = await requireApiPerm(req, "merchant.write");
-  const { merchantId, ruleId } = await ctx.params;
-
-  await db
-    .delete(merchantLimitRules)
-    .where(and(eq(merchantLimitRules.id, ruleId), eq(merchantLimitRules.merchantId, merchantId)));
-
-  await writeAuditLog({
-    req,
-    actorUserId: uid,
-    action: "merchant.limit_rule_delete",
-    entityType: "merchant_limit_rule",
-    entityId: ruleId,
-    meta: { merchantId },
-  });
-
-  return NextResponse.json({ ok: true });
+  // Singleton rules: cannot delete, only edit.
+  return NextResponse.json({ ok: false, error: "method_not_allowed" }, { status: 405 });
 }

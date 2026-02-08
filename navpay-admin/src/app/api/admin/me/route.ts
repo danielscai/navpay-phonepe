@@ -16,9 +16,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    user: { id: u.id, username: u.username, displayName: u.displayName },
+    user: { id: u.id, username: u.username, displayName: u.displayName, merchantId: u.merchantId ?? null },
     perms,
     debugToolsEnabled: env.ENABLE_DEBUG_TOOLS,
   });
 }
-

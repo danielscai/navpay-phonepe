@@ -8,6 +8,9 @@ import { writeAuditLog } from "@/lib/audit";
 export async function POST(req: NextRequest) {
   const { uid } = await requireApiUser(req);
 
+  const uRow = await db.select({ merchantId: users.merchantId }).from(users).where(eq(users.id, uid)).limit(1);
+  const merchantId = uRow[0]?.merchantId ?? null;
+
   const passkey = await db
     .select({ id: webauthnCredentials.id })
     .from(webauthnCredentials)
@@ -29,6 +32,7 @@ export async function POST(req: NextRequest) {
   await writeAuditLog({
     req,
     actorUserId: uid,
+    merchantId,
     action: "account.reset_2fa",
     entityType: "user",
     entityId: uid,
