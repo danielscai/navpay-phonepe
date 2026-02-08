@@ -47,11 +47,7 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
                 binding.profileStatus.text = "Loaded"
             } catch (e: Exception) {
                 if (e is AuthException) {
-                    if (e.shouldLogout) {
-                        (activity as? Callback)?.onLogout()
-                    } else {
-                        binding.profileStatus.text = "Session expired on server. Please re-login."
-                    }
+                    (activity as? Callback)?.onLogout()
                     return@launch
                 }
                 binding.profileStatus.text = e.message ?: "Load failed"
@@ -76,11 +72,7 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
                 binding.profileStatus.text = "Saved"
             } catch (e: Exception) {
                 if (e is AuthException) {
-                    if (e.shouldLogout) {
-                        (activity as? Callback)?.onLogout()
-                    } else {
-                        binding.profileStatus.text = "Session expired on server. Please re-login."
-                    }
+                    (activity as? Callback)?.onLogout()
                     return@launch
                 }
                 binding.profileStatus.text = e.message ?: "Save failed"

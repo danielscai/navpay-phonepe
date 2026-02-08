@@ -17,6 +17,7 @@ cache/
 *.dex
 build/
 out/
+ref/
 *.apk.idsig
 node_modules/
 .gradle/

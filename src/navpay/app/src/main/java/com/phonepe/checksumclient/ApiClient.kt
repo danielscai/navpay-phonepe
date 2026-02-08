@@ -114,11 +114,8 @@ class ApiClient(private val authManager: AuthManager) {
         val resp = client.newCall(req).execute()
         val body = resp.body?.string().orEmpty()
         if (resp.code == 401) {
-            val shouldLogout = !authManager.isTokenValid()
-            if (shouldLogout) {
-                authManager.clear()
-            }
-            throw AuthException("token_invalid", shouldLogout)
+            authManager.clear()
+            throw AuthException("token_invalid")
         }
         if (!resp.isSuccessful) {
             throw RuntimeException("request failed: ${resp.code} $body")
@@ -136,11 +133,8 @@ class ApiClient(private val authManager: AuthManager) {
         val resp = client.newCall(req).execute()
         val body = resp.body?.string().orEmpty()
         if (resp.code == 401) {
-            val shouldLogout = !authManager.isTokenValid()
-            if (shouldLogout) {
-                authManager.clear()
-            }
-            throw AuthException("token_invalid", shouldLogout)
+            authManager.clear()
+            throw AuthException("token_invalid")
         }
         if (!resp.isSuccessful) {
             throw RuntimeException("request failed: ${resp.code} $body")
@@ -192,4 +186,4 @@ class ApiClient(private val authManager: AuthManager) {
     }
 }
 
-class AuthException(message: String, val shouldLogout: Boolean) : RuntimeException(message)
+class AuthException(message: String) : RuntimeException(message)

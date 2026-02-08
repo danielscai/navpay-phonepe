@@ -52,11 +52,7 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
                 applyMyOrders(myOrders)
             } catch (e: Exception) {
                 if (e is AuthException) {
-                    if (e.shouldLogout) {
-                        (activity as? AuthHost)?.onAuthInvalid()
-                    } else {
-                        showError("Session expired on server. Please re-login.")
-                    }
+                    (activity as? AuthHost)?.onAuthInvalid()
                     return@launch
                 }
                 showError("服务不可用，请稍后重试")
@@ -68,11 +64,7 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
                 openAdapter.submit(this@OrdersFragment.openOrders)
             } catch (e: Exception) {
                 if (e is AuthException) {
-                    if (e.shouldLogout) {
-                        (activity as? AuthHost)?.onAuthInvalid()
-                    } else {
-                        showError("Session expired on server. Please re-login.")
-                    }
+                    (activity as? AuthHost)?.onAuthInvalid()
                     return@launch
                 }
                 showError("服务不可用，请稍后重试")
@@ -112,11 +104,7 @@ class OrdersFragment : Fragment(R.layout.fragment_orders) {
                 apiClient.claimOrder(order.id)
             } catch (e: Exception) {
                 if (e is AuthException) {
-                    if (e.shouldLogout) {
-                        (activity as? AuthHost)?.onAuthInvalid()
-                    } else {
-                        showError("Session expired on server. Please re-login.")
-                    }
+                    (activity as? AuthHost)?.onAuthInvalid()
                     return@launch
                 }
                 showError("抢单失败，请稍后重试")

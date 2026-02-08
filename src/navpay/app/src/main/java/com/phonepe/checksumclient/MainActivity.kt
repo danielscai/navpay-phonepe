@@ -37,19 +37,32 @@ class MainActivity : AppCompatActivity(), LoginFragment.Callback, ProfileFragmen
             }
         }
 
-        if (authManager.isTokenValid()) {
-            binding.bottomNav.visibility = android.view.View.VISIBLE
-            binding.bottomNav.selectedItemId = R.id.nav_orders
-        } else {
-            binding.bottomNav.visibility = android.view.View.GONE
-            showFragment(LoginFragment())
-        }
+        syncAuthState()
     }
 
     private fun showFragment(fragment: androidx.fragment.app.Fragment) {
         supportFragmentManager.beginTransaction()
             .replace(R.id.fragment_container, fragment)
             .commit()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        syncAuthState()
+    }
+
+    private fun syncAuthState() {
+        if (authManager.isTokenValid()) {
+            binding.bottomNav.visibility = android.view.View.VISIBLE
+            if (supportFragmentManager.findFragmentById(R.id.fragment_container) is LoginFragment) {
+                binding.bottomNav.selectedItemId = R.id.nav_orders
+            }
+        } else {
+            binding.bottomNav.visibility = android.view.View.GONE
+            if (supportFragmentManager.findFragmentById(R.id.fragment_container) !is LoginFragment) {
+                showFragment(LoginFragment())
+            }
+        }
     }
 
     override fun onLoginSuccess(profile: UserProfile) {

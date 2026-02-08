@@ -45,11 +45,7 @@ class EarningsFragment : Fragment(R.layout.fragment_earnings) {
                 adapter.submit(result.earnings)
             } catch (e: Exception) {
                 if (e is AuthException) {
-                    if (e.shouldLogout) {
-                        (activity as? AuthHost)?.onAuthInvalid()
-                    } else {
-                        showError("Session expired on server. Please re-login.")
-                    }
+                    (activity as? AuthHost)?.onAuthInvalid()
                     return@launch
                 }
                 showError("服务不可用，请稍后重试")
