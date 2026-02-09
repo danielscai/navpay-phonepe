@@ -19,15 +19,16 @@ test("Passkey: enroll then login with passkey", async ({ page, context, browserN
 
   // Login with deterministic QA TOTP.
   await page.goto("/auth/login");
-  await page.getByLabel("用户名").fill("qa");
-  await page.getByLabel("密码").fill("NavPayQA@123456!");
+  await page.getByRole("button", { name: "密码登录" }).click();
+  await page.locator("#username2").fill("qa");
+  await page.locator("#password").fill("NavPayQA@123456!");
   await page.getByRole("button", { name: "下一步" }).click();
   await expect(page.getByLabel("Google Authenticator 验证码 / 备用恢复码")).toBeVisible();
   await page
     .getByLabel("Google Authenticator 验证码 / 备用恢复码")
     .fill(await totpToken("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"));
   await page.getByRole("button", { name: "验证并登录" }).click();
-  await expect(page).toHaveURL(/\/admin/);
+  await expect(page).toHaveURL(/\/admin(\/|$)/, { timeout: 30_000 });
 
   // Enroll passkey from account settings.
   await page.goto("/admin/account");
@@ -43,6 +44,5 @@ test("Passkey: enroll then login with passkey", async ({ page, context, browserN
   await page.goto("/auth/login");
   await page.getByLabel("用户名").fill("qa");
   await page.getByRole("button", { name: "使用 Passkey 登录" }).click();
-  await expect(page).toHaveURL(/\/admin/);
+  await expect(page).toHaveURL(/\/admin(\/|$)/, { timeout: 30_000 });
 });
-

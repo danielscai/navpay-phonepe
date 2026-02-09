@@ -32,6 +32,12 @@
 - `REJECTED`：已拒绝，`np-pill np-pill-danger`
 - `EXPIRED`：已过期，`np-pill np-pill-danger`
 
+## 充值（Recharge）状态映射
+
+- `CONFIRMING`：确认中，`np-pill np-pill-warn`
+- `SUCCESS`：成功，`np-pill np-pill-ok`
+- `FAILED`：失败，`np-pill np-pill-danger`
+
 ## 代码引用
 
 - 订单模拟器：`navpay-admin/src/components/order-simulator-client.tsx`

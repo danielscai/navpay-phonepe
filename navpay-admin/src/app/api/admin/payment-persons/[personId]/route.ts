@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { bankAccounts, paymentDeviceApps, paymentDevices, paymentPersons, paymentApps, users } from "@/db/schema";
 import { desc, eq, inArray } from "drizzle-orm";
 import { requireApiPerm } from "@/lib/api";
+import { getLastLoginByPersonIds, getTodayOrderStatsByPersonIds, getTodayRebateStatsByPersonIds, getDirectDownlineCountByPersonIds, getUplineChain } from "@/lib/payment-person-stats";
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ personId: string }> }) {
   await requireApiPerm(req, "payout.channel.read");
@@ -16,6 +17,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ personId: s
       name: paymentPersons.name,
       balance: paymentPersons.balance,
       enabled: paymentPersons.enabled,
+      inviteCode: paymentPersons.inviteCode,
+      inviterPersonId: paymentPersons.inviterPersonId,
       createdAtMs: paymentPersons.createdAtMs,
       updatedAtMs: paymentPersons.updatedAtMs,
     })
@@ -26,11 +29,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ personId: s
   const person = personRows[0] ?? null;
   if (!person) return NextResponse.json({ ok: false, error: "not_found" }, { status: 404 });
 
-  const logs = await db
-    .select({ id: paymentPersons.id })
-    .from(paymentPersons)
-    .where(eq(paymentPersons.id, personId))
-    .limit(1);
+  const nowMs = Date.now();
+  const [lastLoginMap, todayOrdersMap, todayRebatesMap, downlineMap, upline] = await Promise.all([
+    getLastLoginByPersonIds([personId]),
+    getTodayOrderStatsByPersonIds({ personIds: [personId], nowMs }),
+    getTodayRebateStatsByPersonIds({ personIds: [personId], nowMs }),
+    getDirectDownlineCountByPersonIds([personId]),
+    getUplineChain({ personId, maxDepth: 3 }),
+  ]);
   const devices = await db
     .select()
     .from(paymentDevices)
@@ -63,5 +69,16 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ personId: s
     .where(eq(bankAccounts.personId, personId))
     .orderBy(desc(bankAccounts.updatedAtMs))
     .limit(50);
-  return NextResponse.json({ ok: true, person, devices, deviceApps, accounts });
+  return NextResponse.json({
+    ok: true,
+    person,
+    upline,
+    directDownlineCount: downlineMap[personId] ?? 0,
+    lastLogin: lastLoginMap[personId] ?? null,
+    todayOrders: todayOrdersMap[personId] ?? null,
+    todayRebates: todayRebatesMap[personId] ?? null,
+    devices,
+    deviceApps,
+    accounts,
+  });
 }

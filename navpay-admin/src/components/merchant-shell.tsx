@@ -25,6 +25,8 @@ const NAV = [
   { href: "/merchant", label: "概览" },
   { href: "/merchant/orders/collect", label: "代收订单" },
   { href: "/merchant/orders/payout", label: "代付订单" },
+  { href: "/merchant/orders/recharge", label: "充值订单" },
+  { href: "/merchant/recharge/addresses", label: "充值地址" },
   { href: "/merchant/api", label: "API Key/限额" },
   { href: "/merchant/security/ip-whitelist", label: "IP 白名单" },
   { href: "/merchant/audit-logs", label: "操作日志" },

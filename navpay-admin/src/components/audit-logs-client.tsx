@@ -38,6 +38,7 @@ function actionLabel(action: string): string {
     "payout.unlock": "代付解锁（支付个人）",
     "payment_person.enable": "启用个人支付渠道",
     "payment_person.disable": "禁用个人支付渠道",
+    "payment_person.reset_password": "重置个人支付渠道密码",
     "callback.worker_run": "执行通知队列",
     "system.ip_whitelist_add": "新增 IP 白名单",
     "system.ip_whitelist_update": "修改 IP 白名单",

@@ -8,6 +8,7 @@ import { feeFromBps, dec, money2 } from "@/lib/money";
 import { and, desc, eq, like, or, sql } from "drizzle-orm";
 import { env } from "@/lib/env";
 import { writeAuditLog } from "@/lib/audit";
+import { calcChannelFeeForAmount } from "@/lib/channel-commission";
 import { sweepExpiredPayoutOrders } from "@/lib/order-timeout";
 import { sweepExpiredPayoutLocks } from "@/lib/payout-lock";
 
@@ -94,7 +95,12 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   if (!env.ENABLE_DEBUG_TOOLS) return NextResponse.json({ ok: false, error: "not_found" }, { status: 404 });
-  const { uid } = await requireApiPerm(req, "order.payout.write");
+  let uid: string;
+  try {
+    ({ uid } = await requireApiPerm(req, "order.payout.write"));
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: String(e?.message ?? "forbidden") }, { status: Number(e?.status ?? 500) });
+  }
   const body = createSchema.safeParse(await req.json().catch(() => null));
   if (!body.success) return NextResponse.json({ ok: false, error: "bad_request" }, { status: 400 });
 
@@ -105,16 +111,20 @@ export async function POST(req: NextRequest) {
     .limit(1);
   const fees = feeRow[0] ?? { payoutFeeRateBps: 450, minFee: "0.00" };
   const { fee } = feeFromBps(body.data.amount, fees.payoutFeeRateBps, fees.minFee);
+  const channelFee = await calcChannelFeeForAmount(body.data.amount);
 
   // Freeze funds: amount + fee
   const mRow = await db.select().from(merchants).where(eq(merchants.id, body.data.merchantId)).limit(1);
   const m = mRow[0];
   if (!m) return NextResponse.json({ ok: false, error: "no_merchant" }, { status: 400 });
   const need = dec(body.data.amount).add(dec(fee));
+  // Debug tools: auto-topup to keep simulator usable.
   if (dec(m.balance).lt(need)) {
-    return NextResponse.json({ ok: false, error: "insufficient_balance" }, { status: 400 });
+    const topupTo = money2(need);
+    await db.update(merchants).set({ balance: topupTo, updatedAtMs: Date.now() } as any).where(eq(merchants.id, m.id));
+    (m as any).balance = topupTo;
   }
-  const newBal = money2(dec(m.balance).sub(need));
+  const newBal = money2(dec((m as any).balance).sub(need));
   const newFrozen = money2(dec(m.payoutFrozen).add(need));
   await db.update(merchants).set({ balance: newBal, payoutFrozen: newFrozen, updatedAtMs: Date.now() }).where(eq(merchants.id, m.id));
 
@@ -125,6 +135,7 @@ export async function POST(req: NextRequest) {
     merchantOrderNo: body.data.merchantOrderNo,
     amount: body.data.amount,
     fee,
+    channelFee,
     status: "REVIEW_PENDING",
     notifyUrl: body.data.notifyUrl,
     remark: body.data.remark,

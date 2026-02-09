@@ -10,6 +10,7 @@ import { env } from "@/lib/env";
 import { writeAuditLog } from "@/lib/audit";
 import { sweepExpiredCollectOrders } from "@/lib/order-timeout";
 import { pickPaymentPersonForAmount } from "@/lib/payment-person";
+import { calcChannelFeeForAmount } from "@/lib/channel-commission";
 
 const createSchema = z.object({
   merchantId: z.string().min(1),
@@ -84,7 +85,12 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   if (!env.ENABLE_DEBUG_TOOLS) return NextResponse.json({ ok: false, error: "not_found" }, { status: 404 });
-  const { uid } = await requireApiPerm(req, "order.collect.write");
+  let uid: string;
+  try {
+    ({ uid } = await requireApiPerm(req, "order.collect.write"));
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: String(e?.message ?? "forbidden") }, { status: Number(e?.status ?? 500) });
+  }
   const body = createSchema.safeParse(await req.json().catch(() => null));
   if (!body.success) return NextResponse.json({ ok: false, error: "bad_request" }, { status: 400 });
 
@@ -95,6 +101,7 @@ export async function POST(req: NextRequest) {
     .limit(1);
   const fees = feeRow[0] ?? { collectFeeRateBps: 300, minFee: "0.00" };
   const { fee } = feeFromBps(body.data.amount, fees.collectFeeRateBps, fees.minFee);
+  const channelFee = await calcChannelFeeForAmount(body.data.amount);
 
   const orderId = id("co");
   await db.insert(collectOrders).values({
@@ -103,6 +110,7 @@ export async function POST(req: NextRequest) {
     merchantOrderNo: body.data.merchantOrderNo,
     amount: body.data.amount,
     fee,
+    channelFee,
     status: "CREATED",
     notifyUrl: body.data.notifyUrl,
     remark: body.data.remark,

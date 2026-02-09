@@ -5,6 +5,7 @@ import { id } from "@/lib/id";
 import { dec, money2 } from "@/lib/money";
 import { hashPassword, validateStrongPassword } from "@/lib/password";
 import { randomToken } from "@/lib/crypto";
+import crypto from "node:crypto";
 
 export type PaymentPersonRow = typeof paymentPersons.$inferSelect;
 
@@ -28,7 +29,8 @@ export async function createPaymentPersonWithUser(input: {
   balance?: string;
   username?: string;
   password?: string;
-}): Promise<{ id: string; userId: string; username: string; password: string }> {
+  inviterCode?: string;
+}): Promise<{ id: string; userId: string; username: string; password: string; inviteCode: string; inviterPersonId?: string | null }> {
   const now = Date.now();
 
   const makeUsername = async (): Promise<string> => {
@@ -81,12 +83,41 @@ export async function createPaymentPersonWithUser(input: {
   } as any);
 
   const personId = id("pp");
+
+  const inviterCode = input.inviterCode?.trim().toUpperCase() || "";
+  let inviterPersonId: string | null = null;
+  if (inviterCode) {
+    const invRows = await db.select({ id: paymentPersons.id }).from(paymentPersons).where(eq(paymentPersons.inviteCode, inviterCode)).limit(1);
+    const inv = invRows[0];
+    if (!inv) {
+      const e = new Error("invalid_invite_code");
+      (e as any).status = 400;
+      throw e;
+    }
+    inviterPersonId = String(inv.id);
+  }
+
+  // 6 chars, alnum. Use 3 random bytes => 6 hex chars.
+  const makeInviteCode = async (): Promise<string> => {
+    for (let i = 0; i < 12; i++) {
+      const c = crypto.randomBytes(3).toString("hex").toUpperCase();
+      const exists = await db.select({ id: paymentPersons.id }).from(paymentPersons).where(eq(paymentPersons.inviteCode, c)).limit(1);
+      if (!exists.length) return c;
+    }
+    const e = new Error("invite_code_generate_failed");
+    (e as any).status = 500;
+    throw e;
+  };
+  const inviteCode = await makeInviteCode();
+
   await db.insert(paymentPersons).values({
     id: personId,
     userId,
     name: input.name,
     balance: input.balance ?? "0.00",
     enabled: true,
+    inviteCode,
+    inviterPersonId,
     createdAtMs: now,
     updatedAtMs: now,
   } as any);
@@ -109,7 +140,7 @@ export async function createPaymentPersonWithUser(input: {
       .onConflictDoNothing();
   }
 
-  return { id: personId, userId, username, password };
+  return { id: personId, userId, username, password, inviteCode, inviterPersonId };
 }
 
 export async function adjustPaymentPersonBalance(input: {
@@ -118,11 +149,12 @@ export async function adjustPaymentPersonBalance(input: {
   reason: string;
   refType?: string;
   refId?: string;
-}): Promise<{ ok: boolean; balanceAfter?: string }> {
+}): Promise<{ ok: boolean; balanceAfter?: string; error?: "not_found" | "insufficient_balance" }> {
   const p = await getPaymentPerson(input.personId);
-  if (!p) return { ok: false };
+  if (!p) return { ok: false, error: "not_found" };
 
   const after = money2(dec(p.balance).add(dec(input.delta)));
+  if (dec(after).lt(0)) return { ok: false, error: "insufficient_balance" };
   await db.update(paymentPersons).set({ balance: after, updatedAtMs: Date.now() } as any).where(eq(paymentPersons.id, p.id));
 
   // refType+refId are optional; when provided they must be idempotent per person.

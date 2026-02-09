@@ -10,6 +10,7 @@ import { collectCreateReq, collectCreateResp } from "@/lib/merchant-api/v1/contr
 import { enforceMerchantLimit } from "@/lib/merchant-limits";
 import { writeAuditLog } from "@/lib/audit";
 import { pickPaymentPersonForAmount } from "@/lib/payment-person";
+import { calcChannelFeeForAmount } from "@/lib/channel-commission";
 
 function mapErr(e: any): { status: number; body: any } {
   const st = Number(e?.status ?? 500);
@@ -46,6 +47,7 @@ export async function POST(req: NextRequest) {
 
     const orderId = id("co");
     const now = Date.now();
+    const channelFee = await calcChannelFeeForAmount(parsed.data.amount);
 
     await db.insert(collectOrders).values({
       id: orderId,
@@ -53,6 +55,7 @@ export async function POST(req: NextRequest) {
       merchantOrderNo: parsed.data.merchantOrderNo,
       amount: parsed.data.amount,
       fee,
+      channelFee,
       status: "CREATED",
       notifyUrl: parsed.data.notifyUrl,
       remark: parsed.data.remark ?? null,

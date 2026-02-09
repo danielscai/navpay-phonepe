@@ -9,6 +9,8 @@ import { and, desc, eq, like, or, sql } from "drizzle-orm";
 import { createMerchantApiKey } from "@/lib/merchant-keys";
 import { hashPassword } from "@/lib/password";
 import { randomStrongPassword } from "@/lib/password-gen";
+import { isRechargeConfigured } from "@/lib/recharge-hd";
+import { ensureMerchantDepositAddress } from "@/lib/recharge-address";
 
 const createSchema = z.object({
   code: z.string().min(2),
@@ -142,6 +144,13 @@ export async function POST(req: NextRequest) {
     entityId: merchantId,
     meta: { code: body.data.code, name: body.data.name, merchantUsername },
   });
+
+  // Best-effort: allocate deposit addresses (one per chain) at merchant creation.
+  // If HD wallet is not configured, addresses can still be allocated later when configured.
+  if (isRechargeConfigured()) {
+    try { await ensureMerchantDepositAddress({ merchantId, chain: "tron" }); } catch {}
+    try { await ensureMerchantDepositAddress({ merchantId, chain: "bsc" }); } catch {}
+  }
 
   return NextResponse.json({ ok: true, id: merchantId, apiKey, merchantUser: { username: merchantUsername, password } });
 }

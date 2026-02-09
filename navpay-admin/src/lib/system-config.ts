@@ -24,3 +24,11 @@ export async function getSystemConfigNumber(opts: { key: string; defaultValue: n
   return n;
 }
 
+export async function getSystemConfigBool(opts: { key: string; defaultValue: boolean; description: string }): Promise<boolean> {
+  await ensureSystemConfig({ key: opts.key, value: opts.defaultValue ? "true" : "false", description: opts.description });
+  const row = await getSystemConfig(opts.key);
+  const raw = (row?.value ?? (opts.defaultValue ? "true" : "false")).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(raw)) return true;
+  if (["0", "false", "no", "off"].includes(raw)) return false;
+  return opts.defaultValue;
+}

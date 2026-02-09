@@ -101,3 +101,18 @@
 - 期望：
 - Passkey 可成功绑定并出现在列表
 - 可使用 Passkey 登录进入 `/admin`
+
+## TC-009 渠道账户：邀请码上下级 + 今日收益 + 多级返利
+- 前置条件：已登录；系统参数存在默认值（`channel.fee_rate_bps=450`，`channel.rebate_l1_bps=50`，`channel.rebate_l2_bps=30`，`channel.rebate_l3_bps=10`）。
+- 步骤：
+1. 进入 `/admin/payout/channels`
+2. 新增 3 个渠道账户 A、B、C
+3. 创建 B 时填写 A 的邀请码；创建 C 时填写 B 的邀请码
+4. 进入 `/admin/tools/order-simulator` 创建一笔代收订单并支付成功（确保分配给 C）
+5. 打开 C 详情页（`/admin/payout/payment-persons/:id?tab=account`），查看“今日收益(费)”展示
+6. 打开 B/A 详情页（`tab=account` 或 `tab=team`），查看“今日团队返利”
+- 期望：
+- C 的今日收益包含该订单 `channel_fee`（按 4.5% 计算）
+- B 获得一级返利（0.5% * amount），A 获得二级返利（0.3% * amount）
+- 统计按 `Asia/Kolkata` 当日自然日计算
+- 扣钱操作不会导致余额为负，并且必须填写原因

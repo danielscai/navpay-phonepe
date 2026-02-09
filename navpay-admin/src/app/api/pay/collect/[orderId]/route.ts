@@ -10,6 +10,7 @@ import { id } from "@/lib/id";
 import { dec, money2 } from "@/lib/money";
 import { getOrderTimeoutMs, sweepExpiredCollectOrders } from "@/lib/order-timeout";
 import { dispatchCallbackTaskImmediate, getCallbackMaxAttempts } from "@/lib/callback-dispatch";
+import { settleCollectOrderCommission } from "@/lib/channel-commission";
 
 const bodySchema = z.object({
   status: z.enum(["PENDING_PAY", "PAID", "SUCCESS", "FAILED", "EXPIRED"]),
@@ -67,7 +68,13 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ orderId: s
 
   await db
     .update(collectOrders)
-    .set({ status: body.data.status, notifyStatus: "PENDING", lastNotifiedAtMs: null, updatedAtMs: Date.now() } as any)
+    .set({
+      status: body.data.status,
+      notifyStatus: "PENDING",
+      lastNotifiedAtMs: null,
+      successAtMs: body.data.status === "SUCCESS" && o.status !== "SUCCESS" ? Date.now() : (o as any).successAtMs ?? null,
+      updatedAtMs: Date.now(),
+    } as any)
     .where(eq(collectOrders.id, orderId));
 
   if (o.status !== "SUCCESS" && body.data.status === "SUCCESS") {
@@ -78,6 +85,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ orderId: s
       const newBal = money2(dec(m.balance).add(dec(o.amount)).sub(dec(o.fee)));
       await db.update(merchants).set({ balance: newBal, updatedAtMs: Date.now() }).where(eq(merchants.id, m.id));
     }
+    // Commission + rebates for assigned payment person (idempotent).
+    await settleCollectOrderCommission({ orderId: String(o.id), nowMs: Date.now() });
   }
 
   if (body.data.enqueueCallback) {

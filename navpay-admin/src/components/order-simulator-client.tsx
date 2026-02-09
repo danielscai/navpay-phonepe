@@ -147,7 +147,7 @@ export default function OrderSimulatorClient() {
         });
         const j = await r.json().catch(() => null);
         if (!r.ok || !j?.ok) {
-          setErr("创建代收订单失败");
+          setErr(`创建代收订单失败${j?.error ? `：${j.error}` : ""}`);
           return false;
         }
       } else {
@@ -168,7 +168,7 @@ export default function OrderSimulatorClient() {
         });
         const j = await r.json().catch(() => null);
         if (!r.ok || !j?.ok) {
-          setErr("创建代付订单失败");
+          setErr(`创建代付订单失败${j?.error ? `：${j.error}` : ""}`);
           return false;
         }
       }
@@ -416,7 +416,7 @@ export default function OrderSimulatorClient() {
 
                 <div>
                   <div className="text-xs text-[var(--np-faint)]">金额</div>
-                  <input className="np-input mt-2 w-full" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                  <input id="sim-amount" className="np-input mt-2 w-full" value={amount} onChange={(e) => setAmount(e.target.value)} />
                 </div>
 
                 {mode === "payout" ? (

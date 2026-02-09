@@ -12,6 +12,8 @@ type Person = {
   name: string;
   balance: string;
   enabled: boolean;
+  inviteCode?: string | null;
+  inviterPersonId?: string | null;
   createdAtMs: number;
   updatedAtMs: number;
 };
@@ -69,12 +71,17 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
   const [timezone, setTimezone] = useState("Asia/Shanghai");
   const [err, setErr] = useState<string | null>(null);
   const [person, setPerson] = useState<Person | null>(null);
+  const [upline, setUpline] = useState<any[]>([]);
+  const [directDownlineCount, setDirectDownlineCount] = useState(0);
+  const [lastLogin, setLastLogin] = useState<{ ip: string | null; atMs: number } | null>(null);
+  const [todayOrders, setTodayOrders] = useState<any | null>(null);
+  const [todayRebates, setTodayRebates] = useState<any | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [deviceApps, setDeviceApps] = useState<DeviceApp[]>([]);
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [txRows, setTxRows] = useState<Tx[]>([]);
   const [txPage, setTxPage] = useState(1);
-  const [txPageSize, setTxPageSize] = useState(20);
+  const [txPageSize, setTxPageSize] = useState(10);
   const [txTotal, setTxTotal] = useState(0);
 
   const [balRows, setBalRows] = useState<BalanceLog[]>([]);
@@ -91,10 +98,18 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
   const [reportPage, setReportPage] = useState(1);
   const [reportPageSize, setReportPageSize] = useState(20);
   const [reportTotal, setReportTotal] = useState(0);
+  const [resetPw, setResetPw] = useState<string | null>(null);
 
   const sp = useSearchParams();
   const router = useRouter();
   const activeTab = (sp.get("tab") ?? "account") as string;
+
+  // Team (direct downlines)
+  const [teamQ, setTeamQ] = useState("");
+  const [teamRows, setTeamRows] = useState<any[]>([]);
+  const [teamPage, setTeamPage] = useState(1);
+  const [teamPageSize, setTeamPageSize] = useState(20);
+  const [teamTotal, setTeamTotal] = useState(0);
 
   const fmt = (ms: number) => new Date(ms).toLocaleString("zh-CN", { timeZone: timezone, hour12: false });
 
@@ -114,6 +129,11 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
       return;
     }
     setPerson(j.person ?? null);
+    setUpline(j.upline ?? []);
+    setDirectDownlineCount(Number(j.directDownlineCount ?? 0));
+    setLastLogin(j.lastLogin ?? null);
+    setTodayOrders(j.todayOrders ?? null);
+    setTodayRebates(j.todayRebates ?? null);
     setDevices(j.devices ?? []);
     setDeviceApps(j.deviceApps ?? []);
     setAccounts(j.accounts ?? []);
@@ -163,6 +183,18 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
     setReportTotal(Number(j.total ?? 0));
   }
 
+  async function loadTeam() {
+    const sp = new URLSearchParams();
+    sp.set("page", String(teamPage));
+    sp.set("pageSize", String(teamPageSize));
+    if (teamQ.trim()) sp.set("q", teamQ.trim());
+    const r = await fetch(`/api/admin/payment-persons/${props.personId}/downlines?${sp.toString()}`);
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j?.ok) return;
+    setTeamRows(j.rows ?? []);
+    setTeamTotal(Number(j.total ?? 0));
+  }
+
   async function setEnabled(enabled: boolean) {
     setErr(null);
     const h = await csrfHeader();
@@ -177,6 +209,23 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
       return;
     }
     await load();
+  }
+
+  async function resetPassword() {
+    setErr(null);
+    if (!confirm("确认重置该账号密码？新密码仅展示一次。")) return;
+    const h = await csrfHeader();
+    const r = await fetch(`/api/admin/payment-persons/${props.personId}/password/reset`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...h },
+      body: JSON.stringify({}),
+    });
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j?.ok) {
+      setErr("重置密码失败");
+      return;
+    }
+    setResetPw(String(j.password ?? ""));
   }
 
   useEffect(() => {
@@ -194,8 +243,9 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
     if (activeTab === "balance") loadBal();
     if (activeTab === "login") loadLogin();
     if (activeTab === "report") loadReport();
+    if (activeTab === "team") loadTeam();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, txPage, txPageSize, balPage, balPageSize, loginPage, loginPageSize, reportPage, reportPageSize]);
+  }, [activeTab, txPage, txPageSize, balPage, balPageSize, loginPage, loginPageSize, reportPage, reportPageSize, teamPage, teamPageSize]);
 
   const appsByDevice = useMemo(() => {
     const m = new Map<string, DeviceApp[]>();
@@ -210,7 +260,7 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
 
   // Ensure a stable default tab.
   useEffect(() => {
-    const ok = ["account", "phones", "bank", "tx", "balance", "login", "report"].includes(activeTab);
+    const ok = ["account", "team", "phones", "bank", "tx", "balance", "login", "report"].includes(activeTab);
     if (ok) return;
     const u = new URL(window.location.href);
     u.searchParams.set("tab", "account");
@@ -232,17 +282,18 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
           </Link>
           {[
             ["account", "账户详情"],
+            ["team", "团队/返利"],
             ["phones", "手机详情"],
             ["bank", "网银账户"],
-            ["tx", "网银交易记录"],
-            ["balance", "余额变动历史"],
+            ["tx", "交易记录"],
+            ["balance", "余额变动"],
             ["login", "登录记录"],
             ["report", "上报日志"],
           ].map(([key, label]) => {
             const on = activeTab === key;
             const href = `/admin/payout/payment-persons/${props.personId}?tab=${key}`;
             return (
-              <Link key={key} href={href} className={["np-btn px-3 py-2 text-sm", on ? "np-btn-primary" : ""].join(" ")}>
+              <Link key={key} href={href} className={["np-btn px-3 py-2 text-sm inline-flex items-center leading-none", on ? "np-btn-primary" : ""].join(" ")}>
                 {label}
               </Link>
             );
@@ -258,6 +309,19 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
               <div className="text-xs text-[var(--np-faint)]">用户</div>
               <div className="mt-2 truncate text-sm text-[var(--np-text)]">{person.name}</div>
               <div className="mt-1 font-mono text-xs text-[var(--np-faint)] break-all">{person.username}</div>
+              <div className="mt-3">
+                <div className="text-xs text-[var(--np-faint)]">邀请码</div>
+                <div className="mt-1 font-mono text-xs text-[var(--np-text)]">{person.inviteCode ?? "-"}</div>
+              </div>
+              <div className="mt-3">
+                <button className="np-btn px-3 py-2 text-xs" onClick={resetPassword}>
+                  重置密码
+                </button>
+              </div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="text-xs text-[var(--np-faint)]">余额</div>
+              <div className="mt-2 font-mono text-2xl text-[var(--np-text)]">{person.balance}</div>
             </div>
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
               <div className="text-xs text-[var(--np-faint)]">手机</div>
@@ -268,10 +332,6 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
               <div className="text-xs text-[var(--np-faint)]">网银账户</div>
               <div className="mt-2 font-mono text-2xl text-[var(--np-text)]">{accounts.length}</div>
               <div className="mt-1 text-xs text-[var(--np-faint)]">个</div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-              <div className="text-xs text-[var(--np-faint)]">余额</div>
-              <div className="mt-2 font-mono text-2xl text-[var(--np-text)]">{person.balance}</div>
             </div>
           </div>
 
@@ -317,6 +377,160 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
                 <Link className="np-btn px-2 py-1 text-xs" href="/admin/resources?tab=bank_accounts">
                   资源管理-网银
                 </Link>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="text-xs text-[var(--np-faint)]">今日收益 (India, fee)</div>
+              <div className="mt-2 font-mono text-2xl text-[var(--np-text)]">{todayOrders?.totalFee ?? "0.00"}</div>
+              <div className="mt-1 text-xs text-[var(--np-faint)]">
+                代收 {todayOrders?.collectCount ?? 0}/{todayOrders?.collectFee ?? "0.00"}，代付 {todayOrders?.payoutCount ?? 0}/{todayOrders?.payoutFee ?? "0.00"}
+              </div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="text-xs text-[var(--np-faint)]">今日团队返利 (India)</div>
+              <div className="mt-2 font-mono text-2xl text-[var(--np-text)]">{todayRebates?.rebateTotal ?? "0.00"}</div>
+              <div className="mt-1 text-xs text-[var(--np-faint)]">
+                L1 {todayRebates?.rebateL1 ?? "0.00"} / L2 {todayRebates?.rebateL2 ?? "0.00"} / L3 {todayRebates?.rebateL3 ?? "0.00"}
+              </div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="text-xs text-[var(--np-faint)]">最近登录</div>
+              <div className="mt-2 font-mono text-sm text-[var(--np-text)]">{lastLogin?.ip ?? "-"}</div>
+              <div className="mt-1 font-mono text-xs text-[var(--np-faint)]">{lastLogin?.atMs ? fmt(lastLogin.atMs) : "-"}</div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === "team" && person ? (
+        <div className="np-card p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold">团队/返利</div>
+              <div className="mt-1 text-xs text-[var(--np-faint)]">团队=直接下线。返利按多级比例实时结算。</div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <a className="np-btn px-3 py-2 text-xs" href={`/api/admin/payment-persons/${person.id}/downlines/export`} target="_blank" rel="noreferrer">
+                导出下线 CSV
+              </a>
+              <a className="np-btn px-3 py-2 text-xs" href={`/api/admin/payment-persons/${person.id}/upline/export`} target="_blank" rel="noreferrer">
+                导出上级 CSV
+              </a>
+            </div>
+          </div>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="text-xs text-[var(--np-faint)]">我的邀请码</div>
+              <div className="mt-2 font-mono text-xl text-[var(--np-text)]">{person.inviteCode ?? "-"}</div>
+              <div className="mt-2 text-xs text-[var(--np-faint)]">用于下线绑定上级（关系不可变）。</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="text-xs text-[var(--np-faint)]">上级链路（最多 3 级）</div>
+              {!upline.length ? (
+                <div className="mt-2 text-sm text-[var(--np-muted)]">暂无上级</div>
+              ) : (
+                <div className="mt-2 grid gap-2">
+                  {upline.map((x: any, idx: number) => (
+                    <div key={x.id ?? idx} className="rounded-xl border border-white/10 bg-black/10 p-2">
+                      <div className="text-[10px] text-[var(--np-faint)]">L{idx + 1}</div>
+                      <div className="mt-1 text-sm">{x.name}</div>
+                      <div className="mt-1 font-mono text-[11px] text-[var(--np-muted)]">{x.username ?? "-"}</div>
+                      <div className="mt-1 font-mono text-[11px] text-[var(--np-faint)]">邀请码 {x.inviteCode ?? "-"}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs text-[var(--np-faint)]">直接下线（{directDownlineCount}）</div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input className="np-input h-9 w-[220px]" placeholder="搜索 名称/用户名/邀请码" value={teamQ} onChange={(e) => setTeamQ(e.target.value)} />
+                <button className="np-btn px-3 py-2 text-xs" onClick={() => { setTeamPage(1); loadTeam(); }}>
+                  查询
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-3 overflow-x-auto rounded-xl border border-white/10 bg-[var(--np-surface)]">
+              <table className="w-full min-w-[980px] text-left text-sm">
+                <thead className="bg-white/5 text-xs text-[var(--np-faint)]">
+                  <tr>
+                    <th className="px-3 py-2">用户名</th>
+                    <th className="px-3 py-2">名称</th>
+                    <th className="px-3 py-2">邀请码</th>
+                    <th className="px-3 py-2">余额</th>
+                    <th className="px-3 py-2">今日收益(费)</th>
+                    <th className="px-3 py-2">最近登录IP</th>
+                    <th className="px-3 py-2">状态</th>
+                    <th className="px-3 py-2">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {teamRows.map((p: any) => (
+                    <tr key={p.id} className="border-t border-white/10">
+                      <td className="px-3 py-2 font-mono text-xs text-[var(--np-muted)]">
+                        <Link className="underline" href={`/admin/payout/payment-persons/${p.id}?tab=account`}>
+                          {p.username ?? "-"}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2">{p.name}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-[var(--np-muted)]">{p.inviteCode ?? "-"}</td>
+                      <td className="px-3 py-2 font-mono text-sm">{p.balance}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-[var(--np-text)]">{p.todayOrders?.totalFee ?? "0.00"}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-[var(--np-muted)]">{p.lastLogin?.ip ?? "-"}</td>
+                      <td className="px-3 py-2 text-xs">{p.enabled ? <span className="np-pill np-pill-ok">启用</span> : <span className="np-pill np-pill-off">停用</span>}</td>
+                      <td className="px-3 py-2">
+                        <Link className="np-btn px-2 py-1 text-xs" href={`/admin/payout/payment-persons/${p.id}?tab=account`}>
+                          详情
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                  {!teamRows.length ? (
+                    <tr>
+                      <td className="px-3 py-4 text-sm text-[var(--np-muted)]" colSpan={8}>
+                        暂无下线
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-3">
+              <ListPager page={teamPage} pageSize={teamPageSize} total={teamTotal} onPage={setTeamPage} onPageSize={setTeamPageSize} />
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {resetPw ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button className="fixed inset-0 bg-black/60" aria-label="close" onClick={() => setResetPw(null)} />
+          <div className="relative z-10 w-full max-w-xl overflow-hidden rounded-2xl border border-white/10 bg-[var(--np-surface)] shadow-xl">
+            <div className="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
+              <div className="text-sm font-semibold">新密码</div>
+              <button className="np-btn px-2 py-1 text-xs" onClick={() => setResetPw(null)}>
+                关闭
+              </button>
+            </div>
+            <div className="p-4 grid gap-3">
+              <div className="text-sm text-[var(--np-muted)]">新密码仅展示一次，请及时记录并交付给该个人支付渠道用户。</div>
+              <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                <div className="text-xs text-[var(--np-faint)]">密码</div>
+                <div className="mt-1 font-mono text-sm text-[var(--np-text)] break-all">{resetPw}</div>
+              </div>
+              <div className="flex items-center justify-end">
+                <button className="np-btn np-btn-primary px-3 py-2 text-sm" onClick={() => setResetPw(null)}>
+                  我已记录
+                </button>
               </div>
             </div>
           </div>
@@ -424,8 +638,8 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
 
       {activeTab === "tx" ? (
         <div className="np-card p-4">
-          <div className="text-sm font-semibold">网银交易记录</div>
-        <div className="mt-3 grid gap-2 md:hidden">
+          <div className="text-sm font-semibold">交易记录</div>
+          <div className="mt-3 grid gap-2 md:hidden">
           {txRows.map((t) => (
             <div key={t.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
               <div className="flex items-start justify-between gap-2">
@@ -435,9 +649,6 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
                   <div className="mt-1 font-mono text-[11px] text-[var(--np-faint)] break-all">ref {t.ref ?? "-"}</div>
                 </div>
                 <div className="text-xs">{t.direction === "IN" ? <span className="np-pill np-pill-ok">入账</span> : <span className="np-pill np-pill-danger">出账</span>}</div>
-              </div>
-              <div className="mt-2 font-mono text-[11px] text-[var(--np-faint)] break-all whitespace-normal">
-                {(t.detailsJson ?? "").slice(0, 180) || "-"}
               </div>
             </div>
           ))}
@@ -452,7 +663,6 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
                 <th className="px-3 py-2 w-[110px]">方向</th>
                 <th className="px-3 py-2 w-[140px]">金额</th>
                 <th className="px-3 py-2 w-[220px]">Ref</th>
-                <th className="px-3 py-2">详情</th>
               </tr>
             </thead>
             <tbody>
@@ -462,14 +672,11 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
                   <td className="px-3 py-2 text-xs">{t.direction === "IN" ? <span className="np-pill np-pill-ok">入账</span> : <span className="np-pill np-pill-danger">出账</span>}</td>
                   <td className="px-3 py-2 font-mono">{t.amount}</td>
                   <td className="px-3 py-2 font-mono text-xs text-[var(--np-muted)] break-all">{t.ref ?? "-"}</td>
-                  <td className="px-3 py-2 font-mono text-[11px] text-[var(--np-faint)] break-all whitespace-normal">
-                    {(t.detailsJson ?? "").slice(0, 220) || "-"}
-                  </td>
                 </tr>
               ))}
               {!txRows.length ? (
                 <tr>
-                  <td className="px-3 py-4 text-sm text-[var(--np-muted)]" colSpan={5}>
+                  <td className="px-3 py-4 text-sm text-[var(--np-muted)]" colSpan={4}>
                     暂无交易记录
                   </td>
                 </tr>
@@ -492,7 +699,7 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
 
       {activeTab === "balance" ? (
         <div className="np-card p-4">
-          <div className="text-sm font-semibold">余额变动历史</div>
+          <div className="text-sm font-semibold">余额变动</div>
         <div className="mt-3 grid gap-2 md:hidden">
           {balRows.map((l) => (
             <div key={l.id} className="rounded-xl border border-white/10 bg-white/5 p-3">

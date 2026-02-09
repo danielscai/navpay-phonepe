@@ -7,7 +7,7 @@ import { requireApiPerm } from "@/lib/api";
 
 const querySchema = z.object({
   page: z.coerce.number().min(1).default(1),
-  pageSize: z.coerce.number().min(1).max(200).default(20),
+  pageSize: z.coerce.number().min(1).max(200).default(10),
 });
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ personId: string }> }) {
@@ -41,4 +41,3 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ personId: s
 
   return NextResponse.json({ ok: true, page: parsed.data.page, pageSize: parsed.data.pageSize, total, rows });
 }
-

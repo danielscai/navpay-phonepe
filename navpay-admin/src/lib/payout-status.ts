@@ -8,6 +8,7 @@ import { dec, money2 } from "@/lib/money";
 import { writeAuditLog } from "@/lib/audit";
 import { creditPaymentPersonOnce } from "@/lib/payment-person";
 import { dispatchCallbackTaskImmediate, getCallbackMaxAttempts } from "@/lib/callback-dispatch";
+import { settlePayoutOrderCommission } from "@/lib/channel-commission";
 
 export type PayoutStatus =
   | "CREATED"
@@ -22,7 +23,7 @@ export type PayoutStatus =
 
 export async function setPayoutOrderStatus(opts: {
   req: Request;
-  actorUserId: string;
+  actorUserId?: string | null;
   orderId: string;
   toStatus: PayoutStatus;
   enqueueCallback: boolean;
@@ -38,12 +39,18 @@ export async function setPayoutOrderStatus(opts: {
 
   await db
     .update(payoutOrders)
-    .set({ status: opts.toStatus, notifyStatus: "PENDING", lastNotifiedAtMs: null, updatedAtMs: Date.now() } as any)
+    .set({
+      status: opts.toStatus,
+      notifyStatus: "PENDING",
+      lastNotifiedAtMs: null,
+      successAtMs: opts.toStatus === "SUCCESS" && o.status !== "SUCCESS" ? Date.now() : (o.successAtMs ?? null),
+      updatedAtMs: Date.now(),
+    } as any)
     .where(eq(payoutOrders.id, opts.orderId));
 
   await writeAuditLog({
     req: opts.req as any,
-    actorUserId: opts.actorUserId,
+    actorUserId: opts.actorUserId ?? null,
     action: "payout.status_update",
     entityType: "payout_order",
     entityId: opts.orderId,
@@ -81,6 +88,8 @@ export async function setPayoutOrderStatus(opts: {
       refType: "payout_success",
       refId: String(o.id),
     });
+    // Commission + multi-level rebates (idempotent per order via unique index).
+    await settlePayoutOrderCommission({ orderId: String(o.id), nowMs: Date.now() });
   }
 
   if (opts.enqueueCallback) {
@@ -122,4 +131,3 @@ export async function setPayoutOrderStatus(opts: {
 
   return { ok: true };
 }
-

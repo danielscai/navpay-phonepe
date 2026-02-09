@@ -40,11 +40,13 @@ const NAV_MAIN = [
   { href: "/admin/merchants", label: "商户管理" },
   { href: "/admin/orders/collect", label: "代收订单" },
   { href: "/admin/orders/payout", label: "代付订单" },
+  { href: "/admin/orders/recharge", label: "充值订单" },
   { href: "/admin/payout/channels", label: "支付渠道" },
 ];
 
 const NAV_SYSTEM = [
   { href: "/admin/system/config", label: "系统参数" },
+  { href: "/admin/system/recharge", label: "充值管理" },
   { href: "/admin/system/ip-whitelist", label: "IP 白名单" },
   { href: "/admin/callbacks", label: "通知队列" },
   { href: "/admin/resources", label: "资源管理" },
@@ -101,7 +103,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   return (
     <div className="min-h-screen">
-      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-6 py-8 md:grid-cols-[240px_1fr]">
+      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 px-6 py-8 md:grid-cols-[240px_minmax(0,1fr)]">
         <aside className="np-card p-4 md:sticky md:top-8 md:h-[calc(100vh-4rem)] md:overflow-auto">
           <div>
             <div className="text-xs text-[var(--np-faint)]">NavPay</div>
@@ -169,7 +171,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           </div>
         </aside>
 
-        <main className="np-card p-6">
+        <main className="min-w-0 np-card p-6">
           <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-4">
             <div className="min-w-0">
               <div className="truncate text-xl font-semibold tracking-tight md:text-2xl">{activeLabel}</div>

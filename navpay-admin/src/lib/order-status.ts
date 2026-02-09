@@ -1,4 +1,4 @@
-export type OrderType = "collect" | "payout";
+export type OrderType = "collect" | "payout" | "recharge";
 
 export type StatusPill = {
   label: string;
@@ -34,9 +34,13 @@ export const payoutStatuses = [
   "REJECTED",
   "EXPIRED",
 ] as const;
+export const rechargeStatuses = ["CONFIRMING", "SUCCESS", "FAILED"] as const;
+export const rechargeIntentStatuses = ["CREATED", "CONFIRMING", "SUCCESS", "FAILED", "EXPIRED"] as const;
 
 export function knownOrderStatuses(orderType: OrderType): readonly string[] {
-  return orderType === "collect" ? collectStatuses : payoutStatuses;
+  if (orderType === "collect") return collectStatuses;
+  if (orderType === "payout") return payoutStatuses;
+  return rechargeIntentStatuses;
 }
 
 export type OrderStatusEdge = { from: string; to: string; label?: string };
@@ -59,7 +63,8 @@ export function orderStatusFlow(orderType: OrderType): { main: readonly string[]
     };
   }
 
-  return {
+  if (orderType === "payout") {
+    return {
     main: ["REVIEW_PENDING", "APPROVED", "LOCKED", "BANK_CONFIRMING", "SUCCESS"],
     terminal: ["FAILED", "REJECTED", "EXPIRED"],
     edges: [
@@ -71,6 +76,18 @@ export function orderStatusFlow(orderType: OrderType): { main: readonly string[]
       { from: "REVIEW_PENDING", to: "REJECTED", label: "审核拒绝" },
       { from: "BANK_CONFIRMING", to: "FAILED", label: "失败" },
       { from: "REVIEW_PENDING", to: "EXPIRED", label: "过期" },
+    ],
+    };
+  }
+
+  return {
+    main: ["CREATED", "CONFIRMING", "SUCCESS"],
+    terminal: ["FAILED", "EXPIRED"],
+    edges: [
+      { from: "CREATED", to: "CONFIRMING", label: "链上交易" },
+      { from: "CONFIRMING", to: "SUCCESS", label: "确认 >= N" },
+      { from: "CREATED", to: "EXPIRED", label: "超时" },
+      { from: "CONFIRMING", to: "FAILED", label: "失败" },
     ],
   };
 }
@@ -90,6 +107,23 @@ export function orderStatusPill(orderType: OrderType, status: string): StatusPil
         return { label: "支付中", className: warn };
       case "PAID":
         return { label: "已支付", className: info };
+      case "SUCCESS":
+        return { label: "成功", className: ok };
+      case "FAILED":
+        return { label: "失败", className: danger };
+      case "EXPIRED":
+        return { label: "已过期", className: danger };
+      default:
+        return { label: status, className: base };
+    }
+  }
+
+  if (orderType === "recharge") {
+    switch (status) {
+      case "CREATED":
+        return { label: "待充值", className: info };
+      case "CONFIRMING":
+        return { label: "确认中", className: warn };
       case "SUCCESS":
         return { label: "成功", className: ok };
       case "FAILED":

@@ -14,14 +14,43 @@
 
 - 表：`payment_persons`
 - 余额流水表：`payment_person_balance_logs`
+- 佣金/返利流水表：`payment_person_commission_logs`（今日收益、团队返利等统计来源）
 - 账号体系：
   - 新增支付个人时，会同时创建一条平台 `users` 账号，并写入 `payment_persons.user_id`。
   - 可在创建时手动指定 `username/password`；也可留空，由系统随机生成（密码为强密码）。
   - 初始密码仅在创建成功时返回一次，用于管理员交付给支付个人。
+ - 邀请关系（上级/下级）：
+   - `payment_persons.invite_code`：6 位字母数字邀请码（用于绑定上级）。
+   - `payment_persons.inviter_person_id`：上级 payment person（创建时绑定，关系不可变）。
 
 相关代码：
 - 余额调整/记账：`navpay-admin/src/lib/payment-person.ts`
 - 后台管理 UI：`navpay-admin/src/components/payment-persons-client.tsx`
+- 团队返利/佣金结算：`navpay-admin/src/lib/channel-commission.ts`
+
+## 今日收益与团队返利（V1）
+
+### 统计口径
+
+- 今日：固定按印度时间 `Asia/Kolkata` 的自然日统计（与后台展示时区切换无关）。
+- 完成口径：订单状态为 `SUCCESS`。
+- 代收/代付分别统计，并提供合计。
+
+### 订单费率（渠道收益 fee）
+
+- 新增字段：
+  - `collect_orders.channel_fee`
+  - `payout_orders.channel_fee`
+- 默认比例：4.5%（可在系统参数配置，单位 bps）：
+  - `channel.fee_rate_bps` 默认 `450`
+
+### 多级返利
+
+- 返利按订单 `amount` 的固定比例实时结算，最多 3 级：
+  - 一级(直接上级)：`channel.rebate_l1_bps` 默认 `50`（0.5%）
+  - 二级：`channel.rebate_l2_bps` 默认 `30`（0.3%）
+  - 三级：`channel.rebate_l3_bps` 默认 `10`（0.1%）
+- 返利流水写入 `payment_person_commission_logs`，并通过唯一键确保幂等（同一订单不会重复记账）。
 
 ## 支付渠道（当前实现）
 
@@ -32,8 +61,7 @@
 - 调试工具：`/admin/tools/payment-persons`
 
 相关资源管理入口（独立页面）：
-- 手机设备列表：`/admin/resources/devices`
-- 网银账户列表：`/admin/resources/bank-accounts`
+- 资源管理（手机/网银账户 Tab）：`/admin/resources`
 
 ## 调试工具：个人支付渠道登录模拟与上报
 
@@ -44,12 +72,13 @@
 流程：
 1. 在“个人支付渠道列表”先创建账号（会生成 username/password）。
 2. 打开调试工具“个人支付渠道”，选择账号。
-3. 点击“模拟登录并上报”：
-   - 自动生成 2 台手机设备
-   - 每台手机安装 2 个支付 App（共 4 个 App 安装记录）
-   - 生成 1 个网银账户与若干笔交易记录
+3. 输入密码并点击“登录”（真实调用接口 `POST /api/personal/auth/login`）。
+4. 切换到“上报数据”Tab，点击“上报模拟数据”：
+   - 自动生成 N 台手机设备（可配置）
+   - 每台手机安装 2 个支付 App（共 2N 个 App 安装记录）
+   - 生成 M 个网银账户（可配置）与若干笔交易记录（支持自定义 JSON）
    - 自动写入服务端数据库
-4. 回到“个人支付渠道列表”，点击“历史与详情”，即可看到手机在线、安装 App、交易记录等信息。
+5. 回到“个人支付渠道列表”，点击“用户名”进入详情，即可看到手机在线、安装 App、交易记录等信息。
 
 相关实现：
 - 生成计划（纯函数，便于测试）：`navpay-admin/src/lib/personal-channel-sim.ts`
@@ -62,11 +91,25 @@
 - 上报：`POST /api/personal/report/sync`（`Authorization: Bearer <token>`）
 
 上报后可在“个人支付渠道详情页”的下列 Tab 中查看：
+- 账户详情：余额/状态/快捷入口等汇总
 - 手机详情：设备与安装 App
 - 网银账户：账户列表
-- 网银交易记录：分页
-- 余额变动历史：分页
-- 账户详情：登录记录 + 上报日志（分页）
+- 交易记录：分页（默认每页 10 条）
+- 余额变动：分页（默认每页 10 条）
+- 登录记录：分页
+- 上报日志：分页（含 登录/登出/上报/抢单/完成 等关键事件）
+
+## 调试工具：代付订单抢单与完成（个人侧）
+
+入口：`/admin/tools/payment-persons` 的 “代付抢单” Tab（需先登录个人账号）。
+
+流程：
+1. 管理后台创建代付订单后，将订单审核为 `APPROVED`（待抢单）。
+2. 在“代付抢单”中会看到可抢列表（个人接口：`GET /api/personal/payout/orders/available`）。
+3. 点击“抢单”会把订单锁定到当前个人（个人接口：`POST /api/personal/payout/orders/:id/claim`），并开始显示倒计时。
+4. 点击“模拟成功/模拟失败”完成订单（个人接口：`POST /api/personal/payout/orders/:id/complete`）：
+   - 成功：会把 `amount` 入账到个人余额（幂等），并触发回调通知
+   - 失败：订单进入失败终态，并触发回调通知
 
 ## 代收订单（Collect）分配逻辑
 
@@ -94,7 +137,7 @@
 
 状态中文与颜色映射（单一来源）：
 - `navpay-admin/src/lib/order-status.ts`
-- 颜色规范：`navpay-admin/docs/UI_STATUS_COLORS.md`
+- 颜色规范：`navpay-admin/docs/UI_STATUS_COLORS.md`（同仓库内文件：`docs/UI_STATUS_COLORS.md`）
 
 ### 锁单字段
 

@@ -6,6 +6,7 @@ import { useEffect } from "react";
 
 const TABS = [
   { href: "/admin/tools/order-simulator", label: "订单模拟器" },
+  { href: "/admin/tools/recharge-simulator", label: "充值模拟器" },
   { href: "/admin/tools/webhook-simulator", label: "Webhook 模拟器" },
   { href: "/admin/tools/payment-persons", label: "个人支付渠道" },
   { href: "/admin/tools/callback-worker", label: "回调 Worker" },

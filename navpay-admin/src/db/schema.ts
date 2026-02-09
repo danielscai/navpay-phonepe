@@ -160,6 +160,10 @@ export const merchants = sqliteTable(
     balance: text("balance").notNull().default("0"),
     payoutFrozen: text("payout_frozen").notNull().default("0"),
 
+    // Deposit address derivation offsets (HD wallet index) per chain.
+    depositIndexTron: integer("deposit_index_tron"),
+    depositIndexBsc: integer("deposit_index_bsc"),
+
     createdAtMs: integer("created_at_ms")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -170,6 +174,57 @@ export const merchants = sqliteTable(
   (t) => ({
     codeUx: uniqueIndex("merchants_code_ux").on(t.code),
     enabledIdx: index("merchants_enabled_idx").on(t.enabled),
+  }),
+);
+
+export const merchantDepositAddresses = sqliteTable(
+  "merchant_deposit_addresses",
+  {
+    id: text("id").primaryKey(),
+    merchantId: text("merchant_id").notNull(),
+    chain: text("chain").notNull(), // tron | bsc
+    addrIndex: integer("addr_index").notNull(),
+    address: text("address").notNull(),
+    createdAtMs: integer("created_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    merchantChainUx: uniqueIndex("merchant_deposit_addresses_merchant_chain_ux").on(t.merchantId, t.chain),
+    chainAddressUx: uniqueIndex("merchant_deposit_addresses_chain_address_ux").on(t.chain, t.address),
+    chainIdx: index("merchant_deposit_addresses_chain_idx").on(t.chain),
+  }),
+);
+
+export const rechargeOrders = sqliteTable(
+  "recharge_orders",
+  {
+    id: text("id").primaryKey(),
+    merchantId: text("merchant_id").notNull(),
+    chain: text("chain").notNull(), // tron | bsc
+    asset: text("asset").notNull().default("USDT"),
+    address: text("address").notNull(),
+    txHash: text("tx_hash").notNull(),
+    fromAddress: text("from_address"),
+    toAddress: text("to_address"),
+    amount: text("amount").notNull(),
+    status: text("status").notNull().default("CONFIRMING"), // CONFIRMING | SUCCESS | FAILED
+    blockNumber: integer("block_number"),
+    confirmations: integer("confirmations").notNull().default(0),
+    confirmationsRequired: integer("confirmations_required").notNull().default(15),
+    creditedAtMs: integer("credited_at_ms"),
+    createdAtMs: integer("created_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAtMs: integer("updated_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    chainTxUx: uniqueIndex("recharge_orders_chain_tx_ux").on(t.chain, t.txHash),
+    merchantIdx: index("recharge_orders_merchant_idx").on(t.merchantId),
+    statusIdx: index("recharge_orders_status_idx").on(t.status),
+    createdIdx: index("recharge_orders_created_idx").on(t.createdAtMs),
   }),
 );
 
@@ -293,6 +348,8 @@ export const paymentPersons = sqliteTable(
     name: text("name").notNull(),
     balance: text("balance").notNull().default("0.00"),
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    inviteCode: text("invite_code"),
+    inviterPersonId: text("inviter_person_id"),
     createdAtMs: integer("created_at_ms")
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -303,7 +360,30 @@ export const paymentPersons = sqliteTable(
   (t) => ({
     nameUx: uniqueIndex("payment_persons_name_ux").on(t.name),
     userUx: uniqueIndex("payment_persons_user_ux").on(t.userId),
+    inviteUx: uniqueIndex("payment_persons_invite_code_ux").on(t.inviteCode),
     enabledIdx: index("payment_persons_enabled_idx").on(t.enabled),
+    inviterIdx: index("payment_persons_inviter_idx").on(t.inviterPersonId),
+  }),
+);
+
+export const paymentPersonCommissionLogs = sqliteTable(
+  "payment_person_commission_logs",
+  {
+    id: text("id").primaryKey(),
+    personId: text("person_id").notNull(),
+    kind: text("kind").notNull(), // fee_collect | fee_payout | rebate_l1 | rebate_l2 | rebate_l3
+    amount: text("amount").notNull(),
+    orderType: text("order_type").notNull(), // collect | payout
+    orderId: text("order_id").notNull(),
+    sourcePersonId: text("source_person_id"),
+    createdAtMs: integer("created_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    ux: uniqueIndex("payment_person_commission_logs_ux").on(t.personId, t.kind, t.orderType, t.orderId),
+    personIdx: index("payment_person_commission_logs_person_idx").on(t.personId, t.createdAtMs),
+    orderIdx: index("payment_person_commission_logs_order_idx").on(t.orderType, t.orderId),
   }),
 );
 
@@ -474,6 +554,7 @@ export const collectOrders = sqliteTable(
     merchantOrderNo: text("merchant_order_no").notNull(),
     amount: text("amount").notNull(),
     fee: text("fee").notNull().default("0"),
+    channelFee: text("channel_fee").notNull().default("0.00"),
     status: text("status").notNull(), // CREATED | PENDING_PAY | PAID | SUCCESS | FAILED | EXPIRED
     notifyUrl: text("notify_url").notNull(),
     remark: text("remark"),
@@ -487,6 +568,7 @@ export const collectOrders = sqliteTable(
 
     assignedPaymentPersonId: text("assigned_payment_person_id"),
     assignedAtMs: integer("assigned_at_ms"),
+    successAtMs: integer("success_at_ms"),
 
     createdAtMs: integer("created_at_ms")
       .notNull()
@@ -499,6 +581,8 @@ export const collectOrders = sqliteTable(
     merchantIdx: index("collect_orders_merchant_idx").on(t.merchantId),
     statusIdx: index("collect_orders_status_idx").on(t.status),
     assignedPersonIdx: index("collect_orders_assigned_person_idx").on(t.assignedPaymentPersonId),
+    successIdx: index("collect_orders_success_idx").on(t.status, t.successAtMs),
+    assignedSuccessIdx: index("collect_orders_assigned_success_idx").on(t.assignedPaymentPersonId, t.status, t.successAtMs),
     merchantOrderUx: uniqueIndex("collect_orders_merchant_order_ux").on(
       t.merchantId,
       t.merchantOrderNo,
@@ -514,6 +598,7 @@ export const payoutOrders = sqliteTable(
     merchantOrderNo: text("merchant_order_no").notNull(),
     amount: text("amount").notNull(),
     fee: text("fee").notNull().default("0"),
+    channelFee: text("channel_fee").notNull().default("0.00"),
     status: text("status").notNull(), // CREATED | REVIEW_PENDING | APPROVED | BANK_CONFIRMING | SUCCESS | FAILED | REJECTED | EXPIRED
     notifyUrl: text("notify_url").notNull(),
     remark: text("remark"),
@@ -530,6 +615,7 @@ export const payoutOrders = sqliteTable(
     lockMode: text("lock_mode").notNull().default("AUTO"), // AUTO | MANUAL
     lockedAtMs: integer("locked_at_ms"),
     lockExpiresAtMs: integer("lock_expires_at_ms"),
+    successAtMs: integer("success_at_ms"),
 
     createdAtMs: integer("created_at_ms")
       .notNull()
@@ -543,6 +629,8 @@ export const payoutOrders = sqliteTable(
     statusIdx: index("payout_orders_status_idx").on(t.status),
     lockedPersonIdx: index("payout_orders_locked_person_idx").on(t.lockedPaymentPersonId),
     lockExpiresIdx: index("payout_orders_lock_expires_idx").on(t.lockExpiresAtMs),
+    successIdx: index("payout_orders_success_idx").on(t.status, t.successAtMs),
+    lockedSuccessIdx: index("payout_orders_locked_success_idx").on(t.lockedPaymentPersonId, t.status, t.successAtMs),
     merchantOrderUx: uniqueIndex("payout_orders_merchant_order_ux").on(
       t.merchantId,
       t.merchantOrderNo,
@@ -648,6 +736,43 @@ export const usdtDeposits = sqliteTable(
   (t) => ({
     txUx: uniqueIndex("usdt_deposits_tx_ux").on(t.txHash),
     statusIdx: index("usdt_deposits_status_idx").on(t.status),
+  }),
+);
+
+export const rechargeIntents = sqliteTable(
+  "recharge_intents",
+  {
+    id: text("id").primaryKey(),
+    merchantId: text("merchant_id").notNull(),
+    merchantOrderNo: text("merchant_order_no").notNull(),
+    chain: text("chain").notNull(), // tron | bsc
+    asset: text("asset").notNull().default("USDT"),
+    address: text("address").notNull(),
+    expectedAmount: text("expected_amount").notNull(),
+    status: text("status").notNull().default("CREATED"), // CREATED | CONFIRMING | SUCCESS | FAILED | EXPIRED
+    expiresAtMs: integer("expires_at_ms").notNull(),
+
+    txHash: text("tx_hash"),
+    fromAddress: text("from_address"),
+    toAddress: text("to_address"),
+    blockNumber: integer("block_number"),
+    confirmations: integer("confirmations").notNull().default(0),
+    confirmationsRequired: integer("confirmations_required").notNull().default(15),
+    creditedAtMs: integer("credited_at_ms"),
+
+    createdAtMs: integer("created_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAtMs: integer("updated_at_ms")
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (t) => ({
+    merchantIdx: index("recharge_intents_merchant_idx").on(t.merchantId),
+    statusIdx: index("recharge_intents_status_idx").on(t.status),
+    createdIdx: index("recharge_intents_created_idx").on(t.createdAtMs),
+    chainTxUx: uniqueIndex("recharge_intents_chain_tx_ux").on(t.chain, t.txHash),
+    chainAddrStatusUx: uniqueIndex("recharge_intents_chain_address_active_ux").on(t.chain, t.address, t.status),
   }),
 );
 

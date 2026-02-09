@@ -66,6 +66,7 @@ function Modal({
 export default function MerchantsClient() {
   const [rows, setRows] = useState<MerchantRow[]>([]);
   const [me, setMe] = useState<Me | null>(null);
+  const [timezone, setTimezone] = useState<string>("Asia/Shanghai");
   const [q, setQ] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -105,6 +106,11 @@ export default function MerchantsClient() {
   useEffect(() => {
     load();
     loadMe();
+    (async () => {
+      const r = await fetch("/api/settings");
+      const j = await r.json().catch(() => null);
+      if (r.ok && j?.ok && typeof j?.timezone === "string") setTimezone(j.timezone);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, pageSize]);
 
@@ -143,25 +149,8 @@ export default function MerchantsClient() {
     }
   }
 
-  async function toggleEnabled(m: MerchantRow) {
-    if (!canWrite) return;
-    setErr(null);
-    try {
-      const h = await csrfHeader();
-      const r = await fetch(`/api/admin/merchants/${m.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json", ...h },
-        body: JSON.stringify({ enabled: !m.enabled }),
-      });
-      const j = await r.json().catch(() => null);
-      if (!r.ok || !j?.ok) throw new Error("patch_failed");
-      await load();
-    } catch {
-      setErr("更新失败");
-    }
-  }
-
   const enabledCount = useMemo(() => rows.filter((r) => r.enabled).length, [rows]);
+  const fmt = (ms: number) => new Date(ms).toLocaleString("zh-CN", { timeZone: timezone, hour12: false });
 
   return (
     <div>
@@ -206,33 +195,26 @@ export default function MerchantsClient() {
               <th className="px-4 py-3">名称</th>
               <th className="px-4 py-3">余额</th>
               <th className="px-4 py-3">代付冻结</th>
+              <th className="px-4 py-3">创建时间</th>
               <th className="px-4 py-3">状态</th>
-              <th className="px-4 py-3 text-right">操作</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((m) => (
               <tr key={m.id} className="border-t border-white/10">
-                <td className="px-4 py-3 font-mono text-xs text-[var(--np-muted)]">{m.code}</td>
+                <td className="px-4 py-3 font-mono text-xs text-[var(--np-muted)]">
+                  <Link className="underline" href={`/admin/merchants/${m.id}`}>
+                    {m.code}
+                  </Link>
+                </td>
                 <td className="px-4 py-3">{m.name}</td>
                 <td className="px-4 py-3">{m.balance}</td>
                 <td className="px-4 py-3">{m.payoutFrozen}</td>
+                <td className="px-4 py-3 text-xs text-[var(--np-muted)]">{fmt(m.createdAtMs)}</td>
                 <td className="px-4 py-3">
                   <span className={["np-pill", m.enabled ? "np-pill-ok" : "np-pill-off"].join(" ")}>
                     {m.enabled ? "启用" : "停用"}
                   </span>
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <div className="flex flex-wrap justify-end gap-2">
-                    <Link className="np-btn px-2 py-1 text-xs" href={`/admin/merchants/${m.id}`}>
-                      管理
-                    </Link>
-                    {canWrite ? (
-                      <button className="np-btn px-2 py-1 text-xs" onClick={() => toggleEnabled(m)}>
-                        {m.enabled ? "停用" : "启用"}
-                      </button>
-                    ) : null}
-                  </div>
                 </td>
               </tr>
             ))}

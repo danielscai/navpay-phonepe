@@ -34,6 +34,9 @@ const PERMS = [
   { key: "order.payout.review", description: "Review payout orders" },
   { key: "order.payout.finalize", description: "Finalize payout orders (high risk)" },
 
+  { key: "order.recharge.read", description: "View recharge orders" },
+  { key: "order.recharge.write", description: "Manage recharge orders / debug simulation" },
+
   { key: "callback.read", description: "View callback queue" },
   { key: "callback.retry", description: "Retry callbacks" },
 
@@ -55,15 +58,17 @@ const ROLE_DEF: Record<string, string[]> = {
     "order.collect.write",
     "order.payout.read",
     "order.payout.write",
+    "order.recharge.read",
+    "order.recharge.write",
     "payout.channel.read",
     "payout.channel.write",
     "callback.read",
     "system.read",
     "audit.read",
   ],
-  "财务": ["merchant.read", "order.collect.read", "order.payout.read", "callback.read"],
-  "审核员": ["merchant.read", "order.payout.read", "order.payout.review", "callback.read"],
-  "只读": ["merchant.read", "order.collect.read", "order.payout.read", "callback.read", "system.read"],
+  "财务": ["merchant.read", "order.collect.read", "order.payout.read", "order.recharge.read", "callback.read"],
+  "审核员": ["merchant.read", "order.payout.read", "order.payout.review", "order.recharge.read", "callback.read"],
+  "只读": ["merchant.read", "order.collect.read", "order.payout.read", "order.recharge.read", "callback.read", "system.read"],
 };
 
 async function upsertPermissions() {
@@ -119,6 +124,16 @@ async function upsertSystemDefaults() {
     { key: "callback.base_delay_seconds", value: "60", description: "回调重试基础延迟(秒)" },
     { key: "timezone.default", value: env.DEFAULT_TIMEZONE, description: "默认展示时区" },
     { key: "timezone.alt", value: "Asia/Kolkata", description: "可切换时区" },
+    { key: "channel.fee_rate_bps", value: "450", description: "渠道订单收益费率（bps，4.5% = 450）。用于渠道用户“今日收益”等统计。" },
+    { key: "channel.rebate_l1_bps", value: "50", description: "团队返利：一级(直接上级)比例（bps，0.5% = 50）。实时结算。" },
+    { key: "channel.rebate_l2_bps", value: "30", description: "团队返利：二级比例（bps，0.3% = 30）。实时结算。" },
+    { key: "channel.rebate_l3_bps", value: "10", description: "团队返利：三级比例（bps，0.1% = 10）。实时结算。" },
+    { key: "recharge.tron.enabled", value: "true", description: "是否启用 Tron 充值监听/入账。" },
+    { key: "recharge.bsc.enabled", value: "true", description: "是否启用 BSC 充值监听/入账。" },
+    { key: "recharge.tron.confirmations_required", value: "15", description: "Tron 充值确认区块数（默认 15）。" },
+    { key: "recharge.bsc.confirmations_required", value: "15", description: "BSC 充值确认区块数（默认 15）。" },
+    { key: "recharge.tron.next_index", value: "0", description: "充值地址派生索引 next_index（tron，内部使用）。" },
+    { key: "recharge.bsc.next_index", value: "0", description: "充值地址派生索引 next_index（bsc，内部使用）。" },
   ];
   for (const d of defaults) {
     await db

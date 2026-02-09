@@ -9,6 +9,7 @@ import { requireMerchantApiKey } from "@/lib/merchant-apikey";
 import { payoutCreateReq, payoutCreateResp } from "@/lib/merchant-api/v1/contract";
 import { enforceMerchantLimit } from "@/lib/merchant-limits";
 import { writeAuditLog } from "@/lib/audit";
+import { calcChannelFeeForAmount } from "@/lib/channel-commission";
 
 function mapErr(e: any): { status: number; body: any } {
   const st = Number(e?.status ?? 500);
@@ -55,6 +56,7 @@ export async function POST(req: NextRequest) {
 
     const orderId = id("po");
     const now = Date.now();
+    const channelFee = await calcChannelFeeForAmount(parsed.data.amount);
 
     await db.update(merchants).set({ balance: newBal, payoutFrozen: newFrozen, updatedAtMs: now }).where(eq(merchants.id, merchantId));
     await db.insert(payoutOrders).values({
@@ -63,6 +65,7 @@ export async function POST(req: NextRequest) {
       merchantOrderNo: parsed.data.merchantOrderNo,
       amount: parsed.data.amount,
       fee,
+      channelFee,
       status: "REVIEW_PENDING",
       notifyUrl: parsed.data.notifyUrl,
       remark: parsed.data.remark ?? null,

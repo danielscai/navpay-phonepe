@@ -1,0 +1,66 @@
+Generate a 16:9 landscape video using Remotion. All text must use the Eina font, with font weights selected based on hierarchy. Use a unified gradient for accent colors, keep the style minimalist, and limit the palette to a maximum of four colors.
+For each scene, double the scale (2x) of the visual elements compared to their original ratio. Keep elements centered and ensure they are fully visible within the frame (no clipping).
+Role: Senior Remotion Engineer & Motion Designer.
+Task: Create a high-quality, "Apple-style" SaaS promo video using Remotion, React, and @remotion/skia.
+
+**Visual Style & Assets:**
+- **Background:** A fluid, organic, animated gradient mesh using `@remotion/skia`. Colors: Soft Lavender (#E6E6FA), Pale Purple, and White. It should look like an "aura" moving slowly.
+- **Typography:** Inter or SF Pro (sans-serif), bold weights, deep purple/black text color.
+- **Animation Physics:** Use `spring` and `interpolate` for all movements to mimic After Effects "Easy Ease". No linear animations.
+- **Composition:** 1080x1080 (Square) or 1080x1920 (Portrait) - let's default to Square for this promo. 30FPS.
+
+**Tech Stack:**
+- React
+- Remotion
+- @remotion/skia (REQUIRED for the background)
+- Tailwind CSS (for layout)
+- Lucide-React (for icons)
+
+**Scene Breakdown (Total Duration: approx 24 seconds):**
+
+**Scene 1: The Problem (0s - 3s)**
+- Background: Skia fluid gradient active.
+- Text Center: "Remotion is powerful" (Fade In + Slide Up).
+- Text Change: "But it's built for developers" (Previous text blurs out, new text springs in).
+
+**Scene 2: The Hook (3s - 6s)**
+- Text Center: "What if" (Big, Bold).
+- Text Addition: "in Browser?" appears next to or below it with a highlighted background (purple pill shape).
+
+**Scene 3: The Intro (6s - 8s)**
+- Transition: Text scales down.
+- New Text: "Meet" -> "Topview Vibe Editing" (The brand name should be in a vibrant purple/blue gradient text).
+
+**Scene 4: The Comparison (Split Screen) (8s - 12s)**
+- Split the screen vertically.
+- **Left Side (Dark Mode):** A terminal window graphic. Text typing: `npm install -g remotion`. Caption below: "Run in the CLI. Install tons of local tools."
+- **Right Side (Light Mode):** A clean UI mockups window. Shows a "Chat Interface". Caption below: "Log in to Topview. Start Vibe Editing instantly."
+- Animation: The "VS" circle pops in the middle.
+
+**Scene 5: Browser Capability (12s - 15s)**
+- Full screen browser window mockup floats in.
+- Text overlay: "Runs entirely in your browser".
+- Inside the mockup: A video player timeline scrubbing.
+
+**Scene 6: Chat Editing Feature (15s - 18s)**
+- Minimal UI showing a chat input field.
+- Animated typing: "Make it pop! 🎨".
+- A "Chat Bubble" pops up in response: "Done! Added vibrant colors and transitions ✨".
+- Background behind chat elements slightly blurs.
+
+**Scene 7: Grid Showcase (18s - 21s)**
+- A 3x3 grid of video thumbnails/players appears.
+- The grid slowly scrolls diagonally or pans.
+- Overlay Text: "Vibe video editing for everyone".
+
+**Scene 8: Outro / CTA (21s - 24s)**
+- Logo/Text: "Topview Vibe Editing".
+- CTA Button appears below: "Start Creating →" (Button has a subtle pulse or spring on hover simulation).
+
+**Implementation Steps for you:**
+1.  Create a `GradientBackground` component using Skia shaders that persists throughout the video.
+2.  Create reusable components: `FadeText`, `BrowserMockup`, `ChatBubble`, `TerminalWindow`.
+3.  Use `<Series>` or `<Sequence>` to orchestrate the timeline exactly as described above.
+4.  Ensure the code is modular.
+
+Please write the complete code for `Composition.tsx`, `Root.tsx`, and any necessary sub-components. Assume I have already installed the dependencies.

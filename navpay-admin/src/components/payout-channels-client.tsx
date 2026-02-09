@@ -7,7 +7,7 @@ type ChannelKey = "personal_netbank";
 
 export default function PayoutChannelsClient() {
   const channels = useMemo(
-    () => [{ key: "personal_netbank" as const, label: "个人支付渠道", enabled: true }],
+    () => [{ key: "personal_netbank" as const, label: "渠道账户（个人）", enabled: true }],
     [],
   );
   const [active, setActive] = useState<ChannelKey>("personal_netbank");
