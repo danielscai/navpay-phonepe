@@ -1,6 +1,5 @@
-import SystemRechargeClient from "@/components/system-recharge-client";
+import { redirect } from "next/navigation";
 
 export default function SystemRechargePage() {
-  return <SystemRechargeClient />;
+  redirect("/admin/ops/settings?tab=recharge");
 }
-

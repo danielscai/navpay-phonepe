@@ -102,11 +102,11 @@
 - Passkey 可成功绑定并出现在列表
 - 可使用 Passkey 登录进入 `/admin`
 
-## TC-009 渠道账户：邀请码上下级 + 今日收益 + 多级返利
+## TC-009 支付账户：邀请码上下级 + 今日收益 + 多级返利
 - 前置条件：已登录；系统参数存在默认值（`channel.fee_rate_bps=450`，`channel.rebate_l1_bps=50`，`channel.rebate_l2_bps=30`，`channel.rebate_l3_bps=10`）。
 - 步骤：
 1. 进入 `/admin/payout/channels`
-2. 新增 3 个渠道账户 A、B、C
+2. 新增 3 个支付账户 A、B、C
 3. 创建 B 时填写 A 的邀请码；创建 C 时填写 B 的邀请码
 4. 进入 `/admin/tools/order-simulator` 创建一笔代收订单并支付成功（确保分配给 C）
 5. 打开 C 详情页（`/admin/payout/payment-persons/:id?tab=account`），查看“今日收益(费)”展示
@@ -116,3 +116,23 @@
 - B 获得一级返利（0.5% * amount），A 获得二级返利（0.3% * amount）
 - 统计按 `Asia/Kolkata` 当日自然日计算
 - 扣钱操作不会导致余额为负，并且必须填写原因
+
+## TC-010 系统能力：平台用户 + 角色权限（手工验证）
+- 前置条件：使用具备 `system.read`/`system.write` 的账号登录后台。
+- 步骤：
+1. 进入 `/admin/system/roles`，新增角色并设置权限（勾选/取消勾选）。
+2. 进入 `/admin/system/users`，新增平台用户并分配角色。
+3. 使用新平台用户登录，确认其页面访问权限与所分配权限一致（无权限页面返回 403/提示）。
+- 期望：
+- 角色权限可增删改（被用户使用中的角色不允许删除）
+- 平台用户可新增/删除/分配角色（不允许删除自己）
+
+## TC-011 运营设置：支付APP管理（手工验证）
+- 前置条件：使用具备 `system.read`/`system.write` 的账号登录后台。
+- 步骤：
+1. 进入 `/admin/ops/settings?tab=payment_apps`
+2. 新增支付APP（名称/包名/versionCode/下载地址/最小支持版本）
+3. 在列表中切换 “启用/代收/代付” 开关，并编辑/删除
+- 期望：
+- 列表在桌面与移动端均无横向溢出
+- 开关与编辑结果刷新后可持久化

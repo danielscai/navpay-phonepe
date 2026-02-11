@@ -355,7 +355,7 @@ export default function PersonalChannelSimulatorClient() {
     <div className="grid gap-3">
       <div className="np-card p-4">
         <div className="text-xs text-[var(--np-faint)]">调试工具</div>
-        <div className="mt-1 text-lg font-semibold tracking-tight">个人支付渠道</div>
+        <div className="mt-1 text-lg font-semibold tracking-tight">支付账户（个人）</div>
         {sessions.length ? (
           <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -650,7 +650,7 @@ export default function PersonalChannelSimulatorClient() {
       <div className="np-card p-4">
         <div className="text-sm font-semibold">说明</div>
         <div className="mt-2 text-sm text-[var(--np-muted)]">
-          该页面用于模拟“个人支付渠道”用户在手机 App 上的真实登录与数据上报：先用用户名/密码调用 `/api/personal/auth/login` 获取 token，
+          该页面用于模拟“支付账户（个人）”用户在手机 App 上的真实登录与数据上报：先用用户名/密码调用 `/api/personal/auth/login` 获取 token，
           再通过 `/api/personal/report/sync` 将手机/支付 App/网银账户/交易记录上报到服务端。
         </div>
         <div className="mt-2 text-sm text-[var(--np-muted)]">

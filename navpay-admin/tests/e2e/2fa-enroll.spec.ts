@@ -16,33 +16,30 @@ test("2FA enroll flow: first login forces enroll, then OTP login works", async (
   const otpauth = await page.locator("text=otpauth://totp").first().innerText();
   const secret = parseSecretFromOtpAuth(otpauth.trim());
 
-  // Be resilient to 30s step boundary: try -30s/current/+30s window.
-  const now = Date.now();
-  const candidates = [
-    await totpToken(secret, now - 60_000),
-    await totpToken(secret, now - 30_000),
-    await totpToken(secret, now),
-    await totpToken(secret, now + 30_000),
-    await totpToken(secret, now + 60_000),
-  ];
+  // Be resilient to 30s step boundary and any small clock drift:
+  // keep retrying for a bounded time window and re-generate tokens each time.
+  const offsets = [-30_000, 0, 30_000];
   const codesTitle = page.getByText("备用恢复码（请妥善保存）");
   let ok = false;
-  for (const t of candidates) {
-    await page.locator("#enroll-token").fill(t);
-    const [resp] = await Promise.all([
-      page.waitForResponse((r) => r.url().includes("/api/2fa/enroll/confirm") && r.request().method() === "POST"),
-      page.getByRole("button", { name: "确认绑定" }).click(),
-    ]);
-    const j = await resp.json().catch(() => null);
-    try {
-      await expect(codesTitle).toBeVisible({ timeout: 2_000 });
-      ok = true;
-      break;
-    } catch {
-      // try next candidate
+  const deadline = Date.now() + 45_000;
+  while (!ok && Date.now() < deadline) {
+    const now = Date.now();
+    for (const off of offsets) {
+      const t = await totpToken(secret, now + off);
+      await page.locator("#enroll-token").fill(t);
+      const [resp] = await Promise.all([
+        page.waitForResponse((r) => r.url().includes("/api/2fa/enroll/confirm") && r.request().method() === "POST"),
+        page.getByRole("button", { name: "确认绑定" }).click(),
+      ]);
+      const j = await resp.json().catch(() => null);
+      if (resp.ok() && j?.ok) {
+        await expect(codesTitle).toBeVisible({ timeout: 10_000 });
+        ok = true;
+        break;
+      }
+      await page.waitForTimeout(250);
     }
-    // If server rejected, try next.
-    if (!resp.ok() || !j?.ok) continue;
+    if (!ok) await page.waitForTimeout(1000);
   }
   expect(ok, "2FA enroll confirm did not succeed").toBeTruthy();
   await expect(codesTitle).toBeVisible({ timeout: 10_000 });

@@ -1,6 +1,5 @@
-import IpWhitelistClient from "@/components/ip-whitelist-client";
+import { redirect } from "next/navigation";
 
 export default function IpWhitelistPage() {
-  return <IpWhitelistClient />;
+  redirect("/admin/system/config?tab=ip_whitelist");
 }
-

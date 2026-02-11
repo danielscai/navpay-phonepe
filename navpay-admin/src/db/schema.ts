@@ -311,6 +311,13 @@ export const paymentApps = sqliteTable(
     packageName: text("package_name").notNull(),
     versionCode: integer("version_code").notNull().default(1),
     downloadUrl: text("download_url").notNull(),
+    // Optional icon URL (CDN/object storage). We don't handle uploads here; store references only.
+    iconUrl: text("icon_url"),
+    // When a personal device reports this app, it must meet the minimum version to be considered supported.
+    minSupportedVersionCode: integer("min_supported_version_code").notNull().default(0),
+    // Fine-grained switches: whether this app can be used for payout/collect flows (ops toggles).
+    payoutEnabled: integer("payout_enabled", { mode: "boolean" }).notNull().default(true),
+    collectEnabled: integer("collect_enabled", { mode: "boolean" }).notNull().default(true),
     promoted: integer("promoted", { mode: "boolean" }).notNull().default(false),
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
     createdAtMs: integer("created_at_ms")

@@ -1,6 +1,5 @@
-import SystemConfigClient from "@/components/system-config-client";
+import SystemConfigTabsClient from "@/components/system-config-tabs-client";
 
 export default function SystemConfigPage() {
-  return <SystemConfigClient />;
+  return <SystemConfigTabsClient />;
 }
-

@@ -260,7 +260,7 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
 
   // Ensure a stable default tab.
   useEffect(() => {
-    const ok = ["account", "team", "phones", "bank", "tx", "balance", "login", "report"].includes(activeTab);
+    const ok = ["account", "earnings", "team", "phones", "bank", "tx", "balance", "login", "report"].includes(activeTab);
     if (ok) return;
     const u = new URL(window.location.href);
     u.searchParams.set("tab", "account");
@@ -282,6 +282,7 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
           </Link>
           {[
             ["account", "账户详情"],
+            ["earnings", "收益统计"],
             ["team", "团队/返利"],
             ["phones", "手机详情"],
             ["bank", "网银账户"],
@@ -347,7 +348,7 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
                     <button
                       className="np-btn px-3 py-2 text-xs"
                       onClick={() => {
-                        if (!confirm("确认禁用该个人支付渠道？")) return;
+                        if (!confirm("确认禁用该支付账户？")) return;
                         setEnabled(false);
                       }}
                     >
@@ -357,7 +358,7 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
                     <button
                       className="np-btn np-btn-primary px-3 py-2 text-xs"
                       onClick={() => {
-                        if (!confirm("确认启用该个人支付渠道？")) return;
+                        if (!confirm("确认启用该支付账户？")) return;
                         setEnabled(true);
                       }}
                     >
@@ -383,11 +384,9 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
 
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-              <div className="text-xs text-[var(--np-faint)]">今日收益 (India, fee)</div>
+              <div className="text-xs text-[var(--np-faint)]">今日收益 (India)</div>
               <div className="mt-2 font-mono text-2xl text-[var(--np-text)]">{todayOrders?.totalFee ?? "0.00"}</div>
-              <div className="mt-1 text-xs text-[var(--np-faint)]">
-                代收 {todayOrders?.collectCount ?? 0}/{todayOrders?.collectFee ?? "0.00"}，代付 {todayOrders?.payoutCount ?? 0}/{todayOrders?.payoutFee ?? "0.00"}
-              </div>
+              <div className="mt-1 text-xs text-[var(--np-faint)]">明细请看「收益统计」Tab</div>
             </div>
             <div className="rounded-xl border border-white/10 bg-white/5 p-3">
               <div className="text-xs text-[var(--np-faint)]">今日团队返利 (India)</div>
@@ -400,6 +399,39 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
               <div className="text-xs text-[var(--np-faint)]">最近登录</div>
               <div className="mt-2 font-mono text-sm text-[var(--np-text)]">{lastLogin?.ip ?? "-"}</div>
               <div className="mt-1 font-mono text-xs text-[var(--np-faint)]">{lastLogin?.atMs ? fmt(lastLogin.atMs) : "-"}</div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === "earnings" && person ? (
+        <div className="np-card p-4">
+          <div className="text-sm font-semibold">收益统计（按 India 日）</div>
+          <div className="mt-1 text-xs text-[var(--np-faint)]">完成口径：SUCCESS。今日按 Asia/Kolkata 自然日统计。</div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="text-xs text-[var(--np-faint)]">今日总收益 (fee)</div>
+              <div className="mt-2 font-mono text-2xl text-[var(--np-text)]">{todayOrders?.totalFee ?? "0.00"}</div>
+              <div className="mt-1 text-xs text-[var(--np-faint)]">订单数 {todayOrders?.totalCount ?? 0}</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="text-xs text-[var(--np-faint)]">代收收益</div>
+              <div className="mt-2 font-mono text-2xl text-[var(--np-text)]">{todayOrders?.collectFee ?? "0.00"}</div>
+              <div className="mt-1 text-xs text-[var(--np-faint)]">订单数 {todayOrders?.collectCount ?? 0}</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="text-xs text-[var(--np-faint)]">代付收益</div>
+              <div className="mt-2 font-mono text-2xl text-[var(--np-text)]">{todayOrders?.payoutFee ?? "0.00"}</div>
+              <div className="mt-1 text-xs text-[var(--np-faint)]">订单数 {todayOrders?.payoutCount ?? 0}</div>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="text-xs text-[var(--np-faint)]">今日团队返利</div>
+            <div className="mt-2 font-mono text-xl text-[var(--np-text)]">{todayRebates?.rebateTotal ?? "0.00"}</div>
+            <div className="mt-1 text-xs text-[var(--np-faint)]">
+              L1 {todayRebates?.rebateL1 ?? "0.00"} / L2 {todayRebates?.rebateL2 ?? "0.00"} / L3 {todayRebates?.rebateL3 ?? "0.00"}
             </div>
           </div>
         </div>
@@ -522,7 +554,7 @@ export default function PaymentPersonDetailClient(props: { personId: string }) {
               </button>
             </div>
             <div className="p-4 grid gap-3">
-              <div className="text-sm text-[var(--np-muted)]">新密码仅展示一次，请及时记录并交付给该个人支付渠道用户。</div>
+              <div className="text-sm text-[var(--np-muted)]">新密码仅展示一次，请及时记录并交付给该支付账户用户。</div>
               <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                 <div className="text-xs text-[var(--np-faint)]">密码</div>
                 <div className="mt-1 font-mono text-sm text-[var(--np-text)] break-all">{resetPw}</div>

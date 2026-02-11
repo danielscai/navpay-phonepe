@@ -30,6 +30,14 @@ function chainLabel(chain: string): string {
   return chain.toUpperCase();
 }
 
+function txExplorerUrl(chain: string, txHash: string): string | null {
+  const h = txHash.trim();
+  if (!h) return null;
+  if (chain === "tron") return `https://tronscan.org/#/transaction/${h}`;
+  if (chain === "bsc") return `https://bscscan.com/tx/${h}`;
+  return null;
+}
+
 export default function RechargeOrdersClient() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [timezone, setTimezone] = useState<string>("Asia/Shanghai");
@@ -76,7 +84,7 @@ export default function RechargeOrdersClient() {
       <ListToolbar
         left={
           <div className="flex flex-wrap items-center gap-2">
-            <input className="np-input w-full md:w-[320px]" placeholder="搜索订单号/txHash/地址/商户号/ID" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input className="np-input w-full md:w-[320px]" placeholder="搜索订单号/txHash/地址/商户号" value={q} onChange={(e) => setQ(e.target.value)} />
             <input className="np-input w-full md:w-[160px]" placeholder="状态（可选）" value={status} onChange={(e) => setStatus(e.target.value)} />
             <input className="np-input w-full md:w-[140px]" placeholder="链（tron/bsc）" value={chain} onChange={(e) => setChain(e.target.value)} />
           </div>
@@ -118,8 +126,20 @@ export default function RechargeOrdersClient() {
                     <a className="underline" href={`/admin/orders/recharge/${o.id}`}>
                       {o.merchantOrderNo}
                     </a>
-                    <div className="mt-1 font-mono text-[11px] text-[var(--np-faint)] break-all">id {o.id}</div>
-                    <div className="mt-1 font-mono text-[11px] text-[var(--np-faint)] break-all">tx {o.txHash ?? "-"}</div>
+                    <div className="mt-1 font-mono text-[11px] text-[var(--np-faint)] break-all">
+                      tx{" "}
+                      {o.txHash ? (
+                        txExplorerUrl(o.chain, o.txHash) ? (
+                          <a className="underline" href={txExplorerUrl(o.chain, o.txHash)!} target="_blank" rel="noreferrer">
+                            {o.txHash}
+                          </a>
+                        ) : (
+                          o.txHash
+                        )
+                      ) : (
+                        "-"
+                      )}
+                    </div>
                   </td>
                   <td className="px-3 py-2 text-xs text-[var(--np-muted)]">{mch}</td>
                   <td className="px-3 py-2 text-xs">{chainLabel(o.chain)}</td>

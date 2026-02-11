@@ -17,7 +17,7 @@ async function loginQa(page: any) {
 
 async function createChannelAccount(page: any, opts: { name: string; inviterCode?: string; balance: string }) {
   await page.goto("/admin/payout/channels");
-  await page.getByRole("button", { name: "新增渠道账户" }).click();
+  await page.getByRole("button", { name: "新增支付账户" }).click();
   await expect(page.locator("#pp-create-name")).toBeVisible();
   await page.locator("#pp-create-name").fill(opts.name);
   if (opts.inviterCode) {
@@ -93,19 +93,19 @@ test("TC-009: invite chain + today fee + multi-level rebates (India day)", async
   ]);
 
   // Verify C today fee = 100 * 4.5% = 4.50
-  await page.goto(`/admin/payout/payment-persons/${c.id}?tab=account`);
-  await expect(page.getByText("今日收益 (India, fee)")).toBeVisible();
-  const feeCard = page.getByText("今日收益 (India, fee)").locator("..");
+  await page.goto(`/admin/payout/payment-persons/${c.id}?tab=earnings`);
+  await expect(page.getByText("收益统计（按 India 日）")).toBeVisible();
+  const feeCard = page.getByText("今日总收益 (fee)").locator("..");
   await expect(feeCard.locator("div.font-mono").first()).toHaveText("4.50");
 
   // Verify B rebate L1 = 0.50, A rebate L2 = 0.30
-  await page.goto(`/admin/payout/payment-persons/${b.id}?tab=account`);
-  await expect(page.getByText("今日团队返利 (India)")).toBeVisible();
-  const rebateCardB = page.getByText("今日团队返利 (India)").locator("..");
+  await page.goto(`/admin/payout/payment-persons/${b.id}?tab=earnings`);
+  await expect(page.getByText("收益统计（按 India 日）")).toBeVisible();
+  const rebateCardB = page.getByText("今日团队返利").locator("..");
   await expect(rebateCardB.locator("div.font-mono").first()).toHaveText("0.50");
 
-  await page.goto(`/admin/payout/payment-persons/${a.id}?tab=account`);
-  await expect(page.getByText("今日团队返利 (India)")).toBeVisible();
-  const rebateCardA = page.getByText("今日团队返利 (India)").locator("..");
+  await page.goto(`/admin/payout/payment-persons/${a.id}?tab=earnings`);
+  await expect(page.getByText("收益统计（按 India 日）")).toBeVisible();
+  const rebateCardA = page.getByText("今日团队返利").locator("..");
   await expect(rebateCardA.locator("div.font-mono").first()).toHaveText("0.30");
 });

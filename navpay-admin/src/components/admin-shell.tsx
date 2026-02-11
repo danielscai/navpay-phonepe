@@ -35,20 +35,24 @@ function tzFlag(tz: string): string {
   return "🇨🇳";
 }
 
-const NAV_MAIN = [
+const NAV_BIZ = [
   { href: "/admin", label: "仪表盘" },
   { href: "/admin/merchants", label: "商户管理" },
   { href: "/admin/orders/collect", label: "代收订单" },
   { href: "/admin/orders/payout", label: "代付订单" },
   { href: "/admin/orders/recharge", label: "充值订单" },
-  { href: "/admin/payout/channels", label: "支付渠道" },
+  { href: "/admin/payout/channels", label: "支付账户" },
+];
+
+const NAV_OPS = [
+  { href: "/admin/ops/activities", label: "活动设置" },
+  { href: "/admin/ops/settings", label: "运营设置" },
+  { href: "/admin/ops/data", label: "运营数据" },
 ];
 
 const NAV_SYSTEM = [
   { href: "/admin/system/config", label: "系统参数" },
-  { href: "/admin/system/recharge", label: "充值管理" },
-  { href: "/admin/system/ip-whitelist", label: "IP 白名单" },
-  { href: "/admin/callbacks", label: "通知队列" },
+  { href: "/admin/system/users", label: "用户管理" },
   { href: "/admin/resources", label: "资源管理" },
   { href: "/admin/audit-logs", label: "操作日志" },
   { href: "/admin/account", label: "个人设置" },
@@ -93,9 +97,9 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   const activeLabel = (() => {
     if (pathname.startsWith("/admin/tools")) return "调试工具";
     if (pathname.startsWith("/admin/account")) return "个人设置";
-    if (pathname.startsWith("/admin/payout/payment-persons")) return "渠道详情";
+    if (pathname.startsWith("/admin/payout/payment-persons")) return "支付账户详情";
     return (
-      NAV_MAIN.concat(NAV_SYSTEM)
+      NAV_BIZ.concat(NAV_OPS).concat(NAV_SYSTEM)
         .sort((a, b) => b.href.length - a.href.length)
         .find((n) => pathname === n.href || (n.href !== "/admin" && pathname.startsWith(n.href)))?.label ?? "仪表盘"
     );
@@ -110,10 +114,29 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
             <div className="text-sm font-semibold tracking-tight">管理后台</div>
           </div>
 
-          <div className="mt-4 text-xs text-[var(--np-faint)]">导航</div>
+          <div className="mt-4 text-xs text-[var(--np-faint)]">业务</div>
           <div className="mt-2 flex flex-col gap-1">
-            {NAV_MAIN.map((n) => {
+            {NAV_BIZ.map((n) => {
               const active = pathname === n.href || (n.href !== "/admin" && pathname.startsWith(n.href));
+              return (
+                <Link
+                  key={n.href}
+                  href={n.href}
+                  className={[
+                    "rounded-xl px-3 py-2 text-sm transition-colors",
+                    active ? "bg-white/10" : "hover:bg-white/5",
+                  ].join(" ")}
+                >
+                  {n.label}
+                </Link>
+              );
+            })}
+          </div>
+
+          <div className="mt-6 text-xs text-[var(--np-faint)]">运营管理</div>
+          <div className="mt-2 flex flex-col gap-1">
+            {NAV_OPS.map((n) => {
+              const active = pathname === n.href || pathname.startsWith(n.href);
               return (
                 <Link
                   key={n.href}

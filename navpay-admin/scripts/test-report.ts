@@ -113,7 +113,7 @@ function main() {
     "## 覆盖场景",
     "- 强制 2FA 首次登录与绑定（Google Authenticator TOTP）",
     "- Passkey(WebAuthn) 绑定与登录（虚拟验证器自动化）",
-    "- 渠道账户邀请码上下级 + 今日收益(India) + 多级返利（代收 SUCCESS 实时结算）",
+    "- 支付账户邀请码上下级 + 今日收益(India) + 多级返利（代收 SUCCESS 实时结算）",
     "- 创建 Webhook 接收器并获取接收 URL",
     "- 在「调试工具 -> 订单模拟器」创建代收订单、推进状态为 SUCCESS、生成回调任务、执行回调 worker、Webhook 接收端收到 payload",
     "- 在「调试工具 -> 订单模拟器」创建代付订单、冻结余额、审核流转、生成回调任务、执行回调 worker、Webhook 接收端收到 payload",
