@@ -1,0 +1,56 @@
+[34:00:41.255] Server  ERROR   ⨯ Error: Cannot find module 'next/dist/client/components/builtin/global-not-found'
+Require stack:
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/dev/on-demand-entry-handler.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/dev/hot-reloader-turbopack.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/router-server.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/start-server.js
+[34:00:41.283] Server  ERROR   Error: Cannot find module 'next/dist/pages/_error'
+Require stack:
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/dev/on-demand-entry-handler.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/dev/hot-reloader-turbopack.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/router-server.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/start-server.js
+[34:00:41.313] Server  ERROR   ⨯ Error: Cannot find module 'next/dist/pages/_error'
+Require stack:
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/dev/on-demand-entry-handler.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/dev/hot-reloader-turbopack.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/router-server.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/start-server.js
+[34:00:41.346] Server  ERROR   Error: Cannot find module 'next/dist/pages/_error'
+Require stack:
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/dev/on-demand-entry-handler.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/dev/hot-reloader-turbopack.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/router-server.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/start-server.js
+[34:00:41.403] Server  ERROR   ⨯ Error: Cannot find module 'next/dist/client/components/builtin/global-not-found'
+Require stack:
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/dev/on-demand-entry-handler.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/dev/hot-reloader-turbopack.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/router-server.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/start-server.js
+[34:00:41.436] Server  ERROR   Error: Cannot find module 'next/dist/pages/_error'
+Require stack:
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/dev/on-demand-entry-handler.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/dev/hot-reloader-turbopack.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/router-server.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/start-server.js
+[34:00:41.459] Server  ERROR   ⨯ Error: Cannot find module 'next/dist/pages/_error'
+Require stack:
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/dev/on-demand-entry-handler.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/dev/hot-reloader-turbopack.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/router-server.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/start-server.js
+[34:00:41.490] Server  ERROR   Error: Cannot find module 'next/dist/pages/_error'
+Require stack:
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/dev/on-demand-entry-handler.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/dev/hot-reloader-turbopack.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/router-utils/setup-dev-bundler.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/router-server.js
+- /Users/danielscai/Documents/IndiaPay/apk包-研究/navpay-admin/node_modules/next/dist/server/lib/start-server.js
