@@ -1,7 +1,9 @@
 package com.httpinterceptor.interceptor;
 
+import android.app.Application;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.util.Log;
 
 import org.json.JSONException;
@@ -44,6 +46,7 @@ public class LogSender {
     // 发送失败计数
     private int failureCount = 0;
     private static final int MAX_FAILURES = 10;
+    private static final String DEFAULT_SOURCE_APP = "phonepe";
 
     private LogSender() {
         logQueue = new LinkedBlockingQueue<>(1000);
@@ -94,11 +97,12 @@ public class LogSender {
         if (!enabled) {
             return;
         }
+        JSONObject payload = enrichPayload(logData);
 
         // 添加到队列，如果队列满了则丢弃最旧的
-        if (!logQueue.offer(logData)) {
+        if (!logQueue.offer(payload)) {
             logQueue.poll();
-            logQueue.offer(logData);
+            logQueue.offer(payload);
         }
     }
 
@@ -151,6 +155,7 @@ public class LogSender {
     private boolean doSend(JSONObject log) {
         HttpURLConnection connection = null;
         try {
+            JSONObject payload = enrichPayload(log);
             URL url = new URL(serverUrl);
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("POST");
@@ -159,7 +164,7 @@ public class LogSender {
             connection.setReadTimeout(5000);
             connection.setDoOutput(true);
 
-            byte[] body = log.toString().getBytes(StandardCharsets.UTF_8);
+            byte[] body = payload.toString().getBytes(StandardCharsets.UTF_8);
             connection.setFixedLengthStreamingMode(body.length);
 
             try (OutputStream os = connection.getOutputStream()) {
@@ -180,6 +185,56 @@ public class LogSender {
             if (connection != null) {
                 connection.disconnect();
             }
+        }
+    }
+
+    private JSONObject enrichPayload(JSONObject payload) {
+        if (payload == null) {
+            payload = new JSONObject();
+        }
+
+        try {
+            if (isMissingOrEmpty(payload, "sourceApp")) {
+                payload.put("sourceApp", DEFAULT_SOURCE_APP);
+            }
+            if (isMissingOrEmpty(payload, "androidId")) {
+                payload.put("androidId", getAndroidId());
+            }
+        } catch (JSONException e) {
+            Log.w(TAG, "Failed to enrich payload", e);
+        }
+
+        return payload;
+    }
+
+    private static boolean isMissingOrEmpty(JSONObject json, String key) {
+        if (json == null || key == null) {
+            return true;
+        }
+        if (!json.has(key) || json.isNull(key)) {
+            return true;
+        }
+        Object value = json.opt(key);
+        if (!(value instanceof String)) {
+            return false;
+        }
+        return ((String) value).trim().isEmpty();
+    }
+
+    private static String getAndroidId() {
+        try {
+            Class<?> activityThread = Class.forName("android.app.ActivityThread");
+            Object application = activityThread.getMethod("currentApplication").invoke(null);
+            if (!(application instanceof Application)) {
+                return "unknown";
+            }
+            String androidId = Settings.Secure.getString(
+                ((Application) application).getContentResolver(),
+                Settings.Secure.ANDROID_ID
+            );
+            return androidId == null || androidId.isEmpty() ? "unknown" : androidId;
+        } catch (Throwable t) {
+            return "unknown";
         }
     }
 
