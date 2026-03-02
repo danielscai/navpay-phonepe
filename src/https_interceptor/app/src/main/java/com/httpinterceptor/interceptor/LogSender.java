@@ -192,7 +192,12 @@ public class LogSender {
         if (payload == null) {
             return new JSONObject();
         }
-        return new JSONObject(payload.toString());
+        try {
+            return new JSONObject(payload.toString());
+        } catch (JSONException e) {
+            Log.w(TAG, "Failed to copy payload, fallback to empty object", e);
+            return new JSONObject();
+        }
     }
 
     private JSONObject enrichPayload(JSONObject payload) {
