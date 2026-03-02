@@ -47,6 +47,7 @@ public class LogSender {
     private int failureCount = 0;
     private static final int MAX_FAILURES = 10;
     private static final String DEFAULT_SOURCE_APP = "phonepe";
+    private static volatile String cachedAndroidId;
 
     private LogSender() {
         logQueue = new LinkedBlockingQueue<>(1000);
@@ -97,7 +98,7 @@ public class LogSender {
         if (!enabled) {
             return;
         }
-        JSONObject payload = enrichPayload(logData);
+        JSONObject payload = enrichPayload(copyPayload(logData));
 
         // 添加到队列，如果队列满了则丢弃最旧的
         if (!logQueue.offer(payload)) {
@@ -155,7 +156,6 @@ public class LogSender {
     private boolean doSend(JSONObject log) {
         HttpURLConnection connection = null;
         try {
-            JSONObject payload = enrichPayload(log);
             URL url = new URL(serverUrl);
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("POST");
@@ -164,7 +164,7 @@ public class LogSender {
             connection.setReadTimeout(5000);
             connection.setDoOutput(true);
 
-            byte[] body = payload.toString().getBytes(StandardCharsets.UTF_8);
+            byte[] body = log.toString().getBytes(StandardCharsets.UTF_8);
             connection.setFixedLengthStreamingMode(body.length);
 
             try (OutputStream os = connection.getOutputStream()) {
@@ -186,6 +186,13 @@ public class LogSender {
                 connection.disconnect();
             }
         }
+    }
+
+    private static JSONObject copyPayload(JSONObject payload) {
+        if (payload == null) {
+            return new JSONObject();
+        }
+        return new JSONObject(payload.toString());
     }
 
     private JSONObject enrichPayload(JSONObject payload) {
@@ -222,19 +229,26 @@ public class LogSender {
     }
 
     private static String getAndroidId() {
+        String cached = cachedAndroidId;
+        if (cached != null) {
+            return cached;
+        }
         try {
             Class<?> activityThread = Class.forName("android.app.ActivityThread");
             Object application = activityThread.getMethod("currentApplication").invoke(null);
             if (!(application instanceof Application)) {
-                return "unknown";
+                cachedAndroidId = "unknown";
+                return cachedAndroidId;
             }
             String androidId = Settings.Secure.getString(
                 ((Application) application).getContentResolver(),
                 Settings.Secure.ANDROID_ID
             );
-            return androidId == null || androidId.isEmpty() ? "unknown" : androidId;
+            cachedAndroidId = androidId == null || androidId.isEmpty() ? "unknown" : androidId;
+            return cachedAndroidId;
         } catch (Throwable t) {
-            return "unknown";
+            cachedAndroidId = "unknown";
+            return cachedAndroidId;
         }
     }
 
