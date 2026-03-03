@@ -28,18 +28,48 @@ log_step() { echo -e "\n${BLUE}==== $1 ====${NC}"; }
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 TOOLS_DIR="$PROJECT_DIR/tools"
+SRC_DIR="$(dirname "$PROJECT_DIR")"
 BUILD_DIR="$PROJECT_DIR/build"
 SMALI_DIR="$BUILD_DIR/smali"
 PINE_SMALI_DIR="$BUILD_DIR/pine_smali"
 PINE_LIB_DIR="$PROJECT_DIR/libs/jni"
+DISPATCHER_INJECT_SCRIPT="$SRC_DIR/_framework/dispatcher/scripts/inject_entry.py"
+DISPATCHER_LIB_SCRIPT="$SRC_DIR/tools/lib/dispatcher.sh"
 
-# 目标 APK 目录
-TARGET_DIR="${1:-}"
+SKIP_BUILD=0
+TARGET_DIR=""
+
+usage() {
+    echo "用法: $0 [--skip-build] <decompiled_apk_dir>"
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --skip-build)
+            SKIP_BUILD=1
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            if [ -z "$TARGET_DIR" ]; then
+                TARGET_DIR="$1"
+            else
+                log_error "未知参数: $1"
+                usage
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
 
 if [ -z "$TARGET_DIR" ]; then
     log_error "请指定目标 APK 目录"
     echo ""
-    echo "用法: $0 <decompiled_apk_dir>"
+    usage
     echo ""
     echo "示例: $0 /path/to/merge_test_output/decompiled/base"
     exit 1
@@ -54,7 +84,11 @@ log_step "检查编译输出"
 
 # 检查是否已编译
 if [ ! -d "$SMALI_DIR/com/sigbypass" ]; then
-    log_warn "签名绕过代码未编译，先运行编译..."
+    if [ "$SKIP_BUILD" -eq 1 ]; then
+        log_warn "启用 --skip-build 但签名绕过产物缺失，回退到编译"
+    else
+        log_warn "签名绕过代码未编译，先运行编译..."
+    fi
     "$TOOLS_DIR/compile.sh"
 fi
 
@@ -87,7 +121,11 @@ log_step "2. 复制 Pine Hook 框架"
 
 # 检查 Pine smali 是否存在，如果不存在则编译
 if [ ! -d "$PINE_SMALI_DIR/top/canyie/pine" ]; then
-    log_warn "Pine smali 未找到，需要先运行编译..."
+    if [ "$SKIP_BUILD" -eq 1 ]; then
+        log_warn "启用 --skip-build 但 Pine 产物缺失，回退到编译"
+    else
+        log_warn "Pine smali 未找到，需要先运行编译..."
+    fi
     "$TOOLS_DIR/compile.sh"
 fi
 
@@ -121,7 +159,7 @@ else
     exit 1
 fi
 
-log_step "4. 修改 Application 入口"
+log_step "4. 修改 Application 入口 (Dispatcher)"
 
 # 查找 PhonePeApplication.smali
 APP_SMALI=$(find "$TARGET_DIR" -name "PhonePeApplication.smali" -path "*/com/phonepe/app/*" | head -1)
@@ -140,27 +178,34 @@ if [ ! -f "$APP_SMALI.bak" ]; then
 fi
 
 # 检查是否已修改
-if grep -q "Lcom/sigbypass/HookEntry;->init" "$APP_SMALI"; then
-    log_warn "Application 已包含 Hook 入口代码，跳过修改"
+if grep -q "Lcom/indipay/inject/Dispatcher;->init" "$APP_SMALI"; then
+    log_warn "Application 已包含 Dispatcher 入口代码，跳过修改"
 else
-    log_info "注入 Hook 入口代码..."
+    log_info "注入 Dispatcher 入口代码..."
 
-    # 使用 Python 脚本进行注入
-    python3 "$TOOLS_DIR/inject_hook.py" "$APP_SMALI"
+    # 使用统一 Dispatcher 入口注入脚本
+    python3 "$DISPATCHER_INJECT_SCRIPT" "$APP_SMALI"
 
     # 验证注入结果
-    if grep -q "Lcom/sigbypass/HookEntry;->init" "$APP_SMALI"; then
+    if grep -q "Lcom/indipay/inject/Dispatcher;->init" "$APP_SMALI"; then
         log_info "注入成功"
     else
         log_error "注入失败，请手动编辑 $APP_SMALI"
         log_error "在 attachBaseContext 方法中添加:"
         echo ""
-        echo '    invoke-static {p0}, Lcom/sigbypass/HookEntry;->init(Landroid/content/Context;)V'
+        echo '    invoke-static {p0}, Lcom/indipay/inject/Dispatcher;->init(Landroid/content/Context;)V'
         echo ""
+        exit 1
     fi
 fi
 
-log_step "5. 验证"
+log_step "5. 生成 Dispatcher"
+
+"$DISPATCHER_LIB_SCRIPT" --target-dir "$TARGET_SMALI_DIR" --append "Lcom/sigbypass/HookEntry;->init(Landroid/content/Context;)V"
+
+DISPATCHER_SMALI="$TARGET_SMALI_DIR/com/indipay/inject/Dispatcher.smali"
+
+log_step "6. 验证"
 
 echo ""
 echo "文件检查:"
@@ -176,14 +221,21 @@ check_file() {
 check_file "$TARGET_SMALI_DIR/com/sigbypass/HookEntry.smali" "HookEntry.smali"
 check_file "$TARGET_SMALI_DIR/com/sigbypass/SignatureHook.smali" "SignatureHook.smali"
 check_file "$TARGET_SMALI_DIR/com/sigbypass/SignatureConfig.smali" "SignatureConfig.smali"
+check_file "$DISPATCHER_SMALI" "Dispatcher.smali"
 check_file "$TARGET_SMALI_DIR/top/canyie/pine/Pine.smali" "Pine.smali"
 check_file "$TARGET_DIR/lib/arm64-v8a/libpine.so" "libpine.so"
 
 # 检查注入
-if grep -q "Lcom/sigbypass/HookEntry;->init" "$APP_SMALI"; then
+if grep -q "Lcom/indipay/inject/Dispatcher;->init" "$APP_SMALI"; then
     echo -e "  ${GREEN}✓${NC} Application 入口已注入"
 else
     echo -e "  ${RED}✗${NC} Application 入口未注入"
+fi
+
+if grep -q "Lcom/sigbypass/HookEntry;->init(Landroid/content/Context;)V" "$DISPATCHER_SMALI"; then
+    echo -e "  ${GREEN}✓${NC} Dispatcher 已包含 HookEntry 入口"
+else
+    echo -e "  ${RED}✗${NC} Dispatcher 未包含 HookEntry 入口"
 fi
 
 log_step "完成"

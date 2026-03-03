@@ -10,6 +10,7 @@
   },
   "phonepe_sigbypass": {
     "deps": ["phonepe_decompiled"],
+    "source_cache": "phonepe_decompiled",
     "source_subdir": "base_decompiled_clean",
     "reset_paths": [
       "smali/com/phonepe/app/PhonePeApplication.smali"
@@ -21,7 +22,9 @@
     ]
   },
   "phonepe_https_interceptor": {
-    "deps": ["phonepe_sigbypass"],
+    "deps": ["phonepe_decompiled"],
+    "source_cache": "phonepe_decompiled",
+    "source_subdir": "base_decompiled_clean",
     "reset_paths": [
       "smali*/okhttp3/OkHttpClient$Builder.smali",
       "AndroidManifest.xml",
@@ -33,7 +36,9 @@
     ]
   },
   "phonepe_phonepehelper": {
-    "deps": ["phonepe_https_interceptor"],
+    "deps": ["phonepe_decompiled"],
+    "source_cache": "phonepe_decompiled",
+    "source_subdir": "base_decompiled_clean",
     "uninstall_before_install": false,
     "reset_paths": [
       "smali_classes*/com/sigbypass/HookEntry.smali"

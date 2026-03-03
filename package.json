@@ -24,6 +24,19 @@
     "decomp": "python3 src/cache-manager/cache_manager.py rebuild --only phonepe_decompiled",
     "sigbypass": "python3 src/cache-manager/cache_manager.py sigbypass",
     "https": "python3 src/cache-manager/cache_manager.py https",
-    "pehelp": "python3 src/cache-manager/cache_manager.py phonepehelper"
+    "pehelp": "python3 src/cache-manager/cache_manager.py phonepehelper",
+    "apk:archive": "./src/tools/archive_apk.sh",
+    "baseline:archive": "./src/tools/archive_apk.sh --label baseline",
+    "probe": "./src/tools/behavior_probe.sh",
+    "probe:baseline": "bash -lc 'if [ -z \"${BASELINE_RUN_DIR:-}\" ]; then echo \"BASELINE_RUN_DIR is required\" >&2; exit 1; fi; ./src/tools/behavior_probe.sh --output \"$BASELINE_RUN_DIR\" \"$@\"' --",
+    "probe:candidate": "bash -lc 'if [ -z \"${CANDIDATE_RUN_DIR:-}\" ]; then echo \"CANDIDATE_RUN_DIR is required\" >&2; exit 1; fi; ./src/tools/behavior_probe.sh --output \"$CANDIDATE_RUN_DIR\" \"$@\"' --",
+    "probe:compare": "./src/tools/compare_behavior.sh",
+    "artifact:archive": "./src/tools/archive_apk.sh",
+    "artifact:probe": "./src/tools/behavior_probe.sh",
+    "artifact:compare": "./src/tools/compare_behavior.sh",
+    "artifact:probe:archive": "bash -lc 'if [ -z \"${RUN_DIR:-}\" ]; then echo \"RUN_DIR is required\" >&2; exit 1; fi; ./src/tools/behavior_probe.sh --output \"$RUN_DIR\" \"$@\"' --",
+    "test:smoke:full": "bash src/tools/test_profile_smoke.sh full",
+    "test:independent": "bash src/tools/test_module_independent.sh",
+    "test:full": "bash src/tools/test_profile_full.sh"
   }
 }

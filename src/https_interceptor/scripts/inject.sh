@@ -37,7 +37,38 @@ MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT_DIR="$(cd "$MODULE_DIR/../.." && pwd)"
 PROJECT_ROOT="$ROOT_DIR"
 INTERCEPTOR_SRC="$MODULE_DIR"
-TARGET_DIR="${1:-$ROOT_DIR/temp/phonepe_merged/decompiled/base}"
+DEFAULT_TARGET_DIR="$ROOT_DIR/temp/phonepe_merged/decompiled/base"
+SKIP_BUILD=0
+TARGET_DIR=""
+
+usage() {
+    echo "用法: $0 [--skip-build] <decompiled_dir>"
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --skip-build)
+            SKIP_BUILD=1
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            if [ -z "$TARGET_DIR" ]; then
+                TARGET_DIR="$1"
+            else
+                log_error "未知参数: $1"
+                usage
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+TARGET_DIR="${TARGET_DIR:-$DEFAULT_TARGET_DIR}"
 
 # Java/Android 配置
 export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk}"
@@ -48,11 +79,11 @@ ANDROID_JAR="$ANDROID_SDK/platforms/android-36/android.jar"
 if [ ! -d "$TARGET_DIR" ]; then
     log_error "目标目录不存在: $TARGET_DIR"
     echo ""
-    echo "用法: $0 <decompiled_dir>"
+    usage
     echo ""
     echo "示例:"
     echo "  $0 ./merged_output/decompiled/base"
-    echo "  $0 ./merged_output/decompiled/base http://192.168.1.100:8088/api/log"
+    echo "  $0 --skip-build ./merged_output/decompiled/base"
     exit 1
 fi
 
@@ -118,8 +149,16 @@ mkdir -p "$INTERCEPTOR_SMALI_DIR" "$HOOK_SMALI_DIR"
 
 # 从 https_interceptor demo APK 提取 smali
 DEMO_APK="$MODULE_DIR/app/build/outputs/apk/debug/app-debug.apk"
-log_info "强制构建 demo APK..."
-(cd "$MODULE_DIR" && ./build_and_install.sh build)
+if [ "$SKIP_BUILD" -eq 1 ] && [ -f "$DEMO_APK" ]; then
+    log_info "启用 --skip-build，复用现有 demo APK: $DEMO_APK"
+else
+    if [ "$SKIP_BUILD" -eq 1 ]; then
+        log_warn "启用 --skip-build 但 demo APK 不存在，回退到构建"
+    else
+        log_info "强制构建 demo APK..."
+    fi
+    (cd "$MODULE_DIR" && ./build_and_install.sh build)
+fi
 
 if [ ! -f "$DEMO_APK" ]; then
     log_error "demo APK 未找到: $DEMO_APK"

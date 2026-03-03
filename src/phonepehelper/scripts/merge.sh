@@ -27,6 +27,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$PROJECT_DIR/build"
 SMALI_DIR="$BUILD_DIR/smali"
+SRC_DIR="$(dirname "$PROJECT_DIR")"
+DISPATCHER_INJECT_SCRIPT="$SRC_DIR/_framework/dispatcher/scripts/inject_entry.py"
+DISPATCHER_LIB_SCRIPT="$SRC_DIR/tools/lib/dispatcher.sh"
 
 # 目标 APK 目录
 TARGET_DIR="${1:-}"
@@ -85,86 +88,29 @@ done < <(find "$TARGET_DIR" -type f -path "*/com/PhonePeTweak/Def/PhonePeHelper.
 cp -r "$SMALI_DIR/com" "$TARGET_SMALI_DIR/"
 log_info "已复制 com/* 到 $TARGET_SMALI_DIR"
 
-log_step "2. 绑定主注入入口 (SignatureBypass)"
+log_step "2. 绑定主注入入口 (Dispatcher)"
 
-HOOK_ENTRY_LIST=$(find "$TARGET_DIR" -path "*/com/sigbypass/HookEntry.smali" | sort -V)
-HOOK_ENTRY_SMALI=$(echo "$HOOK_ENTRY_LIST" | tail -1)
-
-if [ -z "$HOOK_ENTRY_SMALI" ]; then
-    log_error "未找到 com/sigbypass/HookEntry.smali"
-    log_error "请先注入 signature_bypass 作为主入口，再注入 phonepehelper"
+APP_SMALI=$(find "$TARGET_DIR" -name "PhonePeApplication.smali" -path "*/com/phonepe/app/*" | head -1)
+if [ -z "$APP_SMALI" ]; then
+    log_error "未找到 PhonePeApplication.smali"
     exit 1
 fi
 
-log_info "HookEntry: $HOOK_ENTRY_SMALI"
+log_info "Application: $APP_SMALI"
 
-# 去重：仅保留一个 HookEntry.smali，避免重复定义导致入口未生效
-if [ -n "$HOOK_ENTRY_LIST" ]; then
-    while IFS= read -r f; do
-        if [ "$f" != "$HOOK_ENTRY_SMALI" ]; then
-            rm -f "$f"
-        fi
-    done <<< "$HOOK_ENTRY_LIST"
+python3 "$DISPATCHER_INJECT_SCRIPT" "$APP_SMALI"
+
+log_step "3. 注册 phonepehelper 到 Dispatcher"
+
+"$DISPATCHER_LIB_SCRIPT" --target-dir "$TARGET_SMALI_DIR" --append "Lcom/phonepehelper/ModuleInit;->init(Landroid/content/Context;)V"
+
+DISPATCHER_SMALI="$TARGET_SMALI_DIR/com/indipay/inject/Dispatcher.smali"
+if [ ! -f "$DISPATCHER_SMALI" ]; then
+    log_error "Dispatcher.smali 创建失败: $DISPATCHER_SMALI"
+    exit 1
 fi
 
-if grep -q "Lcom/phonepehelper/ModuleInit;->init" "$HOOK_ENTRY_SMALI"; then
-    log_warn "HookEntry 已包含 phonepehelper 初始化，跳过修改"
-else
-    log_info "向 HookEntry.init() 注入 phonepehelper 初始化..."
-
-    python3 - "$HOOK_ENTRY_SMALI" <<'PYCODE'
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-text = path.read_text()
-
-if "Lcom/phonepehelper/ModuleInit;->init" in text:
-    sys.exit(0)
-
-start = text.find(".method public static init(Landroid/content/Context;)V")
-if start == -1:
-    raise SystemExit("HookEntry.init() not found")
-
-end = text.find(".end method", start)
-if end == -1:
-    raise SystemExit("HookEntry.init() end not found")
-
-end = end + len(".end method")
-method = text[start:end]
-if "Lcom/phonepehelper/ModuleInit;->init" in method:
-    sys.exit(0)
-
-snippet = (
-    "    invoke-static {p0}, Lcom/phonepehelper/ModuleInit;->init(Landroid/content/Context;)V\n"
-)
-
-inserted = False
-for needle in [
-    "sput-object v0, Lcom/sigbypass/HookEntry;->appContext:Landroid/content/Context;",
-    "sput-object p0, Lcom/sigbypass/HookEntry;->appContext:Landroid/content/Context;",
-    "invoke-virtual {p0}, Landroid/content/Context;->getApplicationContext()Landroid/content/Context;",
-]:
-    idx = method.find(needle)
-    if idx != -1:
-        line_end = method.find("\\n", idx)
-        if line_end == -1:
-            line_end = idx + len(needle)
-        injected = method[:line_end + 1] + snippet + method[line_end + 1:]
-        inserted = True
-        break
-
-if not inserted:
-    raise SystemExit("Failed to find injection point in HookEntry.init")
-
-injected = injected if inserted else method
-
-text = text[:start] + injected + text[end:]
-path.write_text(text)
-PYCODE
-fi
-
-log_step "3. 验证"
+log_step "4. 验证"
 
 echo ""
 echo "文件检查:"
@@ -178,12 +124,18 @@ check_file() {
 }
 
 check_file "$TARGET_SMALI_DIR/com/PhonePeTweak/Def/PhonePeHelper.smali" "PhonePeHelper.smali"
-check_file "$HOOK_ENTRY_SMALI" "HookEntry.smali"
+check_file "$DISPATCHER_SMALI" "Dispatcher.smali"
 
-if grep -q "Lcom/phonepehelper/ModuleInit;->init" "$HOOK_ENTRY_SMALI"; then
-    echo -e "  ${GREEN}✓${NC} HookEntry 已注入 phonepehelper 初始化"
+if grep -q "Lcom/phonepehelper/ModuleInit;->init(Landroid/content/Context;)V" "$DISPATCHER_SMALI"; then
+    echo -e "  ${GREEN}✓${NC} Dispatcher 已注册 phonepehelper 初始化"
 else
-    echo -e "  ${RED}✗${NC} HookEntry 未注入 phonepehelper 初始化"
+    echo -e "  ${RED}✗${NC} Dispatcher 未注册 phonepehelper 初始化"
+fi
+
+if grep -q "Lcom/indipay/inject/Dispatcher;->init(Landroid/content/Context;)V" "$APP_SMALI"; then
+    echo -e "  ${GREEN}✓${NC} Application 入口已注入 Dispatcher"
+else
+    echo -e "  ${RED}✗${NC} Application 入口未注入 Dispatcher"
 fi
 
 log_step "完成"

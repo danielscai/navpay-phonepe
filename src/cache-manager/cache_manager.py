@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -9,6 +10,14 @@ import time
 from typing import Optional
 from datetime import datetime
 from pathlib import Path
+
+from compose_engine import (
+    detect_conflicts,
+    profile_build_path,
+    profile_workspace_path,
+    refresh_profile_workspace,
+)
+from profile_resolver import resolve_profile
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -31,8 +40,11 @@ PPHELPER_LOG_TAG = "PPHelper"
 PPHELPER_LOG_MATCH = ("PhonePeHelper initialized", "PhonePeHelper already initialized")
 SIGBYPASS_LOGIN_ACTIVITY = "com.phonepe.login.internal.ui.views.LoginActivity"
 DEFAULT_TIMEOUT_SEC = 12
+SMOKE_TIMEOUT_SEC = 20
 DEFAULT_TEST_MODE = "sigbypass"
 DEFAULT_EMULATOR_BOOT_TIMEOUT = 20
+REUSE_STATE_FILE = "reuse_artifacts_state.json"
+SKIP_BUILD_MODULES = {"phonepe_sigbypass", "phonepe_https_interceptor"}
 
 COLOR_RESET = "\033[0m"
 COLOR_BLUE = "\033[0;34m"
@@ -84,7 +96,6 @@ MODULE_DEFAULTS = {
         "log_tag": SIGBYPASS_LOG_TAG,
         "login_activity": SIGBYPASS_LOGIN_ACTIVITY,
         "test_mode": "unified",
-        "source_cache": "phonepe_decompiled",
         "inject_script": "src/signature_bypass/scripts/inject.sh",
     },
     "phonepe_https_interceptor": {
@@ -94,7 +105,6 @@ MODULE_DEFAULTS = {
         "log_tag": HTTPS_LOG_TAG,
         "login_activity": SIGBYPASS_LOGIN_ACTIVITY,
         "test_mode": "unified",
-        "source_cache": "phonepe_sigbypass",
         "inject_script": "src/https_interceptor/scripts/inject.sh",
     },
     "phonepe_phonepehelper": {
@@ -104,9 +114,14 @@ MODULE_DEFAULTS = {
         "log_tag": PPHELPER_LOG_TAG,
         "login_activity": SIGBYPASS_LOGIN_ACTIVITY,
         "test_mode": "unified",
-        "source_cache": "phonepe_https_interceptor",
         "inject_script": "src/phonepehelper/scripts/inject.sh",
     },
+}
+
+LEGACY_ALIAS_TO_MODULE = {
+    "sigbypass": "phonepe_sigbypass",
+    "https": "phonepe_https_interceptor",
+    "phonepehelper": "phonepe_phonepehelper",
 }
 
 
@@ -662,7 +677,7 @@ def validate_cache_integrity(cache_path: Path, source_root: Path, label: str):
             except Exception:
                 continue
 
-    if missing_apktool or empty_smali:
+    if missing_apktool or missing_smali or empty_smali:
         details = []
         if missing_apktool:
             details.append("missing apktool.yml")
@@ -678,7 +693,7 @@ def validate_cache_integrity(cache_path: Path, source_root: Path, label: str):
             f"Check upstream cache: {source_root} or re-run pre-cache with --delete."
         )
 
-def inject(cache_path: Path, inject_script: Path, reset_paths, added_paths, label: str):
+def inject(cache_path: Path, inject_script: Path, reset_paths, added_paths, label: str, skip_build: bool = False):
     if not cache_path.exists():
         raise RuntimeError(f"{label} cache not found: {cache_path}")
     if not inject_script.exists():
@@ -692,7 +707,78 @@ def inject(cache_path: Path, inject_script: Path, reset_paths, added_paths, labe
     for rel in (added_paths or []):
         for p in expand_globs(cache_path, rel):
             ensure_writable_shallow(p)
-    run([str(inject_script), str(cache_path)], cwd=REPO_ROOT)
+    cmd = [str(inject_script)]
+    if skip_build:
+        cmd.append("--skip-build")
+    cmd.append(str(cache_path))
+    run(cmd, cwd=REPO_ROOT)
+
+
+def compute_inputs_fingerprint(root: Path) -> str:
+    if not root.exists():
+        raise RuntimeError(f"Input path not found for fingerprint: {root}")
+    hasher = hashlib.sha256()
+    if root.is_file():
+        paths = [root]
+        base = root.parent
+    else:
+        paths = sorted([p for p in root.rglob("*") if p.is_file()], key=lambda p: str(p.relative_to(root)))
+        base = root
+
+    for path in paths:
+        rel = path.relative_to(base)
+        stat = path.stat()
+        hasher.update(str(rel).encode("utf-8"))
+        hasher.update(b"\0")
+        hasher.update(str(stat.st_size).encode("ascii"))
+        hasher.update(b"\0")
+        hasher.update(str(stat.st_mtime_ns).encode("ascii"))
+        hasher.update(b"\n")
+    return hasher.hexdigest()
+
+
+def read_reuse_state(state_path: Path) -> dict:
+    if not state_path.exists():
+        return {}
+    try:
+        return json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def maybe_reuse_profile_artifacts(profile_name: str, workspace: Path, work_dir: Path) -> bool:
+    signed_apk = work_dir / DEFAULT_SIGNED_APK
+    state_path = work_dir / REUSE_STATE_FILE
+    fingerprint = compute_inputs_fingerprint(workspace)
+    state = read_reuse_state(state_path)
+    cached_fp = state.get("fingerprint")
+
+    if signed_apk.exists() and cached_fp == fingerprint:
+        log_info(f"[PROFILE:{profile_name}] [CACHE-HIT] --reuse-artifacts matched, reusing {signed_apk}")
+        return True
+
+    reasons = []
+    if not signed_apk.exists():
+        reasons.append("signed apk missing")
+    if not cached_fp:
+        reasons.append("reuse state missing")
+    elif cached_fp != fingerprint:
+        reasons.append("input fingerprint changed")
+    reason_text = ", ".join(reasons) if reasons else "unknown"
+    log_info(f"[PROFILE:{profile_name}] [CACHE-MISS] --reuse-artifacts fallback: {reason_text}")
+    return False
+
+
+def write_reuse_state(profile_name: str, workspace: Path, work_dir: Path):
+    state_path = work_dir / REUSE_STATE_FILE
+    payload = {
+        "created_at": datetime.now().isoformat(),
+        "profile": profile_name,
+        "workspace": str(workspace),
+        "signed_apk": DEFAULT_SIGNED_APK,
+        "fingerprint": compute_inputs_fingerprint(workspace),
+    }
+    write_meta(state_path, payload)
 
 def sigbypass_compile(cache_path: Path, work_dir: Path, unsigned_apk: str, aligned_apk: str, signed_apk: str):
     if not cache_path.exists():
@@ -787,7 +873,8 @@ def unified_test(
     device = select_device(adb, serial)
 
     work_dir = signed_apk.parent
-    logcat_path = work_dir / f"logcat_{log_tag}.txt"
+    has_log_tag = bool(log_tag.strip())
+    logcat_path = (work_dir / f"logcat_{log_tag}.txt") if has_log_tag else (work_dir / "logcat_smoke.txt")
     dumpsys_path = work_dir / "dumpsys_activities.txt"
 
     run([adb, "-s", device, "shell", "am", "force-stop", package])
@@ -828,7 +915,10 @@ def unified_test(
             if "Warning" in line or "Error" in line:
                 log_warn(f"[am start] {line.strip()}")
 
-    log_step(f"Test: wait for activities + log tag '{log_tag}'")
+    if has_log_tag:
+        log_step(f"Test: wait for activities + log tag '{log_tag}'")
+    else:
+        log_step("Test: wait for activities (smoke mode, log tag check skipped)")
     deadline = datetime.now().timestamp() + timeout_sec
     found_log = False
     found_activity = False
@@ -898,6 +988,9 @@ def unified_test(
             if found_login:
                 which.append(login_activity)
             log_info(f"[TEST] activity ready: {' | '.join(which)}")
+            if not has_log_tag:
+                found_log = True
+                break
             out = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-s", log_tag], text=True)
             if out.strip():
                 last_log = out
@@ -930,15 +1023,19 @@ def unified_test(
         log_error("TEST RESULT: FAILED (crash detected)")
         log_error("Debug cmds: adb logcat -d -b crash; adb logcat -d -s AndroidRuntime; adb logcat -d -s ActivityManager")
         raise RuntimeError(f"Crash detected. See: {crash_path}")
-    if not found_log:
+    if has_log_tag and not found_log:
         logcat_path.write_text(last_log or "", encoding="utf-8")
         log_error("TEST RESULT: FAILED (log tag not found)")
         raise RuntimeError(
             f"No log output for tag '{log_tag}' within {timeout_sec}s. "
             f"See: {logcat_path}"
         )
-    log_info(f"[TEST] injection verified: log tag '{log_tag}' present")
-    log_step(f"TEST RESULT: SUCCESS ({log_tag})")
+    if has_log_tag:
+        log_info(f"[TEST] injection verified: log tag '{log_tag}' present")
+        log_step(f"TEST RESULT: SUCCESS ({log_tag})")
+    else:
+        log_info("[TEST] smoke verification passed: app installed and activity/login is visible")
+        log_step("TEST RESULT: SUCCESS (smoke)")
 
 
 def cmd_graph(manifest):
@@ -1002,6 +1099,16 @@ def cmd_rebuild(manifest, target=None, serial=None, package=None, with_downstrea
     serial = serial or DEFAULT_SERIAL
     package = package or DEFAULT_PACKAGE
 
+    def refresh_module_cache(name: str, label: str):
+        path = resolve_manifest_path(manifest, name)
+        cfg = manifest[name]
+        source_root = resolve_manifest_source_root(name, cfg, manifest)
+        reset_paths = cfg.get("reset_paths", [])
+        added_paths = cfg.get("added_paths", [])
+        if not reset_paths:
+            raise RuntimeError(f"{name} missing reset_paths in manifest")
+        refresh_cache_paths(path, source_root, reset_paths, added_paths, label)
+
     def build_one(name):
         path = resolve_manifest_path(manifest, name)
         if name == "phonepe_from_device":
@@ -1013,19 +1120,11 @@ def cmd_rebuild(manifest, target=None, serial=None, package=None, with_downstrea
             merged_path = resolve_manifest_path(manifest, "phonepe_merged")
             build_phonepe_decompiled(path, merged_path)
         elif name == "phonepe_sigbypass":
-            cfg = manifest[name]
-            source_cache = resolve_cfg_value(name, cfg, "source_cache", required=True)
-            if source_cache not in manifest:
-                raise RuntimeError("phonepe_sigbypass missing valid source_cache in manifest")
-            source_root = resolve_manifest_path(manifest, source_cache)
-            source_subdir = cfg.get("source_subdir")
-            if source_subdir:
-                source_root = source_root / source_subdir
-            reset_paths = cfg.get("reset_paths", [])
-            added_paths = cfg.get("added_paths", [])
-            if not reset_paths:
-                raise RuntimeError("phonepe_sigbypass missing reset_paths in manifest")
-            refresh_cache_paths(path, source_root, reset_paths, added_paths, "SIGBYPASS")
+            refresh_module_cache(name, "SIGBYPASS")
+        elif name == "phonepe_https_interceptor":
+            refresh_module_cache(name, "HTTPS")
+        elif name == "phonepe_phonepehelper":
+            refresh_module_cache(name, "PPHELPER")
         else:
             raise RuntimeError(f"No builder for cache: {name}")
 
@@ -1065,19 +1164,34 @@ def resolve_manifest_path(manifest, name: str) -> Path:
     rel = resolve_cfg_value(name, cfg, "path", required=True)
     return resolve_cache_path(rel)
 
-def resolve_module_spec(manifest, name: str):
-    cfg = manifest.get(name)
-    if not cfg:
-        raise RuntimeError(f"{name} missing from manifest")
-    source_cache = resolve_cfg_value(name, cfg, "source_cache", required=True)
+
+def resolve_manifest_source_cache(name: str, cfg, manifest) -> str:
+    source_cache = cfg.get("source_cache")
+    if source_cache is None:
+        raise RuntimeError(f"{name} missing source_cache in manifest")
     if source_cache not in manifest:
         raise RuntimeError(f"{name} missing valid source_cache in manifest")
+    return source_cache
 
-    cache_path = resolve_manifest_path(manifest, name)
+
+def resolve_manifest_source_root(name: str, cfg, manifest) -> Path:
+    source_cache = resolve_manifest_source_cache(name, cfg, manifest)
     source_root = resolve_manifest_path(manifest, source_cache)
     source_subdir = cfg.get("source_subdir")
     if source_subdir:
         source_root = source_root / source_subdir
+        if not source_root.exists():
+            raise RuntimeError(f"{name} source_subdir not found: {source_root}")
+    return source_root
+
+
+def resolve_module_spec(manifest, name: str):
+    cfg = manifest.get(name)
+    if not cfg:
+        raise RuntimeError(f"{name} missing from manifest")
+
+    cache_path = resolve_manifest_path(manifest, name)
+    source_root = resolve_manifest_source_root(name, cfg, manifest)
 
     reset_paths = cfg.get("reset_paths", [])
     added_paths = cfg.get("added_paths", [])
@@ -1189,10 +1303,133 @@ def run_module_action(spec, action: str, delete_first: bool, serial: str):
     else:
         raise RuntimeError(f"Unknown action: {action}")
 
+def resolve_profile_modules(manifest, profile_name: str):
+    modules = resolve_profile(profile_name)
+    missing = [name for name in modules if name not in manifest]
+    if missing:
+        raise RuntimeError(f"Profile contains unknown modules: {', '.join(missing)}")
+    return modules
 
-def main():
+def resolve_profile_workspace(profile_name: str) -> Path:
+    workspace = profile_workspace_path(profile_name)
+    if not workspace.exists():
+        raise RuntimeError(
+            f"Profile workspace not found: {workspace}. "
+            f"Run 'profile {profile_name} pre-cache' first."
+        )
+    return workspace
+
+def profile_pre_cache(manifest, profile_name: str):
+    modules = resolve_profile_modules(manifest, profile_name)
+    detect_conflicts(manifest, modules)
+    baseline = resolve_manifest_path(manifest, "phonepe_decompiled") / "base_decompiled_clean"
+    workspace = refresh_profile_workspace(profile_name, baseline)
+    log_info(f"[PROFILE:{profile_name}] workspace refreshed: {workspace}")
+    return modules, workspace
+
+def profile_inject(manifest, profile_name: str, reuse_artifacts: bool = False):
+    modules = resolve_profile_modules(manifest, profile_name)
+    detect_conflicts(manifest, modules)
+    workspace = resolve_profile_workspace(profile_name)
+    for module in modules:
+        spec = resolve_module_spec(manifest, module)
+        inject(
+            workspace,
+            spec["inject_script"],
+            spec["reset_paths"],
+            spec["added_paths"],
+            f"PROFILE:{profile_name}:{module}",
+            skip_build=bool(reuse_artifacts and module in SKIP_BUILD_MODULES),
+        )
+    return workspace
+
+
+def profile_compile(manifest, profile_name: str, reuse_artifacts: bool = False):
+    work_dir = profile_build_path(profile_name)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    if reuse_artifacts:
+        workspace = resolve_profile_workspace(profile_name)
+        if maybe_reuse_profile_artifacts(profile_name, workspace, work_dir):
+            return work_dir
+    workspace = profile_inject(manifest, profile_name, reuse_artifacts=reuse_artifacts)
+    sigbypass_compile(
+        workspace,
+        work_dir,
+        DEFAULT_UNSIGNED_APK,
+        DEFAULT_ALIGNED_APK,
+        DEFAULT_SIGNED_APK,
+    )
+    if reuse_artifacts:
+        write_reuse_state(profile_name, workspace, work_dir)
+    return work_dir
+
+def verify_profile_log_tags(manifest, modules, serial: str, strict: bool = False):
+    adb = adb_path()
+    missing_tags = []
+    checked_tags = []
+    for module in modules:
+        tag = resolve_module_spec(manifest, module).get("log_tag")
+        if not tag or tag in checked_tags:
+            continue
+        checked_tags.append(tag)
+        out = subprocess.check_output([adb, "-s", serial, "logcat", "-d", "-s", tag], text=True)
+        if not out.strip():
+            missing_tags.append(tag)
+    if missing_tags:
+        msg = f"Missing profile log tags: {', '.join(missing_tags)}"
+        if strict:
+            raise RuntimeError(msg)
+        log_warn(msg)
+        return False
+    log_info(f"[PROFILE] all required log tags detected: {', '.join(checked_tags)}")
+    return True
+
+def profile_test(manifest, profile_name: str, serial: str, smoke: bool = False):
+    modules = resolve_profile_modules(manifest, profile_name)
+    work_dir = profile_compile(manifest, profile_name)
+    signed_apk = work_dir / DEFAULT_SIGNED_APK
+    primary_spec = resolve_module_spec(manifest, modules[0])
+    # Smoke/full both require module log evidence.
+    primary_log_tag = primary_spec.get("log_tag") or SIGBYPASS_LOG_TAG
+    test_serial = resolve_test_serial(primary_spec, serial)
+    timeout_sec = SMOKE_TIMEOUT_SEC if smoke else DEFAULT_TIMEOUT_SEC
+    start_retries = 1 if smoke else 3
+    uninstall_before_install = True
+    unified_test(
+        signed_apk,
+        DEFAULT_PACKAGE,
+        DEFAULT_ACTIVITY,
+        SIGBYPASS_LOGIN_ACTIVITY,
+        primary_log_tag,
+        timeout_sec,
+        test_serial,
+        start_retries=start_retries,
+        uninstall_before_install=uninstall_before_install,
+    )
+    if not smoke:
+        # Primary module log is already validated in unified_test.
+        # Secondary module logs are best-effort at startup and should not block full test.
+        verify_profile_log_tags(manifest, modules[1:], test_serial, strict=False)
+
+
+def dispatch_legacy_alias(manifest, args):
+    # Compatibility-only wrapper: legacy aliases forward to single-module actions.
+    # New integrations should call `profile <name> <action>` as the primary path.
+    spec = resolve_module_spec(manifest, LEGACY_ALIAS_TO_MODULE[args.cmd])
+    run_module_action(spec, args.action, args.delete, args.serial or "")
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Cache manager")
     sub = parser.add_subparsers(dest="cmd", required=True)
+
+    # First-class command contract: all new workflows are profile-based.
+    profile = sub.add_parser("profile")
+    profile.add_argument("name")
+    profile.add_argument("action", choices=["plan", "pre-cache", "inject", "compile", "test"])
+    profile.add_argument("--serial")
+    profile.add_argument("--smoke", action="store_true", default=False)
+    profile.add_argument("--reuse-artifacts", action="store_true", default=False)
 
     sub.add_parser("graph")
     sub.add_parser("status")
@@ -1236,7 +1473,12 @@ def main():
     phonepehelper.add_argument("--serial")
     phonepehelper.add_argument("-d", "--delete", action="store_true", default=False)
 
-    args = parser.parse_args()
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
     manifest = load_manifest()
 
     if args.cmd == "graph":
@@ -1247,15 +1489,26 @@ def main():
         cmd_reset(manifest, args.target)
     elif args.cmd == "rebuild":
         cmd_rebuild(manifest, args.target, args.serial, args.package, args.with_downstream)
-    elif args.cmd == "sigbypass":
-        spec = resolve_module_spec(manifest, "phonepe_sigbypass")
-        run_module_action(spec, args.action, args.delete, args.serial or "")
-    elif args.cmd == "https":
-        spec = resolve_module_spec(manifest, "phonepe_https_interceptor")
-        run_module_action(spec, args.action, args.delete, args.serial or "")
-    elif args.cmd == "phonepehelper":
-        spec = resolve_module_spec(manifest, "phonepe_phonepehelper")
-        run_module_action(spec, args.action, args.delete, args.serial or "")
+    elif args.cmd == "profile":
+        if args.smoke and args.action != "test":
+            raise RuntimeError("--smoke is only supported for 'profile <name> test'")
+        if args.reuse_artifacts and args.action != "compile":
+            raise RuntimeError("--reuse-artifacts is only supported for 'profile <name> compile'")
+        if args.action == "plan":
+            modules = resolve_profile_modules(manifest, args.name)
+            print(json.dumps(modules, ensure_ascii=True))
+        elif args.action == "pre-cache":
+            profile_pre_cache(manifest, args.name)
+        elif args.action == "inject":
+            profile_inject(manifest, args.name)
+        elif args.action == "compile":
+            profile_compile(manifest, args.name, reuse_artifacts=args.reuse_artifacts)
+        elif args.action == "test":
+            profile_test(manifest, args.name, args.serial or "", smoke=args.smoke)
+        else:
+            raise RuntimeError(f"Unknown profile action: {args.action}")
+    elif args.cmd in LEGACY_ALIAS_TO_MODULE:
+        dispatch_legacy_alias(manifest, args)
     else:
         raise RuntimeError("Unknown command")
 

@@ -49,3 +49,22 @@
 - Step6 是累加流程：必须先完成 Step3（signature_bypass）和 Step4（https_interceptor）补丁，再叠加 phonepehelper。
 
 > 注：如果确实需要新的 Application 注入点，必须先评估与主入口冲突的风险并在 `src/README.md` 更新方案。
+
+## 当前推荐命令与兼容说明
+
+- 推荐主流程（profile，主契约）：
+  - `python3 src/cache-manager/cache_manager.py profile full plan`
+  - `python3 src/cache-manager/cache_manager.py profile full pre-cache`
+  - `python3 src/cache-manager/cache_manager.py profile full inject`
+  - `python3 src/cache-manager/cache_manager.py profile full compile`
+  - `python3 src/cache-manager/cache_manager.py profile full test --serial emulator-5554`（需要 adb/模拟器）
+  - profile 动作集合固定为：`{plan|pre-cache|inject|compile|test}`。
+
+- 旧命令兼容（compatibility-only wrapper，仍可用）：
+  - `python3 src/cache-manager/cache_manager.py sigbypass <action>`
+  - `python3 src/cache-manager/cache_manager.py https <action>`
+  - `python3 src/cache-manager/cache_manager.py phonepehelper <action>`
+
+- 兼容命令定位：
+  - 旧命令仅用于模块级独立执行与历史脚本兼容。
+  - 新增流程与日常联调默认使用 `profile` 子命令。
