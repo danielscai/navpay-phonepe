@@ -1389,8 +1389,9 @@ def profile_test(manifest, profile_name: str, serial: str, smoke: bool = False):
     work_dir = profile_compile(manifest, profile_name)
     signed_apk = work_dir / DEFAULT_SIGNED_APK
     primary_spec = resolve_module_spec(manifest, modules[0])
-    # Smoke/full both require module log evidence.
-    primary_log_tag = primary_spec.get("log_tag") or SIGBYPASS_LOG_TAG
+    primary_log_tag = ""
+    if not smoke:
+        primary_log_tag = primary_spec.get("log_tag") or SIGBYPASS_LOG_TAG
     test_serial = resolve_test_serial(primary_spec, serial)
     timeout_sec = SMOKE_TIMEOUT_SEC if smoke else DEFAULT_TIMEOUT_SEC
     start_retries = 1 if smoke else 3

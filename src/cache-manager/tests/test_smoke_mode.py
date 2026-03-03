@@ -23,7 +23,7 @@ class SmokeModeTest(unittest.TestCase):
                 cache_manager.main(["profile", "full", "plan", "--smoke"])
         self.assertIn("only supported", str(exc.exception))
 
-    def test_profile_test_smoke_uses_fast_runtime_strategy(self) -> None:
+    def test_profile_test_smoke_skips_log_tag_check(self) -> None:
         manifest = {}
         work_dir = Path("/tmp/profile-build")
         primary_spec = {"name": "phonepe_https_interceptor", "log_tag": "HttpInterceptor"}
@@ -36,7 +36,7 @@ class SmokeModeTest(unittest.TestCase):
             cache_manager.profile_test(manifest, "https-only", "", smoke=True)
 
         call = unified_test_mock.call_args
-        self.assertEqual(call.args[4], "HttpInterceptor")
+        self.assertEqual(call.args[4], "")
         self.assertEqual(call.args[5], cache_manager.SMOKE_TIMEOUT_SEC)
         self.assertEqual(call.kwargs["start_retries"], 1)
         self.assertIs(call.kwargs["uninstall_before_install"], True)

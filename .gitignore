@@ -18,6 +18,7 @@ cache/
 build/
 out/
 ref/
+.yarn/
 *.apk.idsig
 node_modules/
 .gradle/
