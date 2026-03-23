@@ -104,4 +104,5 @@ Legacy module aliases are still accepted:
 
 - All dependency rules are defined in `src/build-orchestrator/cache_manifest.json`.
 - Module artifact builders are declared in `src/build-orchestrator/cache_manifest.json` under `builder`.
+- Module injectors are artifact-only and must not compile during injection.
 - Cache reset removes the selected cache and all downstream caches.

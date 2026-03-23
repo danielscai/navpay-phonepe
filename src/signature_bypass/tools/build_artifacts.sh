@@ -8,16 +8,7 @@
 # 用法：./build_artifacts.sh
 #######################################################################
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-log_info() { echo "[INFO] $1"; }
-log_step() { echo ""; echo "==== $1 ===="; }
-
-log_step "构建签名绕过产物"
-log_info "复用现有编译流程: $SCRIPT_DIR/compile.sh"
-"$SCRIPT_DIR/compile.sh"
-
-log_step "完成"
-log_info "签名绕过产物已构建"
+exec "$SCRIPT_DIR/compile.sh" "$@"

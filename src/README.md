@@ -4,7 +4,7 @@
 
 ## 统一要求
 
-- **构建/注入脚本统一放在 `tools/`**。模块自身只保留源码与最小文档，避免多个入口分散（如模块内有脚本，仅作为内部实现细节，工具入口以 `tools/` 为准）。
+- **统一编排入口是 `src/build-orchestrator/orchestrator.py`**。模块目录只保留 orchestrator 直接消费的最小 builder / injector 脚本；`src/tools/` 只保留薄包装 smoke/full 验证脚本与行为采样工具。
 - **参考 pev70 的行为逻辑，不复用 pev70 代码或 smali**。所有注入代码必须是本仓库自行实现的 Java/Smali。
 - **只允许一个“主入口”修改 Application**（`attachBaseContext()` 或 Manifest）。
   - 其他模块必须通过主入口调用自身的 `ModuleInit.init(Context)` 进行初始化。
@@ -37,7 +37,7 @@
 
 1) 新模块是否只实现 Java 源码，不包含 pev70 smali 复用？
 2) 是否提供 `ModuleInit.init(Context)`？
-3) 注入脚本是否只在 `tools/`，且具备幂等性？
+3) 注入脚本是否只保留 orchestrator 所需的最小入口，且具备幂等性？
 3.1) 是否在 `package.json` 添加了对应的 yarn alias？
 4) 是否避免重复注入 Pine？
 5) 是否能通过 `adb logcat -s <TAG>` 验证？

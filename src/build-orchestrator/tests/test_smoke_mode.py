@@ -46,11 +46,14 @@ class SmokeModeTest(unittest.TestCase):
     def test_profile_test_full_keeps_existing_behavior(self) -> None:
         manifest = {}
         work_dir = Path("/tmp/profile-build")
+        workspace = Path("/tmp/profile-workspace")
         primary_spec = {"name": "phonepe_sigbypass", "log_tag": "SigBypass"}
         with mock.patch.object(cache_manager, "resolve_profile_modules", return_value=["phonepe_sigbypass"]), \
             mock.patch.object(cache_manager, "profile_build_modules") as build_modules_mock, \
             mock.patch.object(cache_manager, "profile_compile", return_value=work_dir) as compile_mock, \
             mock.patch.object(cache_manager, "resolve_module_spec", return_value=primary_spec), \
+            mock.patch.object(cache_manager, "resolve_profile_workspace", return_value=workspace), \
+            mock.patch.object(cache_manager, "verify_profile_injection") as verify_injection_mock, \
             mock.patch.object(cache_manager, "resolve_test_serial", return_value="emulator-5554"), \
             mock.patch.object(cache_manager, "verify_profile_log_tags") as verify_mock, \
             mock.patch.object(cache_manager, "unified_test") as unified_test_mock:
@@ -63,6 +66,7 @@ class SmokeModeTest(unittest.TestCase):
         self.assertEqual(call.args[5], cache_manager.DEFAULT_TIMEOUT_SEC)
         self.assertEqual(call.kwargs["start_retries"], 3)
         self.assertIs(call.kwargs["uninstall_before_install"], True)
+        verify_injection_mock.assert_called_once_with(manifest, workspace, ["phonepe_sigbypass"])
         verify_mock.assert_called_once_with(manifest, [], "emulator-5554", strict=False)
 
 

@@ -145,8 +145,8 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
             return_value=["phonepe_phonepehelper"],
         ), mock.patch.object(
             cache_manager,
-            "resolve_profile_workspace",
-            return_value=workspace,
+            "profile_pre_cache",
+            return_value=(["phonepe_phonepehelper"], workspace),
         ), mock.patch.object(
             cache_manager,
             "resolve_module_spec",
@@ -185,8 +185,8 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
             return_value=["phonepe_https_interceptor"],
         ), mock.patch.object(
             cache_manager,
-            "resolve_profile_workspace",
-            return_value=workspace,
+            "profile_pre_cache",
+            return_value=(["phonepe_https_interceptor"], workspace),
         ), mock.patch.object(
             cache_manager,
             "resolve_module_spec",
@@ -211,6 +211,64 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
             cache_manager.module_artifact_path("phonepe_https_interceptor"),
         )
         self.assertEqual(inject_mock.call_args.kwargs["skip_build"], False)
+
+    def test_profile_inject_refreshes_workspace_before_injecting(self) -> None:
+        manifest = {"phonepe_sigbypass": {"deps": []}}
+        workspace = Path("/tmp/profile-workspace")
+        spec = {
+            "name": "phonepe_sigbypass",
+            "inject_script": Path("/tmp/inject.sh"),
+            "reset_paths": [],
+            "added_paths": [],
+        }
+
+        with mock.patch.object(
+            cache_manager,
+            "resolve_profile_modules",
+            return_value=["phonepe_sigbypass"],
+        ), mock.patch.object(
+            cache_manager,
+            "profile_pre_cache",
+            return_value=(["phonepe_sigbypass"], workspace),
+        ) as pre_cache_mock, mock.patch.object(
+            cache_manager,
+            "resolve_module_spec",
+            return_value=spec,
+        ), mock.patch.object(
+            cache_manager,
+            "ensure_module_artifact",
+            return_value=True,
+        ), mock.patch.object(
+            cache_manager,
+            "inject",
+        ) as inject_mock:
+            result = cache_manager.profile_inject(manifest, "sigbypass-only")
+
+        self.assertEqual(result, workspace)
+        pre_cache_mock.assert_called_once_with(manifest, "sigbypass-only")
+        self.assertEqual(inject_mock.call_args.args[0], workspace)
+
+    def test_module_inject_passes_artifact_dir_for_supported_module(self) -> None:
+        spec = {
+            "name": "phonepe_sigbypass",
+            "cache_path": Path("/tmp/cache"),
+            "inject_script": Path("/tmp/inject.sh"),
+            "reset_paths": [],
+            "added_paths": [],
+            "label": "SIGBYPASS",
+        }
+
+        with mock.patch.object(cache_manager, "module_pre_cache") as pre_cache_mock, \
+            mock.patch.object(cache_manager, "ensure_module_artifact", return_value=True) as ensure_mock, \
+            mock.patch.object(cache_manager, "inject") as inject_mock:
+            cache_manager.module_inject(spec, delete_first=False)
+
+        pre_cache_mock.assert_called_once_with(spec, False)
+        ensure_mock.assert_called_once_with(spec, cache_manager.module_artifact_path("phonepe_sigbypass"))
+        self.assertEqual(
+            inject_mock.call_args.kwargs["artifact_dir"],
+            cache_manager.module_artifact_path("phonepe_sigbypass"),
+        )
 
 
 if __name__ == "__main__":

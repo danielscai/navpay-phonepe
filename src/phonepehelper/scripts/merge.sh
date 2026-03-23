@@ -76,6 +76,24 @@ if [ ! -d "$TARGET_DIR" ]; then
     exit 1
 fi
 
+collect_dispatcher_entries() {
+    python3 - "$TARGET_DIR" <<'PYCODE'
+import re
+import sys
+from pathlib import Path
+
+target_dir = Path(sys.argv[1])
+entries = []
+for path in sorted(target_dir.glob("smali_classes*/com/indipay/inject/Dispatcher.smali")):
+    text = path.read_text(encoding="utf-8")
+    for entry in re.findall(r"invoke-static \{p0\}, (L[^ ]+;->[^\n]+)", text):
+        if entry not in entries:
+            entries.append(entry)
+for entry in entries:
+    print(entry)
+PYCODE
+}
+
 if [ -n "$ARTIFACT_DIR" ] && [ ! -d "$ARTIFACT_DIR" ]; then
     log_error "artifact 目录不存在: $ARTIFACT_DIR"
     exit 1
@@ -155,7 +173,22 @@ python3 "$DISPATCHER_INJECT_SCRIPT" "$APP_SMALI"
 
 log_step "3. 注册 phonepehelper 到 Dispatcher"
 
-"$DISPATCHER_LIB_SCRIPT" --target-dir "$TARGET_SMALI_DIR" --append "Lcom/phonepehelper/ModuleInit;->init(Landroid/content/Context;)V"
+DISPATCHER_ENTRIES=()
+while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    DISPATCHER_ENTRIES+=("$entry")
+done < <(collect_dispatcher_entries)
+
+while IFS= read -r f; do
+    rm -f "$f"
+done < <(find "$TARGET_DIR" -type f -path "*/com/indipay/inject/Dispatcher.smali")
+
+DISPATCHER_CMD=("$DISPATCHER_LIB_SCRIPT" --target-dir "$TARGET_SMALI_DIR")
+for entry in "${DISPATCHER_ENTRIES[@]}"; do
+    DISPATCHER_CMD+=(--append "$entry")
+done
+DISPATCHER_CMD+=(--append "Lcom/phonepehelper/ModuleInit;->init(Landroid/content/Context;)V")
+"${DISPATCHER_CMD[@]}"
 
 DISPATCHER_SMALI="$TARGET_SMALI_DIR/com/indipay/inject/Dispatcher.smali"
 if [ ! -f "$DISPATCHER_SMALI" ]; then

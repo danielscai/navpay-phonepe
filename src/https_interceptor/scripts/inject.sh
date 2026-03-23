@@ -10,7 +10,7 @@
 # 2. 复制拦截器 smali 到目标 APK
 # 3. 修改 HookUtil 或 OkHttpClient.Builder.build() 注入拦截器
 #
-# 用法：./inject.sh [--artifact-dir <path>] [--skip-build] <decompiled_dir>
+# 用法：./inject.sh [--skip-build] --artifact-dir <path> <decompiled_dir>
 #######################################################################
 
 set -euo pipefail
@@ -30,9 +30,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MODULE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ROOT_DIR="$(cd "$MODULE_DIR/../.." && pwd)"
 DEFAULT_TARGET_DIR="$ROOT_DIR/temp/phonepe_merged/decompiled/base"
-DEFAULT_ARTIFACT_DIR="$MODULE_DIR/build/smali"
 ARTIFACT_DIR=""
-SKIP_BUILD=0
 TARGET_DIR=""
 
 usage() {
@@ -52,7 +50,7 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         --skip-build)
-            SKIP_BUILD=1
+            log_warn "--skip-build 已废弃；inject.sh 现在只消费现成 artifact"
             shift
             ;;
         -h|--help)
@@ -85,18 +83,14 @@ if [ ! -d "$TARGET_DIR" ]; then
     exit 1
 fi
 
-if [ -n "$ARTIFACT_DIR" ]; then
-    if [ ! -d "$ARTIFACT_DIR" ]; then
-        log_error "artifact-dir 不存在: $ARTIFACT_DIR"
-        exit 1
-    fi
-elif [ "$SKIP_BUILD" -eq 1 ] && [ -d "$DEFAULT_ARTIFACT_DIR" ]; then
-    ARTIFACT_DIR="$DEFAULT_ARTIFACT_DIR"
-    log_info "启用 --skip-build，复用现有 smali 产物: $ARTIFACT_DIR"
-else
-    log_step "1. 构建 HTTPS smali 产物"
-    "$SCRIPT_DIR/build_smali_artifacts.sh"
-    ARTIFACT_DIR="$DEFAULT_ARTIFACT_DIR"
+if [ -z "$ARTIFACT_DIR" ]; then
+    log_error "必须通过 --artifact-dir 提供预构建产物目录"
+    exit 1
+fi
+
+if [ ! -d "$ARTIFACT_DIR" ]; then
+    log_error "artifact-dir 不存在: $ARTIFACT_DIR"
+    exit 1
 fi
 
 if [ ! -d "$ARTIFACT_DIR" ]; then

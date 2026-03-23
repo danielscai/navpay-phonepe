@@ -131,6 +131,21 @@ class CliBackcompatTest(unittest.TestCase):
 
         self.assertEqual(unified_test_mock.call_args.args[4], "PPHelper")
 
+    def test_verify_profile_log_tags_skips_non_required_runtime_tags(self) -> None:
+        manifest = {}
+        with mock.patch.object(
+            cache_manager,
+            "resolve_module_spec",
+            return_value={"name": "phonepe_https_interceptor", "log_tag": "HttpInterceptor", "runtime_log_required": False},
+        ), mock.patch.object(
+            cache_manager.subprocess,
+            "check_output",
+        ) as check_output_mock:
+            result = cache_manager.verify_profile_log_tags(manifest, ["phonepe_https_interceptor"], "emulator-5554")
+
+        self.assertIs(result, True)
+        check_output_mock.assert_not_called()
+
     @unittest.skipUnless(os.environ.get("RUN_EMU_TESTS") == "1", "Requires adb/emulator")
     def test_legacy_aliases_run_real_commands_when_enabled(self) -> None:
         commands = [

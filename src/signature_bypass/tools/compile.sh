@@ -13,7 +13,7 @@
 # 用法：./compile.sh
 #######################################################################
 
-set -e
+set -euo pipefail
 
 # 颜色
 RED='\033[0;31m'
@@ -37,7 +37,7 @@ OUTPUT_DIR="$BUILD_DIR/smali"
 
 # Android SDK 路径
 ANDROID_SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
-BUILD_TOOLS="$ANDROID_SDK/build-tools/35.0.0"
+BUILD_TOOLS="$(find "$ANDROID_SDK/build-tools" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -V | tail -1)"
 # 自动查找最新的 android.jar
 ANDROID_JAR=$(ls -d "$ANDROID_SDK/platforms/android-"* 2>/dev/null | sort -V | tail -1)/android.jar
 
@@ -45,8 +45,10 @@ ANDROID_JAR=$(ls -d "$ANDROID_SDK/platforms/android-"* 2>/dev/null | sort -V | t
 JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk}"
 export PATH="$JAVA_HOME/bin:$PATH"
 
-# Pine 框架 JAR (从 Maven Central 下载)
+# Pine 框架 JAR（仓库内已固定）
 PINE_JAR="$LIBS_DIR/pine-core-classes.jar"
+PINE_AAR="$LIBS_DIR/pine-core.aar"
+BAKSMALI_JAR="$LIBS_DIR/baksmali.jar"
 
 log_step "检查依赖"
 
@@ -74,34 +76,26 @@ log_info "android.jar: $ANDROID_JAR"
 
 # 检查 baksmali
 if ! command -v baksmali &> /dev/null; then
-    log_warn "baksmali 未找到，尝试使用本地版本..."
-    BAKSMALI="java -jar $LIBS_DIR/baksmali.jar"
-    if [ ! -f "$LIBS_DIR/baksmali.jar" ]; then
-        log_info "下载 baksmali..."
-        mkdir -p "$LIBS_DIR"
-        curl -L -o "$LIBS_DIR/baksmali.jar" \
-            "https://github.com/JesusFreke/smali/releases/download/v2.5.2/baksmali-2.5.2.jar"
+    if [ ! -f "$BAKSMALI_JAR" ]; then
+        log_error "baksmali 未找到，且本地 jar 缺失: $BAKSMALI_JAR"
+        exit 1
     fi
+    BAKSMALI=(java -jar "$BAKSMALI_JAR")
 else
-    BAKSMALI="baksmali"
+    BAKSMALI=(baksmali)
 fi
 
 log_step "准备 Pine 框架"
 
-# 如果 Pine JAR 不存在，从 Maven Central 下载
 if [ ! -f "$PINE_JAR" ]; then
-    mkdir -p "$LIBS_DIR"
-
-    log_info "下载 Pine 框架 (Maven Central)..."
-    PINE_AAR="$LIBS_DIR/pine-core.aar"
-    curl -L -o "$PINE_AAR" \
-        "https://repo1.maven.org/maven2/top/canyie/pine/core/0.3.0/core-0.3.0.aar"
-
-    log_info "从 AAR 提取 classes.jar..."
-    unzip -o "$PINE_AAR" "classes.jar" -d "$LIBS_DIR"
-    mv "$LIBS_DIR/classes.jar" "$PINE_JAR"
+    log_error "缺少 Pine classes jar: $PINE_JAR"
+    exit 1
 fi
 log_info "Pine JAR: $PINE_JAR"
+if [ ! -f "$PINE_AAR" ]; then
+    log_error "缺少 Pine AAR: $PINE_AAR"
+    exit 1
+fi
 
 log_step "编译 Java 源码"
 
@@ -149,7 +143,7 @@ log_step "反编译为 Smali"
 
 # 使用 baksmali 将 dex 转换为 smali
 log_info "反编译为 Smali..."
-$BAKSMALI d "$BUILD_DIR/classes.dex" -o "$OUTPUT_DIR"
+"${BAKSMALI[@]}" d "$BUILD_DIR/classes.dex" -o "$OUTPUT_DIR"
 
 if [ $? -ne 0 ]; then
     log_error "Smali 反编译失败"
@@ -174,7 +168,7 @@ log_info "转换 Pine JAR 为 DEX..."
 
 # 转换 DEX 为 Smali
 log_info "反编译 Pine 为 Smali..."
-java -jar "$LIBS_DIR/baksmali.jar" d "$PINE_DEX_DIR/classes.dex" -o "$PINE_SMALI_DIR"
+"${BAKSMALI[@]}" d "$PINE_DEX_DIR/classes.dex" -o "$PINE_SMALI_DIR"
 
 pine_count=$(find "$PINE_SMALI_DIR" -name "*.smali" | wc -l | tr -d ' ')
 log_info "生成 $pine_count 个 Pine Smali 文件"
@@ -184,7 +178,7 @@ log_step "提取 Pine Native 库"
 # 从 AAR 提取 native 库
 if [ ! -d "$LIBS_DIR/jni/arm64-v8a" ]; then
     log_info "提取 libpine.so..."
-    unzip -o "$LIBS_DIR/pine-core.aar" "jni/*" -d "$LIBS_DIR" 2>/dev/null || true
+    unzip -o "$PINE_AAR" "jni/*" -d "$LIBS_DIR" >/dev/null
 fi
 
 if [ -f "$LIBS_DIR/jni/arm64-v8a/libpine.so" ]; then
@@ -205,7 +199,3 @@ echo "  - build/classes.dex           (签名绕过 DEX)"
 echo "  - build/smali/                (签名绕过 Smali)"
 echo "  - build/pine_smali/           (Pine 框架 Smali)"
 echo "  - libs/jni/arm64-v8a/         (Native 库)"
-echo ""
-echo "下一步: 运行 merge.sh 将代码注入到 APK"
-echo ""
-echo "示例: ./tools/merge.sh /path/to/decompiled/base"

@@ -32,16 +32,15 @@ SRC_DIR="$(dirname "$PROJECT_DIR")"
 DISPATCHER_INJECT_SCRIPT="$SRC_DIR/_framework/dispatcher/scripts/inject_entry.py"
 DISPATCHER_LIB_SCRIPT="$SRC_DIR/tools/lib/dispatcher.sh"
 
-SKIP_BUILD=0
 ARTIFACT_DIR=""
 TARGET_DIR=""
 
-usage() { echo "用法: $0 [--skip-build] [--artifact-dir <artifact_dir>] <decompiled_apk_dir>"; }
+usage() { echo "用法: $0 [--skip-build] --artifact-dir <artifact_dir> <decompiled_apk_dir>"; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --skip-build)
-            SKIP_BUILD=1
+            log_warn "--skip-build 已废弃；inject.sh 现在只消费现成 artifact"
             shift
             ;;
         --artifact-dir)
@@ -84,60 +83,52 @@ if [ ! -d "$TARGET_DIR" ]; then
     exit 1
 fi
 
-if [ -n "$ARTIFACT_DIR" ] && [ ! -d "$ARTIFACT_DIR" ]; then
+collect_dispatcher_entries() {
+    python3 - "$TARGET_DIR" <<'PYCODE'
+import re
+import sys
+from pathlib import Path
+
+target_dir = Path(sys.argv[1])
+entries = []
+for path in sorted(target_dir.glob("smali_classes*/com/indipay/inject/Dispatcher.smali")):
+    text = path.read_text(encoding="utf-8")
+    for entry in re.findall(r"invoke-static \{p0\}, (L[^ ]+;->[^\n]+)", text):
+        if entry not in entries:
+            entries.append(entry)
+for entry in entries:
+    print(entry)
+PYCODE
+}
+
+if [ -z "$ARTIFACT_DIR" ]; then
+    log_error "必须通过 --artifact-dir 提供预构建产物目录"
+    exit 1
+fi
+
+if [ ! -d "$ARTIFACT_DIR" ]; then
     log_error "artifact 目录不存在: $ARTIFACT_DIR"
     exit 1
 fi
 
-if [ -n "$ARTIFACT_DIR" ]; then
-    BUILD_DIR="$ARTIFACT_DIR"
-else
-    BUILD_DIR="$PROJECT_DIR/build"
-fi
+BUILD_DIR="$ARTIFACT_DIR"
 SMALI_DIR="$BUILD_DIR/smali"
 PINE_SMALI_DIR="$BUILD_DIR/pine_smali"
 PINE_LIB_DIR="$BUILD_DIR/libs/jni"
 
 log_step "检查编译输出"
 
-if [ -n "$ARTIFACT_DIR" ]; then
-    if [ ! -d "$SMALI_DIR/com/sigbypass" ]; then
-        log_error "artifact 中缺少签名绕过 smali: $SMALI_DIR/com/sigbypass"
-        exit 1
-    fi
-    if [ ! -d "$PINE_SMALI_DIR/top/canyie/pine" ]; then
-        log_error "artifact 中缺少 Pine smali: $PINE_SMALI_DIR/top/canyie/pine"
-        exit 1
-    fi
-    if [ ! -f "$PINE_LIB_DIR/arm64-v8a/libpine.so" ]; then
-        log_error "artifact 中缺少 libpine.so: $PINE_LIB_DIR/arm64-v8a/libpine.so"
-        exit 1
-    fi
-else
-    # 检查是否已编译
-    if [ ! -d "$SMALI_DIR/com/sigbypass" ]; then
-        if [ "$SKIP_BUILD" -eq 1 ]; then
-            log_warn "启用 --skip-build 但签名绕过产物缺失，回退到编译"
-        else
-            log_warn "签名绕过代码未编译，先运行编译..."
-        fi
-        "$TOOLS_DIR/compile.sh"
-    fi
-
-    if [ ! -d "$PINE_SMALI_DIR/top/canyie/pine" ]; then
-        if [ "$SKIP_BUILD" -eq 1 ]; then
-            log_warn "启用 --skip-build 但 Pine 产物缺失，回退到编译"
-        else
-            log_warn "Pine smali 未找到，需要先运行编译..."
-        fi
-        "$TOOLS_DIR/compile.sh"
-    fi
-
-    if [ ! -f "$PINE_LIB_DIR/arm64-v8a/libpine.so" ]; then
-        log_error "libpine.so 未找到: $PINE_LIB_DIR/arm64-v8a/libpine.so"
-        log_error "请确保运行了 compile.sh 来提取 Pine 库"
-        exit 1
-    fi
+if [ ! -d "$SMALI_DIR/com/sigbypass" ]; then
+    log_error "artifact 中缺少签名绕过 smali: $SMALI_DIR/com/sigbypass"
+    exit 1
+fi
+if [ ! -d "$PINE_SMALI_DIR/top/canyie/pine" ]; then
+    log_error "artifact 中缺少 Pine smali: $PINE_SMALI_DIR/top/canyie/pine"
+    exit 1
+fi
+if [ ! -f "$PINE_LIB_DIR/arm64-v8a/libpine.so" ]; then
+    log_error "artifact 中缺少 libpine.so: $PINE_LIB_DIR/arm64-v8a/libpine.so"
+    exit 1
 fi
 
 log_info "Smali 目录: $SMALI_DIR"
@@ -173,7 +164,6 @@ if [ -d "$PINE_SMALI_DIR/top/canyie/pine" ]; then
     log_info "已复制 Pine 框架 ($(find $PINE_SMALI_DIR/top/canyie/pine -name '*.smali' | wc -l | tr -d ' ') 个文件)"
 else
     log_error "Pine 框架 smali 未找到"
-    log_error "请运行 ./tools/compile.sh 先编译 Pine 框架"
     exit 1
 fi
 
@@ -193,7 +183,6 @@ if [ -f "$PINE_LIB_DIR/arm64-v8a/libpine.so" ]; then
     fi
 else
     log_error "libpine.so 未找到: $PINE_LIB_DIR/arm64-v8a/libpine.so"
-    log_error "请确保运行了 compile.sh 来提取 Pine 库"
     exit 1
 fi
 
@@ -239,7 +228,22 @@ fi
 
 log_step "5. 生成 Dispatcher"
 
-"$DISPATCHER_LIB_SCRIPT" --target-dir "$TARGET_SMALI_DIR" --append "Lcom/sigbypass/HookEntry;->init(Landroid/content/Context;)V"
+DISPATCHER_ENTRIES=()
+while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    DISPATCHER_ENTRIES+=("$entry")
+done < <(collect_dispatcher_entries)
+
+while IFS= read -r f; do
+    rm -f "$f"
+done < <(find "$TARGET_DIR" -type f -path "*/com/indipay/inject/Dispatcher.smali")
+
+DISPATCHER_CMD=("$DISPATCHER_LIB_SCRIPT" --target-dir "$TARGET_SMALI_DIR")
+for entry in "${DISPATCHER_ENTRIES[@]}"; do
+    DISPATCHER_CMD+=(--append "$entry")
+done
+DISPATCHER_CMD+=(--append "Lcom/sigbypass/HookEntry;->init(Landroid/content/Context;)V")
+"${DISPATCHER_CMD[@]}"
 
 DISPATCHER_SMALI="$TARGET_SMALI_DIR/com/indipay/inject/Dispatcher.smali"
 

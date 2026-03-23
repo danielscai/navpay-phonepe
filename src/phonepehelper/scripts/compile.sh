@@ -13,7 +13,7 @@
 # 用法：./compile.sh
 #######################################################################
 
-set -e
+set -euo pipefail
 
 # 颜色
 RED='\033[0;31m'
@@ -37,7 +37,7 @@ OUTPUT_DIR="$BUILD_DIR/smali"
 
 # Android SDK 路径
 ANDROID_SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
-BUILD_TOOLS="$ANDROID_SDK/build-tools/35.0.0"
+BUILD_TOOLS="$(find "$ANDROID_SDK/build-tools" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -V | tail -1)"
 # 自动查找最新的 android.jar
 ANDROID_JAR=$(ls -d "$ANDROID_SDK/platforms/android-"* 2>/dev/null | sort -V | tail -1)/android.jar
 
@@ -71,35 +71,13 @@ log_info "android.jar: $ANDROID_JAR"
 
 # 检查 baksmali
 if ! command -v baksmali &> /dev/null; then
-    log_warn "baksmali 未找到，尝试使用本地版本..."
-    BAKSMALI="java -jar $LIBS_DIR/baksmali.jar"
     if [ ! -f "$LIBS_DIR/baksmali.jar" ]; then
-        SIG_BAKSMALI="$PROJECT_DIR/../signature_bypass/libs/baksmali.jar"
-        if [ -f "$SIG_BAKSMALI" ]; then
-            log_info "使用 signature_bypass 的 baksmali.jar"
-            mkdir -p "$LIBS_DIR"
-            cp "$SIG_BAKSMALI" "$LIBS_DIR/baksmali.jar"
-        else
-            log_info "下载 baksmali..."
-            mkdir -p "$LIBS_DIR"
-            curl -L -o "$LIBS_DIR/baksmali.jar" \
-                "https://github.com/JesusFreke/smali/releases/download/v2.5.2/baksmali-2.5.2.jar"
-        fi
-    else
-        size=$(stat -f "%z" "$LIBS_DIR/baksmali.jar" 2>/dev/null || echo 0)
-        if [ "$size" -lt 200000 ]; then
-            log_warn "baksmali.jar 可能损坏，尝试替换..."
-            SIG_BAKSMALI="$PROJECT_DIR/../signature_bypass/libs/baksmali.jar"
-            if [ -f "$SIG_BAKSMALI" ]; then
-                cp "$SIG_BAKSMALI" "$LIBS_DIR/baksmali.jar"
-            else
-                curl -L -o "$LIBS_DIR/baksmali.jar" \
-                    "https://github.com/JesusFreke/smali/releases/download/v2.5.2/baksmali-2.5.2.jar"
-            fi
-        fi
+        log_error "baksmali 未找到，且本地 jar 缺失: $LIBS_DIR/baksmali.jar"
+        exit 1
     fi
+    BAKSMALI=(java -jar "$LIBS_DIR/baksmali.jar")
 else
-    BAKSMALI="baksmali"
+    BAKSMALI=(baksmali)
 fi
 
 log_step "编译 Java 源码"
@@ -148,7 +126,7 @@ log_step "反编译为 Smali"
 
 # 使用 baksmali 将 dex 转换为 smali
 log_info "反编译为 Smali..."
-$BAKSMALI d "$BUILD_DIR/classes.dex" -o "$OUTPUT_DIR"
+"${BAKSMALI[@]}" d "$BUILD_DIR/classes.dex" -o "$OUTPUT_DIR"
 
 if [ $? -ne 0 ]; then
     log_error "Smali 反编译失败"

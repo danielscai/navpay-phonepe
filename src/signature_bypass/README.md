@@ -1,13 +1,12 @@
 # Android APK 签名绕过模块 (Java 源码版)
 
-这是一个用于绕过 Android APK 签名校验的模块，完全使用 **Java 源码** 编写，便于修改和维护。
+这是一个用于绕过 Android APK 签名校验的模块，完全使用 **Java 源码** 编写，当前由 orchestrator 负责构建、注入和整包测试。
 
 ## 特点
 
 - **纯 Java 实现** - 所有代码都是 Java 源码，不依赖任何预编译的 smali 文件
-- **自动化编译** - 一键编译 Java 代码为 smali
-- **自动化合并** - 一键将代码注入到目标 APK
-- **依赖 Pine 框架** - 从 [Maven Central](https://repo1.maven.org/maven2/top/canyie/pine/) 自动下载
+- **自动化编译** - 构建本地 artifact 供 orchestrator 复用
+- **依赖 Pine 框架** - 直接使用仓库内固定依赖
 
 ## 目录结构
 
@@ -21,9 +20,10 @@ signature_bypass_src/
 │   ├── SignatureHook.java             # 签名 Hook 核心逻辑
 │   └── HookEntry.java                 # 入口类
 ├── tools/
-│   ├── compile.sh                     # 编译脚本
-│   ├── merge.sh                       # 合并脚本
-│   └── inject_hook.py                 # 注入辅助脚本
+│   ├── build_artifacts.sh             # orchestrator builder 入口
+│   └── compile.sh                     # 实际编译逻辑
+├── scripts/
+│   └── inject.sh                      # orchestrator injector 入口
 ├── libs/                              # 依赖库（自动下载）
 │   ├── pine-core.aar                  # Pine 框架 AAR
 │   ├── pine-core-classes.jar          # Pine 框架 JAR
@@ -53,11 +53,10 @@ public static final String TARGET_PACKAGE = "com.phonepe.app";
 public static final String ORIGINAL_SIGNATURE = "3082...";
 ```
 
-### 2. 编译
+### 2. 构建 artifact
 
 ```bash
-chmod +x scripts/*.sh
-./tools/compile.sh
+./tools/build_artifacts.sh
 ```
 
 输出：
@@ -71,33 +70,10 @@ chmod +x scripts/*.sh
   - libs/jni/arm64-v8a/         (Native 库)
 ```
 
-### 3. 合并到 APK
+### 3. 通过 orchestrator 注入并测试
 
 ```bash
-# 假设目标 APK 已反编译到 /path/to/decompiled/base
-./tools/merge.sh /path/to/decompiled/base
-```
-
-输出：
-```
-✓ 已复制签名绕过代码
-✓ 已复制 Pine 框架 (30 个文件)
-✓ 已复制 libpine.so
-✓ Application 入口已注入
-```
-
-### 4. 重新打包
-
-```bash
-apktool b /path/to/decompiled/base -o patched.apk
-zipalign -f 4 patched.apk patched_aligned.apk
-apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --out patched_signed.apk patched_aligned.apk
-```
-
-### 5. 安装测试
-
-```bash
-adb install patched_signed.apk
+python3 src/build-orchestrator/orchestrator.py test --profile sigbypass-only --smoke --serial emulator-5554
 ```
 
 ## 验证
@@ -191,6 +167,13 @@ SignatureMethodHook.afterCall() ← 拦截并替换签名
 反射工具类，提供：
 - findMethod(): 查找方法
 - logDebug/logInfo(): 日志输出
+
+## 运行方式
+
+- 推荐命令：
+  - `python3 src/build-orchestrator/orchestrator.py build-modules --profile sigbypass-only`
+  - `python3 src/build-orchestrator/orchestrator.py test --profile sigbypass-only --smoke --serial emulator-5554`
+- `scripts/inject.sh` 现在只消费 `--artifact-dir`，不再在注入阶段隐式编译。
 
 ## 自定义修改
 

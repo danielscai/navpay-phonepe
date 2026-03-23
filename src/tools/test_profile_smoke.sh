@@ -9,4 +9,4 @@ if [ -n "$SERIAL" ]; then
   CMD+=(--serial "$SERIAL")
 fi
 
-"${CMD[@]}"
+exec "${CMD[@]}"

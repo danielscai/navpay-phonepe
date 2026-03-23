@@ -3,7 +3,7 @@
 #######################################################################
 # PhonePeHelper 注入脚本
 #
-# 功能：编译并注入 phonepehelper 模块到反编译后的 APK
+# 功能：将预构建的 phonepehelper 产物注入到反编译后的 APK
 #
 # 用法：./inject.sh <decompiled_dir>
 #######################################################################
@@ -75,24 +75,17 @@ if [ -n "$ARTIFACT_DIR" ] && [ ! -d "$ARTIFACT_DIR" ]; then
     exit 1
 fi
 
-if [ -n "$ARTIFACT_DIR" ]; then
-    log_step "1. 使用 artifact 目录注入 phonepehelper"
-    "$SCRIPT_DIR/merge.sh" --artifact-dir "$ARTIFACT_DIR" "$TARGET_DIR"
-else
-    log_step "1. 编译 phonepehelper"
-    if [ ! -x "$SCRIPT_DIR/compile.sh" ]; then
-        log_error "未找到编译脚本: $SCRIPT_DIR/compile.sh"
-        exit 1
-    fi
-    "$SCRIPT_DIR/compile.sh"
-
-    log_step "2. 注入 phonepehelper"
-    if [ ! -x "$SCRIPT_DIR/merge.sh" ]; then
-        log_error "未找到注入脚本: $SCRIPT_DIR/merge.sh"
-        exit 1
-    fi
-    "$SCRIPT_DIR/merge.sh" "$TARGET_DIR"
+if [ -z "$ARTIFACT_DIR" ]; then
+    log_error "必须通过 --artifact-dir 提供预构建产物目录"
+    exit 1
 fi
+
+log_step "1. 使用 artifact 目录注入 phonepehelper"
+if [ ! -x "$SCRIPT_DIR/merge.sh" ]; then
+    log_error "未找到注入脚本: $SCRIPT_DIR/merge.sh"
+    exit 1
+fi
+"$SCRIPT_DIR/merge.sh" --artifact-dir "$ARTIFACT_DIR" "$TARGET_DIR"
 
 log_step "完成"
 log_info "phonepehelper 已注入"

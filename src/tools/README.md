@@ -1,15 +1,8 @@
 # Injection Test Tools (src/tools)
 
-This directory contains the unified injector and test helpers used during module migration.
+This directory contains only orchestrator-facing wrappers and behavior verification helpers.
 
 ## Quick start
-
-- Inject a module into a decompiled APK:
-  - `./inject.sh --decompiled /path/to/decompiled/base --module signature_bypass`
-
-- Test signature_bypass end-to-end:
-  - `./test_signature_bypass.sh --target-dir /path/to/decompiled/base`
-  - or `./test_signature_bypass.sh --sample pev70`
 
 - Archive an APK snapshot for baseline/candidate comparison:
   - `./archive_apk.sh --apk /path/to/app.apk --label baseline`
@@ -43,14 +36,6 @@ Use one run directory to hold both archive outputs and probe outputs:
 
 This keeps `apk.sha256` + `meta.json` + `probe.log` in the same directory.
 
-With package scripts (root `package.json`):
-
-- `yarn artifact:archive -- --apk /path/to/app.apk --label baseline`
-- `RUN_DIR=<run_dir> yarn artifact:probe:archive -- --package com.phonepe.app`
-- `yarn artifact:compare -- --baseline <baseline_run_dir> --candidate <candidate_run_dir>`
-- `yarn test:independent`
-- `yarn test:full`
-
 ## Behavior parity workflow (baseline vs candidate)
 
 1. Archive baseline APK:
@@ -72,6 +57,5 @@ With package scripts (root `package.json`):
 ## Notes
 
 - `decompile.sh` is a wrapper for the repository root `tools/decompile.sh`.
-- The injector writes `assets/inject_manifest.json` in the target APK directory.
-- `test_profile_smoke.sh` delegates to `python3 src/build-orchestrator/orchestrator.py test --profile <name> --smoke`.
-- The profile smoke path now builds module artifacts once, injects from artifact directories, and reuses the final signed APK when inputs have not changed.
+- `test_profile_smoke.sh`, `test_profile_full.sh`, and `test_module_independent.sh` are thin delegators to `python3 src/build-orchestrator/orchestrator.py`.
+- Module-local compilation and injection details now live under each module directory and are consumed only through the orchestrator.

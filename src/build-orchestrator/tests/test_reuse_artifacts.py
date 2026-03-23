@@ -39,7 +39,7 @@ class ReuseArtifactsTest(unittest.TestCase):
             with mock.patch.object(cache_manager, "resolve_profile_workspace", return_value=workspace), \
                 mock.patch.object(cache_manager, "profile_inject", return_value=workspace), \
                 mock.patch.object(cache_manager, "profile_build_path", return_value=work_dir), \
-                mock.patch.object(cache_manager, "compute_inputs_fingerprint", return_value="fp1"), \
+                mock.patch.object(cache_manager, "compute_profile_reuse_fingerprint", return_value="fp1"), \
                 mock.patch.object(cache_manager, "sigbypass_compile") as compile_mock:
                 out_dir = cache_manager.profile_compile({}, "full", reuse_artifacts=True)
 
@@ -63,7 +63,7 @@ class ReuseArtifactsTest(unittest.TestCase):
             with mock.patch.object(cache_manager, "resolve_profile_workspace", return_value=workspace), \
                 mock.patch.object(cache_manager, "profile_inject", return_value=workspace), \
                 mock.patch.object(cache_manager, "profile_build_path", return_value=work_dir), \
-                mock.patch.object(cache_manager, "compute_inputs_fingerprint", return_value="fresh"), \
+                mock.patch.object(cache_manager, "compute_profile_reuse_fingerprint", return_value="fresh"), \
                 mock.patch.object(cache_manager, "sigbypass_compile") as compile_mock:
                 out_dir = cache_manager.profile_compile({}, "full", reuse_artifacts=True)
 

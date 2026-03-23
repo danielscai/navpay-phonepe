@@ -105,6 +105,7 @@ MODULE_DEFAULTS = {
         "path": "cache/phonepe_https_interceptor",
         "build_dir": HTTPS_BUILD_DIR,
         "log_tag": HTTPS_LOG_TAG,
+        "runtime_log_required": False,
         "login_activity": SIGBYPASS_LOGIN_ACTIVITY,
         "test_mode": "unified",
         "inject_script": "src/https_interceptor/scripts/inject.sh",
@@ -751,6 +752,20 @@ def compute_inputs_fingerprint(root: Path) -> str:
     return hasher.hexdigest()
 
 
+def compute_profile_reuse_fingerprint(manifest, profile_name: str, workspace: Path) -> str:
+    modules = resolve_profile_modules(manifest, profile_name)
+    hasher = hashlib.sha256()
+    hasher.update(compute_inputs_fingerprint(workspace).encode("ascii"))
+    hasher.update(b"\0")
+    for module in modules:
+        spec = resolve_module_spec(manifest, module)
+        hasher.update(module.encode("utf-8"))
+        hasher.update(b"\0")
+        hasher.update(compute_module_fingerprint(spec).encode("ascii"))
+        hasher.update(b"\n")
+    return hasher.hexdigest()
+
+
 def read_reuse_state(state_path: Path) -> dict:
     if not state_path.exists():
         return {}
@@ -760,10 +775,10 @@ def read_reuse_state(state_path: Path) -> dict:
         return {}
 
 
-def maybe_reuse_profile_artifacts(profile_name: str, workspace: Path, work_dir: Path) -> bool:
+def maybe_reuse_profile_artifacts(manifest, profile_name: str, workspace: Path, work_dir: Path) -> bool:
     signed_apk = work_dir / DEFAULT_SIGNED_APK
     state_path = work_dir / REUSE_STATE_FILE
-    fingerprint = compute_inputs_fingerprint(workspace)
+    fingerprint = compute_profile_reuse_fingerprint(manifest, profile_name, workspace)
     state = read_reuse_state(state_path)
     cached_fp = state.get("fingerprint")
 
@@ -783,14 +798,14 @@ def maybe_reuse_profile_artifacts(profile_name: str, workspace: Path, work_dir: 
     return False
 
 
-def write_reuse_state(profile_name: str, workspace: Path, work_dir: Path):
+def write_reuse_state(manifest, profile_name: str, workspace: Path, work_dir: Path):
     state_path = work_dir / REUSE_STATE_FILE
     payload = {
         "created_at": datetime.now().isoformat(),
         "profile": profile_name,
         "workspace": str(workspace),
         "signed_apk": DEFAULT_SIGNED_APK,
-        "fingerprint": compute_inputs_fingerprint(workspace),
+        "fingerprint": compute_profile_reuse_fingerprint(manifest, profile_name, workspace),
     }
     write_meta(state_path, payload)
 
@@ -1429,6 +1444,7 @@ def resolve_module_spec(manifest, name: str):
         "package": cfg.get("package") or DEFAULT_PACKAGE,
         "activity": cfg.get("activity") or DEFAULT_ACTIVITY,
         "log_tag": resolve_cfg_value(name, cfg, "log_tag"),
+        "runtime_log_required": resolve_cfg_value(name, cfg, "runtime_log_required", True),
         "timeout": cfg.get("timeout_sec") or DEFAULT_TIMEOUT_SEC,
         "login_activity": resolve_cfg_value(name, cfg, "login_activity"),
         "test_mode": test_mode,
@@ -1462,12 +1478,16 @@ def module_pre_cache(spec, delete_first: bool):
 
 def module_inject(spec, delete_first: bool):
     module_pre_cache(spec, delete_first)
+    artifact_dir = module_artifact_path(spec["name"]) if spec["name"] in ARTIFACT_INJECT_MODULES else None
+    if artifact_dir is not None:
+        ensure_module_artifact(spec, artifact_dir)
     inject(
         spec["cache_path"],
         spec["inject_script"],
         spec["reset_paths"],
         spec["added_paths"],
         spec["label"],
+        artifact_dir=artifact_dir,
     )
 
 
@@ -1565,7 +1585,7 @@ def profile_pre_cache(manifest, profile_name: str):
 def profile_inject(manifest, profile_name: str, reuse_artifacts: bool = False):
     modules = resolve_profile_modules(manifest, profile_name)
     detect_conflicts(manifest, modules)
-    workspace = resolve_profile_workspace(profile_name)
+    _, workspace = profile_pre_cache(manifest, profile_name)
     for module in modules:
         spec = resolve_module_spec(manifest, module)
         artifact_dir = module_artifact_path(module) if module in ARTIFACT_INJECT_MODULES else None
@@ -1588,7 +1608,7 @@ def profile_compile(manifest, profile_name: str, reuse_artifacts: bool = False):
     work_dir.mkdir(parents=True, exist_ok=True)
     if reuse_artifacts:
         workspace = resolve_profile_workspace(profile_name)
-        if maybe_reuse_profile_artifacts(profile_name, workspace, work_dir):
+        if maybe_reuse_profile_artifacts(manifest, profile_name, workspace, work_dir):
             return work_dir
     workspace = profile_inject(manifest, profile_name, reuse_artifacts=reuse_artifacts)
     sigbypass_compile(
@@ -1599,15 +1619,91 @@ def profile_compile(manifest, profile_name: str, reuse_artifacts: bool = False):
         DEFAULT_SIGNED_APK,
     )
     if reuse_artifacts:
-        write_reuse_state(profile_name, workspace, work_dir)
+        write_reuse_state(manifest, profile_name, workspace, work_dir)
     return work_dir
+
+
+def find_workspace_matches(workspace: Path, relative_path: str):
+    return sorted(workspace.glob(f"smali*/{relative_path}"))
+
+
+def workspace_contains_text(paths, needle: str) -> bool:
+    for path in paths:
+        try:
+            if needle in path.read_text(encoding="utf-8"):
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def verify_profile_injection(manifest, workspace: Path, modules):
+    missing = []
+    checked_labels = []
+
+    for module in modules:
+        checked_labels.append(resolve_cfg_value(module, manifest.get(module, {}), "label", module.upper()))
+        if module == "phonepe_https_interceptor":
+            hookutil_paths = find_workspace_matches(workspace, "com/httpinterceptor/hook/HookUtil.smali")
+            builder_paths = find_workspace_matches(workspace, "okhttp3/OkHttpClient$Builder.smali")
+            if not hookutil_paths:
+                missing.append("phonepe_https_interceptor: missing HookUtil.smali")
+            if not workspace_contains_text(
+                builder_paths,
+                "Lcom/httpinterceptor/hook/HookUtil;->build(Lokhttp3/OkHttpClient$Builder;)Lokhttp3/OkHttpClient;",
+            ):
+                missing.append("phonepe_https_interceptor: OkHttpClient$Builder not patched to HookUtil.build()")
+        elif module == "phonepe_phonepehelper":
+            module_init_paths = find_workspace_matches(workspace, "com/phonepehelper/ModuleInit.smali")
+            helper_paths = find_workspace_matches(workspace, "com/PhonePeTweak/Def/PhonePeHelper.smali")
+            dispatcher_paths = find_workspace_matches(workspace, "com/indipay/inject/Dispatcher.smali")
+            app_paths = find_workspace_matches(workspace, "com/phonepe/app/PhonePeApplication.smali")
+            if not module_init_paths:
+                missing.append("phonepe_phonepehelper: missing ModuleInit.smali")
+            if not helper_paths:
+                missing.append("phonepe_phonepehelper: missing PhonePeHelper.smali")
+            if not workspace_contains_text(
+                dispatcher_paths,
+                "Lcom/phonepehelper/ModuleInit;->init(Landroid/content/Context;)V",
+            ):
+                missing.append("phonepe_phonepehelper: Dispatcher missing ModuleInit registration")
+            if not workspace_contains_text(
+                app_paths,
+                "Lcom/indipay/inject/Dispatcher;->init(Landroid/content/Context;)V",
+            ):
+                missing.append("phonepe_phonepehelper: PhonePeApplication missing Dispatcher entry")
+        elif module == "phonepe_sigbypass":
+            hook_entry_paths = find_workspace_matches(workspace, "com/sigbypass/HookEntry.smali")
+            dispatcher_paths = find_workspace_matches(workspace, "com/indipay/inject/Dispatcher.smali")
+            app_paths = find_workspace_matches(workspace, "com/phonepe/app/PhonePeApplication.smali")
+            if not hook_entry_paths:
+                missing.append("phonepe_sigbypass: missing HookEntry.smali")
+            if not workspace_contains_text(
+                dispatcher_paths,
+                "Lcom/sigbypass/HookEntry;->init(Landroid/content/Context;)V",
+            ):
+                missing.append("phonepe_sigbypass: Dispatcher missing HookEntry registration")
+            if not workspace_contains_text(
+                app_paths,
+                "Lcom/indipay/inject/Dispatcher;->init(Landroid/content/Context;)V",
+            ):
+                missing.append("phonepe_sigbypass: PhonePeApplication missing Dispatcher entry")
+
+    if missing:
+        raise RuntimeError("Profile static injection verification failed:\n- " + "\n- ".join(missing))
+    if checked_labels:
+        log_info(f"[PROFILE] static injection verified: {', '.join(checked_labels)}")
+
 
 def verify_profile_log_tags(manifest, modules, serial: str, strict: bool = False):
     adb = adb_path()
     missing_tags = []
     checked_tags = []
     for module in modules:
-        tag = resolve_module_spec(manifest, module).get("log_tag")
+        spec = resolve_module_spec(manifest, module)
+        if not spec.get("runtime_log_required", True):
+            continue
+        tag = spec.get("log_tag")
         if not tag or tag in checked_tags:
             continue
         checked_tags.append(tag)
@@ -1615,11 +1711,13 @@ def verify_profile_log_tags(manifest, modules, serial: str, strict: bool = False
         if not out.strip():
             missing_tags.append(tag)
     if missing_tags:
-        msg = f"Missing profile log tags: {', '.join(missing_tags)}"
+        msg = f"Missing profile runtime log tags: {', '.join(missing_tags)}"
         if strict:
             raise RuntimeError(msg)
         log_warn(msg)
         return False
+    if not checked_tags:
+        return True
     log_info(f"[PROFILE] all required log tags detected: {', '.join(checked_tags)}")
     return True
 
@@ -1627,6 +1725,7 @@ def profile_test(manifest, profile_name: str, serial: str, smoke: bool = False):
     modules = resolve_profile_modules(manifest, profile_name)
     profile_build_modules(manifest, profile_name)
     work_dir = profile_compile(manifest, profile_name, reuse_artifacts=True)
+    workspace = resolve_profile_workspace(profile_name)
     signed_apk = work_dir / DEFAULT_SIGNED_APK
     primary_spec = resolve_module_spec(manifest, modules[0])
     primary_log_tag = ""
@@ -1648,6 +1747,7 @@ def profile_test(manifest, profile_name: str, serial: str, smoke: bool = False):
         uninstall_before_install=uninstall_before_install,
     )
     if not smoke:
+        verify_profile_injection(manifest, workspace, modules)
         # Primary module log is already validated in unified_test.
         # Secondary module logs are best-effort at startup and should not block full test.
         verify_profile_log_tags(manifest, modules[1:], test_serial, strict=False)

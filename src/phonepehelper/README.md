@@ -19,43 +19,34 @@
 phonepehelper/
 ├── README.md
 ├── scripts/
+│   ├── build_artifacts.sh
 │   ├── compile.sh
-│   ├── merge.sh
+│   ├── inject.sh
+│   └── merge.sh
 └── src/main/java/
     ├── com/phonepehelper/ModuleInit.java
     ├── com/phonepehelper/LifecycleLogger.java
     └── com/PhonePeTweak/Def/PhonePeHelper.java
 ```
 
-## 编译
+## 构建 artifact
 
 ```bash
 cd src/phonepehelper
-./scripts/compile.sh
+./scripts/build_artifacts.sh
 ```
 
 输出：
 - `build/classes.dex`
 - `build/smali/` (PhonePeHelper smali)
 
-## 注入
+## 注入与测试
 
 ```bash
-./scripts/merge.sh /path/to/decompiled/phonepe
+python3 src/build-orchestrator/orchestrator.py test --profile phonepehelper-only --smoke --serial emulator-5554
 ```
 
-会自动：
-- 复制 smali 到新的 `smali_classes*`
-- 向 `com/sigbypass/HookEntry.init()` 注入 `ModuleInit.init()` 调用
-
-## 重新打包与安装
-
-```bash
-apktool b /path/to/decompiled/phonepe -o patched.apk
-zipalign -f 4 patched.apk patched_aligned.apk
-apksigner sign --ks ~/.android/debug.keystore --ks-pass pass:android --out patched_signed.apk patched_aligned.apk
-adb install patched_signed.apk
-```
+`scripts/inject.sh` 现在只消费 `--artifact-dir`，由 orchestrator 在构建阶段提前准备产物。
 
 ## 验证
 
@@ -69,9 +60,8 @@ adb logcat -s PPHelper
 - `PhonePeHelper initialized`
 - Activity 生命周期日志（created/started/resumed...）
 
-
-## 推荐入口（tools）
+## 推荐入口
 
 ```bash
-yarn patch:phonepehelper
+yarn orch:test:phonepehelper
 ```

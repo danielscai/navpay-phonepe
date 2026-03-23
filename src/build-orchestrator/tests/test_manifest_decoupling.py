@@ -77,6 +77,19 @@ class ManifestDecouplingTest(unittest.TestCase):
                     cache_manager.resolve_module_spec(manifest, "phonepe_sigbypass")
             self.assertIn("source_subdir", str(exc.exception))
 
+    def test_module_injectors_are_artifact_only(self) -> None:
+        injectors = (
+            Path("src/signature_bypass/scripts/inject.sh"),
+            Path("src/https_interceptor/scripts/inject.sh"),
+            Path("src/phonepehelper/scripts/inject.sh"),
+        )
+        for path in injectors:
+            with self.subTest(path=path):
+                text = path.read_text(encoding="utf-8")
+                self.assertIn("--artifact-dir", text)
+                self.assertNotIn("build_smali_artifacts.sh", text)
+                self.assertNotIn('"$SCRIPT_DIR/compile.sh"', text)
+
 
 if __name__ == "__main__":
     unittest.main()
