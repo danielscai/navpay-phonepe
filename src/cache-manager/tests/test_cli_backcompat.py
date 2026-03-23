@@ -8,11 +8,11 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 CACHE_MANAGER_DIR = Path(__file__).resolve().parents[1]
-CACHE_MANAGER_SCRIPT = CACHE_MANAGER_DIR / "cache_manager.py"
+CACHE_MANAGER_SCRIPT = CACHE_MANAGER_DIR / "orchestrator.py"
 
 sys.path.insert(0, str(CACHE_MANAGER_DIR))
 
-import cache_manager  # noqa: E402
+import orchestrator as cache_manager  # noqa: E402
 
 
 class CliBackcompatTest(unittest.TestCase):
@@ -109,6 +109,7 @@ class CliBackcompatTest(unittest.TestCase):
         manifest = {}
         work_dir = Path("/tmp/profile-build")
         with mock.patch.object(cache_manager, "resolve_profile_modules", return_value=["phonepe_https_interceptor"]), \
+            mock.patch.object(cache_manager, "profile_build_modules"), \
             mock.patch.object(cache_manager, "profile_compile", return_value=work_dir), \
             mock.patch.object(cache_manager, "resolve_module_spec", return_value={"name": "phonepe_https_interceptor", "log_tag": "HttpInterceptor"}), \
             mock.patch.object(cache_manager, "resolve_test_serial", return_value="emulator-5554"), \
@@ -122,6 +123,7 @@ class CliBackcompatTest(unittest.TestCase):
         manifest = {}
         work_dir = Path("/tmp/profile-build")
         with mock.patch.object(cache_manager, "resolve_profile_modules", return_value=["phonepe_phonepehelper"]), \
+            mock.patch.object(cache_manager, "profile_build_modules"), \
             mock.patch.object(cache_manager, "profile_compile", return_value=work_dir), \
             mock.patch.object(cache_manager, "resolve_module_spec", return_value={"name": "phonepe_phonepehelper", "log_tag": "PPHelper"}), \
             mock.patch.object(cache_manager, "resolve_test_serial", return_value="emulator-5554"), \

@@ -25,19 +25,49 @@ log_step() { echo -e "\n${BLUE}==== $1 ====${NC}"; }
 # 路径配置
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-BUILD_DIR="$PROJECT_DIR/build"
-SMALI_DIR="$BUILD_DIR/smali"
 SRC_DIR="$(dirname "$PROJECT_DIR")"
 DISPATCHER_INJECT_SCRIPT="$SRC_DIR/_framework/dispatcher/scripts/inject_entry.py"
 DISPATCHER_LIB_SCRIPT="$SRC_DIR/tools/lib/dispatcher.sh"
 
-# 目标 APK 目录
-TARGET_DIR="${1:-}"
+ARTIFACT_DIR=""
+TARGET_DIR=""
+
+usage() {
+    echo "用法: $0 [--artifact-dir <artifact_dir>] <decompiled_apk_dir>"
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --artifact-dir)
+            if [ $# -lt 2 ]; then
+                log_error "--artifact-dir 需要一个路径参数"
+                usage
+                exit 1
+            fi
+            ARTIFACT_DIR="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            if [ -z "$TARGET_DIR" ]; then
+                TARGET_DIR="$1"
+            else
+                log_error "未知参数: $1"
+                usage
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
 
 if [ -z "$TARGET_DIR" ]; then
     log_error "请指定目标 APK 目录"
     echo ""
-    echo "用法: $0 <decompiled_apk_dir>"
+    usage
     exit 1
 fi
 
@@ -46,12 +76,35 @@ if [ ! -d "$TARGET_DIR" ]; then
     exit 1
 fi
 
+if [ -n "$ARTIFACT_DIR" ] && [ ! -d "$ARTIFACT_DIR" ]; then
+    log_error "artifact 目录不存在: $ARTIFACT_DIR"
+    exit 1
+fi
+
+if [ -n "$ARTIFACT_DIR" ]; then
+    BUILD_DIR="$ARTIFACT_DIR"
+else
+    BUILD_DIR="$PROJECT_DIR/build"
+fi
+SMALI_DIR="$BUILD_DIR/smali"
+
 log_step "检查编译输出"
 
-# 检查是否已编译
-if [ ! -d "$SMALI_DIR/com/phonepehelper" ]; then
-    log_warn "PhonePeHelper 代码未编译，先运行编译..."
-    "$SCRIPT_DIR/compile.sh"
+if [ -n "$ARTIFACT_DIR" ]; then
+    if [ ! -d "$SMALI_DIR/com/phonepehelper" ]; then
+        log_error "artifact 中缺少 phonepehelper smali: $SMALI_DIR/com/phonepehelper"
+        exit 1
+    fi
+    if [ ! -f "$SMALI_DIR/com/PhonePeTweak/Def/PhonePeHelper.smali" ]; then
+        log_error "artifact 中缺少关键入口文件: $SMALI_DIR/com/PhonePeTweak/Def/PhonePeHelper.smali"
+        exit 1
+    fi
+else
+    # 检查是否已编译
+    if [ ! -d "$SMALI_DIR/com/phonepehelper" ]; then
+        log_warn "PhonePeHelper 代码未编译，先运行编译..."
+        "$SCRIPT_DIR/compile.sh"
+    fi
 fi
 
 log_info "Smali 目录: $SMALI_DIR"
@@ -126,16 +179,28 @@ check_file() {
 check_file "$TARGET_SMALI_DIR/com/PhonePeTweak/Def/PhonePeHelper.smali" "PhonePeHelper.smali"
 check_file "$DISPATCHER_SMALI" "Dispatcher.smali"
 
+if [ ! -f "$TARGET_SMALI_DIR/com/PhonePeTweak/Def/PhonePeHelper.smali" ]; then
+    log_error "PhonePeHelper.smali 缺失，注入失败"
+    exit 1
+fi
+
+if [ ! -f "$DISPATCHER_SMALI" ]; then
+    log_error "Dispatcher.smali 缺失，注入失败"
+    exit 1
+fi
+
 if grep -q "Lcom/phonepehelper/ModuleInit;->init(Landroid/content/Context;)V" "$DISPATCHER_SMALI"; then
     echo -e "  ${GREEN}✓${NC} Dispatcher 已注册 phonepehelper 初始化"
 else
     echo -e "  ${RED}✗${NC} Dispatcher 未注册 phonepehelper 初始化"
+    exit 1
 fi
 
 if grep -q "Lcom/indipay/inject/Dispatcher;->init(Landroid/content/Context;)V" "$APP_SMALI"; then
     echo -e "  ${GREEN}✓${NC} Application 入口已注入 Dispatcher"
 else
     echo -e "  ${RED}✗${NC} Application 入口未注入 Dispatcher"
+    exit 1
 fi
 
 log_step "完成"

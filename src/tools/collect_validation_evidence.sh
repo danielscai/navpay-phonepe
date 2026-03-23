@@ -110,7 +110,7 @@ record_only() {
 
 run_logged "gate_a_cli_backcompat" python3 -m unittest src/cache-manager/tests/test_cli_backcompat.py -v
 run_logged "gate_a_all_tests" python3 -m unittest discover -s src/cache-manager/tests -p 'test_*.py' -v
-run_logged "gate_a_profile_full_plan" python3 src/cache-manager/cache_manager.py profile full plan
+run_logged "gate_a_profile_full_plan" python3 src/cache-manager/orchestrator.py profile full plan
 
 if [ "$RUN_ADB_GATES" = "1" ]; then
     run_logged "gate_b_test_independent" yarn test:independent "$SERIAL"

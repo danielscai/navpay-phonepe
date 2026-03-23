@@ -17,8 +17,8 @@
 - **默认测试模拟器**：`emulator-5554`（后续测试默认使用该串号，除非在脚本参数中显式覆盖）。
 - **Android SDK 依赖**：测试脚本默认在 `$ANDROID_HOME` 或 `~/Library/Android/sdk` 下寻找 build-tools，优先 `35.0.0`；若缺失会自动搜索其他版本的 `zipalign/apksigner`，找不到则报错并提示安装 build-tools。
 - **Java 运行时**：`apksigner` 需要 Java，可用 `JAVA_HOME=/opt/homebrew/opt/openjdk`（macOS Homebrew 默认路径）。测试脚本会自动设置该默认值。
-- **测试 APK 基线**：统一从 `cache/phonepe_decompiled/base_decompiled_clean` 复制到工作目录，避免污染缓存；缓存由 `python3 src/cache-manager/cache_manager.py rebuild` 生成。
-- **缓存管理入口**：`src/cache-manager/cache_manager.py`（依赖关系配置见 `src/cache-manager/cache_manifest.json`）。
+- **测试 APK 基线**：统一从 `cache/phonepe_decompiled/base_decompiled_clean` 复制到工作目录，避免污染缓存；缓存由 `python3 src/cache-manager/orchestrator.py rebuild` 生成。
+- **统一编排入口**：`src/cache-manager/orchestrator.py`（依赖关系配置见 `src/cache-manager/cache_manifest.json`，`src/cache-manager/cache_manager.py` 仅保留兼容壳）。
 - **ADB 守护进程异常**：若出现 `could not install *smartsocket* listener: Operation not permitted`，优先使用 SDK 自带 adb（`$ANDROID_HOME/platform-tools/adb`），并执行 `adb kill-server && adb start-server` 后再重试。
 
 ## 推荐组织方式
@@ -53,17 +53,18 @@
 ## 当前推荐命令与兼容说明
 
 - 推荐主流程（profile，主契约）：
-  - `python3 src/cache-manager/cache_manager.py profile full plan`
-  - `python3 src/cache-manager/cache_manager.py profile full pre-cache`
-  - `python3 src/cache-manager/cache_manager.py profile full inject`
-  - `python3 src/cache-manager/cache_manager.py profile full compile`
-  - `python3 src/cache-manager/cache_manager.py profile full test --serial emulator-5554`（需要 adb/模拟器）
-  - profile 动作集合固定为：`{plan|pre-cache|inject|compile|test}`。
+  - `python3 src/cache-manager/orchestrator.py profile full plan`
+  - `python3 src/cache-manager/orchestrator.py profile full pre-cache`
+  - `python3 src/cache-manager/orchestrator.py profile full build-modules`
+  - `python3 src/cache-manager/orchestrator.py profile full inject`
+  - `python3 src/cache-manager/orchestrator.py profile full compile`
+  - `python3 src/cache-manager/orchestrator.py profile full test --serial emulator-5554`（需要 adb/模拟器）
+  - profile 动作集合固定为：`{plan|pre-cache|build-modules|inject|compile|test}`。
 
 - 旧命令兼容（compatibility-only wrapper，仍可用）：
-  - `python3 src/cache-manager/cache_manager.py sigbypass <action>`
-  - `python3 src/cache-manager/cache_manager.py https <action>`
-  - `python3 src/cache-manager/cache_manager.py phonepehelper <action>`
+  - `python3 src/cache-manager/orchestrator.py sigbypass <action>`
+  - `python3 src/cache-manager/orchestrator.py https <action>`
+  - `python3 src/cache-manager/orchestrator.py phonepehelper <action>`
 
 - 兼容命令定位：
   - 旧命令仅用于模块级独立执行与历史脚本兼容。

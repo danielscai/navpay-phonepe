@@ -29,25 +29,29 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 TOOLS_DIR="$PROJECT_DIR/tools"
 SRC_DIR="$(dirname "$PROJECT_DIR")"
-BUILD_DIR="$PROJECT_DIR/build"
-SMALI_DIR="$BUILD_DIR/smali"
-PINE_SMALI_DIR="$BUILD_DIR/pine_smali"
-PINE_LIB_DIR="$PROJECT_DIR/libs/jni"
 DISPATCHER_INJECT_SCRIPT="$SRC_DIR/_framework/dispatcher/scripts/inject_entry.py"
 DISPATCHER_LIB_SCRIPT="$SRC_DIR/tools/lib/dispatcher.sh"
 
 SKIP_BUILD=0
+ARTIFACT_DIR=""
 TARGET_DIR=""
 
-usage() {
-    echo "用法: $0 [--skip-build] <decompiled_apk_dir>"
-}
+usage() { echo "用法: $0 [--skip-build] [--artifact-dir <artifact_dir>] <decompiled_apk_dir>"; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --skip-build)
             SKIP_BUILD=1
             shift
+            ;;
+        --artifact-dir)
+            if [ $# -lt 2 ]; then
+                log_error "--artifact-dir 需要一个路径参数"
+                usage
+                exit 1
+            fi
+            ARTIFACT_DIR="$2"
+            shift 2
             ;;
         -h|--help)
             usage
@@ -80,16 +84,60 @@ if [ ! -d "$TARGET_DIR" ]; then
     exit 1
 fi
 
+if [ -n "$ARTIFACT_DIR" ] && [ ! -d "$ARTIFACT_DIR" ]; then
+    log_error "artifact 目录不存在: $ARTIFACT_DIR"
+    exit 1
+fi
+
+if [ -n "$ARTIFACT_DIR" ]; then
+    BUILD_DIR="$ARTIFACT_DIR"
+else
+    BUILD_DIR="$PROJECT_DIR/build"
+fi
+SMALI_DIR="$BUILD_DIR/smali"
+PINE_SMALI_DIR="$BUILD_DIR/pine_smali"
+PINE_LIB_DIR="$BUILD_DIR/libs/jni"
+
 log_step "检查编译输出"
 
-# 检查是否已编译
-if [ ! -d "$SMALI_DIR/com/sigbypass" ]; then
-    if [ "$SKIP_BUILD" -eq 1 ]; then
-        log_warn "启用 --skip-build 但签名绕过产物缺失，回退到编译"
-    else
-        log_warn "签名绕过代码未编译，先运行编译..."
+if [ -n "$ARTIFACT_DIR" ]; then
+    if [ ! -d "$SMALI_DIR/com/sigbypass" ]; then
+        log_error "artifact 中缺少签名绕过 smali: $SMALI_DIR/com/sigbypass"
+        exit 1
     fi
-    "$TOOLS_DIR/compile.sh"
+    if [ ! -d "$PINE_SMALI_DIR/top/canyie/pine" ]; then
+        log_error "artifact 中缺少 Pine smali: $PINE_SMALI_DIR/top/canyie/pine"
+        exit 1
+    fi
+    if [ ! -f "$PINE_LIB_DIR/arm64-v8a/libpine.so" ]; then
+        log_error "artifact 中缺少 libpine.so: $PINE_LIB_DIR/arm64-v8a/libpine.so"
+        exit 1
+    fi
+else
+    # 检查是否已编译
+    if [ ! -d "$SMALI_DIR/com/sigbypass" ]; then
+        if [ "$SKIP_BUILD" -eq 1 ]; then
+            log_warn "启用 --skip-build 但签名绕过产物缺失，回退到编译"
+        else
+            log_warn "签名绕过代码未编译，先运行编译..."
+        fi
+        "$TOOLS_DIR/compile.sh"
+    fi
+
+    if [ ! -d "$PINE_SMALI_DIR/top/canyie/pine" ]; then
+        if [ "$SKIP_BUILD" -eq 1 ]; then
+            log_warn "启用 --skip-build 但 Pine 产物缺失，回退到编译"
+        else
+            log_warn "Pine smali 未找到，需要先运行编译..."
+        fi
+        "$TOOLS_DIR/compile.sh"
+    fi
+
+    if [ ! -f "$PINE_LIB_DIR/arm64-v8a/libpine.so" ]; then
+        log_error "libpine.so 未找到: $PINE_LIB_DIR/arm64-v8a/libpine.so"
+        log_error "请确保运行了 compile.sh 来提取 Pine 库"
+        exit 1
+    fi
 fi
 
 log_info "Smali 目录: $SMALI_DIR"
@@ -118,16 +166,6 @@ cp -r "$SMALI_DIR/com" "$TARGET_SMALI_DIR/"
 log_info "已复制 com/sigbypass/* 到 $TARGET_SMALI_DIR"
 
 log_step "2. 复制 Pine Hook 框架"
-
-# 检查 Pine smali 是否存在，如果不存在则编译
-if [ ! -d "$PINE_SMALI_DIR/top/canyie/pine" ]; then
-    if [ "$SKIP_BUILD" -eq 1 ]; then
-        log_warn "启用 --skip-build 但 Pine 产物缺失，回退到编译"
-    else
-        log_warn "Pine smali 未找到，需要先运行编译..."
-    fi
-    "$TOOLS_DIR/compile.sh"
-fi
 
 if [ -d "$PINE_SMALI_DIR/top/canyie/pine" ]; then
     mkdir -p "$TARGET_SMALI_DIR/top/canyie"

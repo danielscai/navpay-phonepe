@@ -8,7 +8,7 @@ from unittest import mock
 CACHE_MANAGER_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(CACHE_MANAGER_DIR))
 
-import cache_manager  # noqa: E402
+import orchestrator as cache_manager  # noqa: E402
 
 
 class ReuseArtifactsTest(unittest.TestCase):

@@ -6,7 +6,7 @@ from unittest import mock
 CACHE_MANAGER_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(CACHE_MANAGER_DIR))
 
-import cache_manager  # noqa: E402
+import orchestrator as cache_manager  # noqa: E402
 
 
 class SmokeModeTest(unittest.TestCase):
@@ -28,13 +28,16 @@ class SmokeModeTest(unittest.TestCase):
         work_dir = Path("/tmp/profile-build")
         primary_spec = {"name": "phonepe_https_interceptor", "log_tag": "HttpInterceptor"}
         with mock.patch.object(cache_manager, "resolve_profile_modules", return_value=["phonepe_https_interceptor"]), \
-            mock.patch.object(cache_manager, "profile_compile", return_value=work_dir), \
+            mock.patch.object(cache_manager, "profile_build_modules") as build_modules_mock, \
+            mock.patch.object(cache_manager, "profile_compile", return_value=work_dir) as compile_mock, \
             mock.patch.object(cache_manager, "resolve_module_spec", return_value=primary_spec), \
             mock.patch.object(cache_manager, "resolve_test_serial", return_value="emulator-5554"), \
             mock.patch.object(cache_manager, "verify_profile_log_tags") as verify_mock, \
             mock.patch.object(cache_manager, "unified_test") as unified_test_mock:
             cache_manager.profile_test(manifest, "https-only", "", smoke=True)
 
+        build_modules_mock.assert_called_once_with(manifest, "https-only")
+        compile_mock.assert_called_once_with(manifest, "https-only", reuse_artifacts=True)
         call = unified_test_mock.call_args
         self.assertEqual(call.args[4], "")
         self.assertEqual(call.args[5], cache_manager.SMOKE_TIMEOUT_SEC)
@@ -47,13 +50,16 @@ class SmokeModeTest(unittest.TestCase):
         work_dir = Path("/tmp/profile-build")
         primary_spec = {"name": "phonepe_sigbypass", "log_tag": "SigBypass"}
         with mock.patch.object(cache_manager, "resolve_profile_modules", return_value=["phonepe_sigbypass"]), \
-            mock.patch.object(cache_manager, "profile_compile", return_value=work_dir), \
+            mock.patch.object(cache_manager, "profile_build_modules") as build_modules_mock, \
+            mock.patch.object(cache_manager, "profile_compile", return_value=work_dir) as compile_mock, \
             mock.patch.object(cache_manager, "resolve_module_spec", return_value=primary_spec), \
             mock.patch.object(cache_manager, "resolve_test_serial", return_value="emulator-5554"), \
             mock.patch.object(cache_manager, "verify_profile_log_tags") as verify_mock, \
             mock.patch.object(cache_manager, "unified_test") as unified_test_mock:
             cache_manager.profile_test(manifest, "full", "", smoke=False)
 
+        build_modules_mock.assert_called_once_with(manifest, "full")
+        compile_mock.assert_called_once_with(manifest, "full", reuse_artifacts=True)
         call = unified_test_mock.call_args
         self.assertEqual(call.args[4], "SigBypass")
         self.assertEqual(call.args[5], cache_manager.DEFAULT_TIMEOUT_SEC)

@@ -29,6 +29,9 @@ This directory contains the unified injector and test helpers used during module
 - Run full profile integration test:
   - `./test_profile_full.sh`
   - `./test_profile_full.sh emulator-5554`
+- Run full profile smoke test through the unified orchestrator:
+  - `./test_profile_smoke.sh`
+  - `./test_profile_smoke.sh full emulator-5554`
 
 ## Unified artifact run directory
 
@@ -70,3 +73,5 @@ With package scripts (root `package.json`):
 
 - `decompile.sh` is a wrapper for the repository root `tools/decompile.sh`.
 - The injector writes `assets/inject_manifest.json` in the target APK directory.
+- `test_profile_smoke.sh` delegates to `python3 src/cache-manager/orchestrator.py profile <name> test --smoke`.
+- The profile smoke path now builds module artifacts once, injects from artifact directories, and reuses the final signed APK when inputs have not changed.
