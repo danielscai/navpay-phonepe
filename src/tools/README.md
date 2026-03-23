@@ -73,5 +73,5 @@ With package scripts (root `package.json`):
 
 - `decompile.sh` is a wrapper for the repository root `tools/decompile.sh`.
 - The injector writes `assets/inject_manifest.json` in the target APK directory.
-- `test_profile_smoke.sh` delegates to `python3 src/cache-manager/orchestrator.py profile <name> test --smoke`.
+- `test_profile_smoke.sh` delegates to `python3 src/build-orchestrator/orchestrator.py test --profile <name> --smoke`.
 - The profile smoke path now builds module artifacts once, injects from artifact directories, and reuses the final signed APK when inputs have not changed.

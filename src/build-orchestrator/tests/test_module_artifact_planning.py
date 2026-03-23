@@ -11,11 +11,10 @@ import orchestrator as cache_manager  # noqa: E402
 
 
 class ModuleArtifactPlanningTest(unittest.TestCase):
-    def test_profile_parser_accepts_build_modules_action(self) -> None:
-        args = cache_manager.build_parser().parse_args(["profile", "full", "build-modules"])
-        self.assertEqual(args.cmd, "profile")
-        self.assertEqual(args.name, "full")
-        self.assertEqual(args.action, "build-modules")
+    def test_top_level_parser_accepts_build_modules_action(self) -> None:
+        args = cache_manager.build_parser().parse_args(["build-modules"])
+        self.assertEqual(args.cmd, "build-modules")
+        self.assertEqual(args.profile, "full")
 
     def test_profile_plan_build_returns_resolved_profile_modules(self) -> None:
         manifest = {"any": {}}

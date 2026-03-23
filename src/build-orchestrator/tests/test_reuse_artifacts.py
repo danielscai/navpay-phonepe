@@ -14,12 +14,11 @@ import orchestrator as cache_manager  # noqa: E402
 class ReuseArtifactsTest(unittest.TestCase):
     def test_reuse_artifacts_flag_is_exposed_for_profile_compile(self) -> None:
         args = cache_manager.build_parser().parse_args([
-            "profile",
-            "full",
             "compile",
             "--reuse-artifacts",
         ])
         self.assertIs(args.reuse_artifacts, True)
+        self.assertEqual(args.profile, "full")
 
     def test_profile_compile_reuse_cache_hit_skips_rebuild(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:

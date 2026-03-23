@@ -27,6 +27,7 @@ EMULATOR_CONFIG_PATH = SCRIPT_DIR / "emulators.json"
 
 DEFAULT_PACKAGE = "com.phonepe.app"
 DEFAULT_SERIAL = "emulator-5554"
+DEFAULT_PROFILE = "full"
 SIGBYPASS_BUILD_DIR = "cache/phonepe_sigbypass_build"
 HTTPS_BUILD_DIR = "cache/phonepe_https_interceptor_build"
 PHONEPEHELPER_BUILD_DIR = "cache/phonepe_phonepehelper_build"
@@ -124,6 +125,8 @@ LEGACY_ALIAS_TO_MODULE = {
     "https": "phonepe_https_interceptor",
     "phonepehelper": "phonepe_phonepehelper",
 }
+
+TOP_LEVEL_PROFILE_ACTIONS = {"plan", "pre-cache", "build-modules", "inject", "compile", "test"}
 
 
 def load_manifest():
@@ -1652,16 +1655,58 @@ def profile_test(manifest, profile_name: str, serial: str, smoke: bool = False):
 
 def dispatch_legacy_alias(manifest, args):
     # Compatibility-only wrapper: legacy aliases forward to single-module actions.
-    # New integrations should call `profile <name> <action>` as the primary path.
+    # New integrations should call the top-level orchestrator actions as the primary path.
     spec = resolve_module_spec(manifest, LEGACY_ALIAS_TO_MODULE[args.cmd])
     run_module_action(spec, args.action, args.delete, args.serial or "")
 
 
+def run_profile_action(manifest, action: str, profile_name: str, serial: str, smoke: bool, reuse_artifacts: bool):
+    if smoke and action != "test":
+        raise RuntimeError("--smoke is only supported for 'test'")
+    if reuse_artifacts and action != "compile":
+        raise RuntimeError("--reuse-artifacts is only supported for 'compile'")
+
+    if action == "plan":
+        modules = resolve_profile_modules(manifest, profile_name)
+        print(json.dumps(modules, ensure_ascii=True))
+    elif action == "pre-cache":
+        profile_pre_cache(manifest, profile_name)
+    elif action == "build-modules":
+        profile_build_modules(manifest, profile_name)
+    elif action == "inject":
+        profile_inject(manifest, profile_name)
+    elif action == "compile":
+        profile_compile(manifest, profile_name, reuse_artifacts=reuse_artifacts)
+    elif action == "test":
+        profile_test(manifest, profile_name, serial, smoke=smoke)
+    else:
+        raise RuntimeError(f"Unknown profile action: {action}")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Cache manager")
+    parser = argparse.ArgumentParser(description="Build orchestrator")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    # First-class command contract: all new workflows are profile-based.
+    def add_profile_args(cmd_parser, *, allow_serial: bool = True, allow_smoke: bool = False, allow_reuse: bool = False):
+        cmd_parser.add_argument("--profile", default=DEFAULT_PROFILE)
+        if allow_serial:
+            cmd_parser.add_argument("--serial")
+        if allow_smoke:
+            cmd_parser.add_argument("--smoke", action="store_true", default=False)
+        if allow_reuse:
+            cmd_parser.add_argument("--reuse-artifacts", action="store_true", default=False)
+
+    for action in ("plan", "pre-cache", "build-modules", "inject"):
+        action_parser = sub.add_parser(action)
+        add_profile_args(action_parser, allow_serial=False)
+
+    compile_parser = sub.add_parser("compile")
+    add_profile_args(compile_parser, allow_serial=False, allow_reuse=True)
+
+    test_parser = sub.add_parser("test")
+    add_profile_args(test_parser, allow_serial=True, allow_smoke=True)
+
+    # Compatibility-only contract: `profile <name> <action>` remains accepted.
     profile = sub.add_parser("profile")
     profile.add_argument("name")
     profile.add_argument("action", choices=["plan", "pre-cache", "build-modules", "inject", "compile", "test"])
@@ -1727,26 +1772,24 @@ def main(argv=None):
         cmd_reset(manifest, args.target)
     elif args.cmd == "rebuild":
         cmd_rebuild(manifest, args.target, args.serial, args.package, args.with_downstream)
+    elif args.cmd in TOP_LEVEL_PROFILE_ACTIONS:
+        run_profile_action(
+            manifest,
+            args.cmd,
+            args.profile,
+            getattr(args, "serial", "") or "",
+            getattr(args, "smoke", False),
+            getattr(args, "reuse_artifacts", False),
+        )
     elif args.cmd == "profile":
-        if args.smoke and args.action != "test":
-            raise RuntimeError("--smoke is only supported for 'profile <name> test'")
-        if args.reuse_artifacts and args.action != "compile":
-            raise RuntimeError("--reuse-artifacts is only supported for 'profile <name> compile'")
-        if args.action == "plan":
-            modules = resolve_profile_modules(manifest, args.name)
-            print(json.dumps(modules, ensure_ascii=True))
-        elif args.action == "pre-cache":
-            profile_pre_cache(manifest, args.name)
-        elif args.action == "build-modules":
-            profile_build_modules(manifest, args.name)
-        elif args.action == "inject":
-            profile_inject(manifest, args.name)
-        elif args.action == "compile":
-            profile_compile(manifest, args.name, reuse_artifacts=args.reuse_artifacts)
-        elif args.action == "test":
-            profile_test(manifest, args.name, args.serial or "", smoke=args.smoke)
-        else:
-            raise RuntimeError(f"Unknown profile action: {args.action}")
+        run_profile_action(
+            manifest,
+            args.action,
+            args.name,
+            args.serial or "",
+            args.smoke,
+            args.reuse_artifacts,
+        )
     elif args.cmd in LEGACY_ALIAS_TO_MODULE:
         dispatch_legacy_alias(manifest, args)
     else:

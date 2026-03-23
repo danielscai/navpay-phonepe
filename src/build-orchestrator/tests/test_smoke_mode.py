@@ -11,17 +11,15 @@ import orchestrator as cache_manager  # noqa: E402
 
 class SmokeModeTest(unittest.TestCase):
     def test_profile_test_parser_accepts_smoke_flag(self) -> None:
-        args = cache_manager.build_parser().parse_args(["profile", "full", "test", "--smoke"])
-        self.assertEqual(args.cmd, "profile")
-        self.assertEqual(args.name, "full")
-        self.assertEqual(args.action, "test")
+        args = cache_manager.build_parser().parse_args(["test", "--smoke"])
+        self.assertEqual(args.cmd, "test")
+        self.assertEqual(args.profile, "full")
         self.assertIs(args.smoke, True)
 
     def test_smoke_flag_only_allowed_for_profile_test(self) -> None:
         with mock.patch.object(cache_manager, "load_manifest", return_value={}):
-            with self.assertRaises(RuntimeError) as exc:
-                cache_manager.main(["profile", "full", "plan", "--smoke"])
-        self.assertIn("only supported", str(exc.exception))
+            with self.assertRaises(SystemExit):
+                cache_manager.main(["plan", "--smoke"])
 
     def test_profile_test_smoke_skips_log_tag_check(self) -> None:
         manifest = {}

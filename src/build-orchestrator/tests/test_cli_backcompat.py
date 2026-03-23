@@ -16,14 +16,12 @@ import orchestrator as cache_manager  # noqa: E402
 
 
 class CliBackcompatTest(unittest.TestCase):
-    def test_profile_parser_contract(self) -> None:
+    def test_top_level_plan_parser_contract(self) -> None:
         parser = cache_manager.build_parser()
 
-        args = parser.parse_args(["profile", "full", "plan"])
-        self.assertEqual(args.cmd, "profile")
-        self.assertEqual(args.name, "full")
-        self.assertEqual(args.action, "plan")
-        self.assertIsNone(args.serial)
+        args = parser.parse_args(["plan"])
+        self.assertEqual(args.cmd, "plan")
+        self.assertEqual(args.profile, "full")
 
     def test_legacy_alias_subcommands_exist(self) -> None:
         parser = cache_manager.build_parser()
@@ -87,7 +85,7 @@ class CliBackcompatTest(unittest.TestCase):
         with mock.patch.object(cache_manager, "load_manifest", return_value=manifest), \
             mock.patch.object(cache_manager, "resolve_profile", return_value=["ghost_module"]):
             with self.assertRaises(RuntimeError) as exc:
-                cache_manager.main(["profile", "full", "plan"])
+                cache_manager.main(["plan"])
         self.assertIn("unknown modules", str(exc.exception).lower())
 
     def test_validate_cache_integrity_fails_when_smali_missing(self) -> None:

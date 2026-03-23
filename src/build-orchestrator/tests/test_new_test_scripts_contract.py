@@ -14,10 +14,10 @@ class NewTestScriptsContractTest(unittest.TestCase):
     def test_test_scripts_prepare_workspace_with_pre_cache(self) -> None:
         full_script = Path("src/tools/test_profile_full.sh").read_text(encoding="utf-8")
         independent_script = Path("src/tools/test_module_independent.sh").read_text(encoding="utf-8")
-        self.assertIn("profile full pre-cache", full_script)
-        self.assertIn("profile sigbypass-only pre-cache", independent_script)
-        self.assertIn("profile https-only pre-cache", independent_script)
-        self.assertIn("profile phonepehelper-only pre-cache", independent_script)
+        self.assertIn("orchestrator.py pre-cache", full_script)
+        self.assertIn("--profile sigbypass-only", independent_script)
+        self.assertIn("--profile https-only", independent_script)
+        self.assertIn("--profile phonepehelper-only", independent_script)
 
 
 if __name__ == "__main__":
