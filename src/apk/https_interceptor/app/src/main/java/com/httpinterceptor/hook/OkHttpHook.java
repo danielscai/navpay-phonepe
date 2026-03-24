@@ -3,6 +3,7 @@ package com.httpinterceptor.hook;
 import android.util.Log;
 
 import com.httpinterceptor.interceptor.RemoteLoggingInterceptor;
+import com.httpinterceptor.interceptor.LogSender;
 
 import okhttp3.OkHttpClient;
 
@@ -29,7 +30,10 @@ public class OkHttpHook {
      */
     public static void init(String serverUrl) {
         initialized = true;
-        Log.i(TAG, "OkHttpHook initialized");
+        if (serverUrl != null && !serverUrl.trim().isEmpty()) {
+            LogSender.setServerUrl(serverUrl);
+        }
+        Log.i(TAG, "OkHttpHook initialized, upload endpoint=" + LogSender.getServerUrl());
     }
 
     /**

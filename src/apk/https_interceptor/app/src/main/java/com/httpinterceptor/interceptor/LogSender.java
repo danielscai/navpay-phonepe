@@ -28,14 +28,15 @@ public class LogSender {
 
     private static final String TAG = "LogSender";
 
-    // 默认服务器地址 (通过 adb reverse 映射)
-    private static String serverUrl = "http://127.0.0.1:8088/api/log";
+    // 默认服务器地址 (debug 保留旧 log server，release 走 navpay-admin)
+    private static String serverUrl = LogEndpointResolver.resolve((String) null);
+    private static final int MAX_SEND_RETRIES = 3;
 
     // 单例
     private static volatile LogSender instance;
 
     // 日志队列
-    private final LinkedBlockingQueue<JSONObject> logQueue;
+    private final LinkedBlockingQueue<QueuedLog> logQueue;
 
     // 发送线程池
     private final ExecutorService executor;
@@ -48,6 +49,16 @@ public class LogSender {
     private static final int MAX_FAILURES = 10;
     private static final String DEFAULT_SOURCE_APP = "phonepe";
     private static volatile String cachedAndroidId;
+
+    private static final class QueuedLog {
+        final JSONObject payload;
+        final int attempts;
+
+        QueuedLog(JSONObject payload, int attempts) {
+            this.payload = payload;
+            this.attempts = attempts;
+        }
+    }
 
     private LogSender() {
         logQueue = new LinkedBlockingQueue<>(1000);
@@ -72,7 +83,7 @@ public class LogSender {
      * 设置服务器地址
      */
     public static void setServerUrl(String url) {
-        serverUrl = url;
+        serverUrl = LogEndpointResolver.resolve(LogEndpointResolver.isDebugBuild(), url);
         Log.i(TAG, "Server URL set to: " + url);
     }
 
@@ -101,9 +112,9 @@ public class LogSender {
         JSONObject payload = enrichPayload(copyPayload(logData));
 
         // 添加到队列，如果队列满了则丢弃最旧的
-        if (!logQueue.offer(payload)) {
+        if (!logQueue.offer(new QueuedLog(payload, 0))) {
             logQueue.poll();
-            logQueue.offer(payload);
+            logQueue.offer(new QueuedLog(payload, 0));
         }
     }
 
@@ -130,12 +141,23 @@ public class LogSender {
     private void sendLoop() {
         while (!Thread.currentThread().isInterrupted()) {
             try {
-                JSONObject log = logQueue.take();
-                boolean success = doSend(log);
+                QueuedLog log = logQueue.take();
+                boolean success = doSend(log.payload);
 
                 if (success) {
                     failureCount = 0;
                 } else {
+                    if (log.attempts < MAX_SEND_RETRIES) {
+                        // 轻量重试，避免启动阶段瞬时抖动导致日志丢失
+                        int nextAttempts = log.attempts + 1;
+                        long backoffMs = 300L * nextAttempts;
+                        Thread.sleep(backoffMs);
+                        if (!logQueue.offer(new QueuedLog(log.payload, nextAttempts))) {
+                            logQueue.poll();
+                            logQueue.offer(new QueuedLog(log.payload, nextAttempts));
+                        }
+                        continue;
+                    }
                     failureCount++;
                     if (failureCount >= MAX_FAILURES) {
                         Log.w(TAG, "Too many failures, pausing for 30 seconds");
@@ -154,9 +176,22 @@ public class LogSender {
      * 执行发送
      */
     private boolean doSend(JSONObject log) {
+        String endpoint = resolveEndpointForSend();
+        return sendToEndpoint(endpoint, log);
+    }
+
+    private String resolveEndpointForSend() {
+        String primary = serverUrl == null ? "" : serverUrl.trim();
+        if (primary.isEmpty()) {
+            return LogEndpointResolver.resolve((String) null);
+        }
+        return primary;
+    }
+
+    private boolean sendToEndpoint(String endpoint, JSONObject log) {
         HttpURLConnection connection = null;
         try {
-            URL url = new URL(serverUrl);
+            URL url = new URL(endpoint);
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("POST");
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
@@ -175,11 +210,11 @@ public class LogSender {
             if (responseCode == 200) {
                 return true;
             } else {
-                Log.w(TAG, "Server returned: " + responseCode);
+                Log.w(TAG, "Server returned: " + responseCode + ", endpoint=" + endpoint);
                 return false;
             }
         } catch (IOException e) {
-            Log.w(TAG, "Failed to send log: " + e.getMessage());
+            Log.w(TAG, "Failed to send log to " + endpoint + ": " + e.getMessage());
             return false;
         } finally {
             if (connection != null) {

@@ -143,6 +143,7 @@ mkdir -p "$INTERCEPTOR_SMALI_DIR" "$HOOK_SMALI_DIR"
 log_step "3. 复制 HTTPS interceptor smali"
 copy_artifact_files "com/httpinterceptor/interceptor/RemoteLoggingInterceptor*.smali" "$INTERCEPTOR_SMALI_DIR" "RemoteLoggingInterceptor"
 copy_artifact_files "com/httpinterceptor/interceptor/LogSender*.smali" "$INTERCEPTOR_SMALI_DIR" "LogSender"
+copy_artifact_files "com/httpinterceptor/interceptor/LogEndpointResolver*.smali" "$INTERCEPTOR_SMALI_DIR" "LogEndpointResolver"
 copy_artifact_files "com/httpinterceptor/hook/HookUtil*.smali" "$HOOK_SMALI_DIR" "HookUtil"
 
 log_info "smali 产物复制完成"
@@ -317,6 +318,15 @@ if [ ${#log_sender_files[@]} -eq 0 ] || [ ! -f "${log_sender_files[0]}" ]; then
     echo -e "  ${RED}✗${NC} LogSender*.smali - 缺失!"
 else
     for f in "${log_sender_files[@]}"; do
+        [ -f "$f" ] && check_file "$f"
+    done
+fi
+
+resolver_files=("$INTERCEPTOR_SMALI_DIR"/LogEndpointResolver*.smali)
+if [ ${#resolver_files[@]} -eq 0 ] || [ ! -f "${resolver_files[0]}" ]; then
+    echo -e "  ${RED}✗${NC} LogEndpointResolver*.smali - 缺失!"
+else
+    for f in "${resolver_files[@]}"; do
         [ -f "$f" ] && check_file "$f"
     done
 fi
