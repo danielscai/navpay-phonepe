@@ -14,7 +14,7 @@
 
 **Files:**
 - Modify: `src/build-orchestrator/cache_manifest.json`
-- Modify: `src/tools/README.md`
+- Modify: `src/pipeline/tools/README.md`
 - Modify: `src/README.md`
 - Test: `src/build-orchestrator/tests/test_module_artifact_planning.py`
 
@@ -24,9 +24,9 @@
 def test_resolve_module_spec_points_only_to_supported_scripts():
     manifest = cache_manager.load_manifest()
     supported = {
-        "phonepe_sigbypass": "src/signature_bypass/tools/build_artifacts.sh",
-        "phonepe_https_interceptor": "src/https_interceptor/scripts/build_smali_artifacts.sh",
-        "phonepe_phonepehelper": "src/phonepehelper/scripts/build_artifacts.sh",
+        "phonepe_sigbypass": "src/apk/signature_bypass/tools/build_artifacts.sh",
+        "phonepe_https_interceptor": "src/apk/https_interceptor/scripts/build_smali_artifacts.sh",
+        "phonepe_phonepehelper": "src/apk/phonepehelper/scripts/build_artifacts.sh",
     }
     for module, command in supported.items():
         spec = cache_manager.resolve_module_spec(manifest, module)
@@ -42,9 +42,9 @@ Expected: FAIL if manifest/docs still point to unsupported or duplicate script e
 
 ```json
 {
-  "phonepe_sigbypass": { "builder": { "command": "src/signature_bypass/tools/build_artifacts.sh" } },
-  "phonepe_https_interceptor": { "builder": { "command": "src/https_interceptor/scripts/build_smali_artifacts.sh" } },
-  "phonepe_phonepehelper": { "builder": { "command": "src/phonepehelper/scripts/build_artifacts.sh" } }
+  "phonepe_sigbypass": { "builder": { "command": "src/apk/signature_bypass/tools/build_artifacts.sh" } },
+  "phonepe_https_interceptor": { "builder": { "command": "src/apk/https_interceptor/scripts/build_smali_artifacts.sh" } },
+  "phonepe_phonepehelper": { "builder": { "command": "src/apk/phonepehelper/scripts/build_artifacts.sh" } }
 }
 ```
 
@@ -52,7 +52,7 @@ Document that the supported surface is:
 - orchestrator commands in `src/build-orchestrator/orchestrator.py`
 - module artifact builders
 - module injectors consumed by orchestrator
-- smoke wrappers in `src/tools/`
+- smoke wrappers in `src/pipeline/tools/`
 
 **Step 4: Run test to verify it passes**
 
@@ -62,16 +62,16 @@ Expected: PASS
 **Step 5: Commit**
 
 ```bash
-git add src/build-orchestrator/cache_manifest.json src/tools/README.md src/README.md src/build-orchestrator/tests/test_module_artifact_planning.py
+git add src/build-orchestrator/cache_manifest.json src/pipeline/tools/README.md src/README.md src/build-orchestrator/tests/test_module_artifact_planning.py
 git commit -m "docs: define supported orchestrator script surface"
 ```
 
 ### Task 2: Remove hidden compile fallbacks from module injectors
 
 **Files:**
-- Modify: `src/signature_bypass/scripts/inject.sh`
-- Modify: `src/phonepehelper/scripts/inject.sh`
-- Modify: `src/https_interceptor/scripts/inject.sh`
+- Modify: `src/apk/signature_bypass/scripts/inject.sh`
+- Modify: `src/apk/phonepehelper/scripts/inject.sh`
+- Modify: `src/apk/https_interceptor/scripts/inject.sh`
 - Test: `src/build-orchestrator/tests/test_manifest_decoupling.py`
 - Test: `src/build-orchestrator/tests/test_module_artifact_planning.py`
 
@@ -80,9 +80,9 @@ git commit -m "docs: define supported orchestrator script surface"
 ```python
 def test_injectors_do_not_trigger_module_local_builds():
     for path in (
-        Path("src/signature_bypass/scripts/inject.sh"),
-        Path("src/phonepehelper/scripts/inject.sh"),
-        Path("src/https_interceptor/scripts/inject.sh"),
+        Path("src/apk/signature_bypass/scripts/inject.sh"),
+        Path("src/apk/phonepehelper/scripts/inject.sh"),
+        Path("src/apk/https_interceptor/scripts/inject.sh"),
     ):
         text = path.read_text(encoding="utf-8")
         assert "compile.sh" not in text
@@ -115,17 +115,17 @@ Expected: PASS
 **Step 5: Commit**
 
 ```bash
-git add src/signature_bypass/scripts/inject.sh src/phonepehelper/scripts/inject.sh src/https_interceptor/scripts/inject.sh src/build-orchestrator/tests/test_manifest_decoupling.py src/build-orchestrator/tests/test_module_artifact_planning.py
+git add src/apk/signature_bypass/scripts/inject.sh src/apk/phonepehelper/scripts/inject.sh src/apk/https_interceptor/scripts/inject.sh src/build-orchestrator/tests/test_manifest_decoupling.py src/build-orchestrator/tests/test_module_artifact_planning.py
 git commit -m "refactor: make module injectors artifact-only"
 ```
 
 ### Task 3: Collapse duplicate compile entrypoints to the fastest single path
 
 **Files:**
-- Modify: `src/signature_bypass/tools/build_artifacts.sh`
-- Modify: `src/signature_bypass/tools/compile.sh`
-- Modify: `src/phonepehelper/scripts/build_artifacts.sh`
-- Modify: `src/phonepehelper/scripts/compile.sh`
+- Modify: `src/apk/signature_bypass/tools/build_artifacts.sh`
+- Modify: `src/apk/signature_bypass/tools/compile.sh`
+- Modify: `src/apk/phonepehelper/scripts/build_artifacts.sh`
+- Modify: `src/apk/phonepehelper/scripts/compile.sh`
 - Test: `src/build-orchestrator/tests/test_module_artifact_planning.py`
 
 **Step 1: Write the failing test**
@@ -135,8 +135,8 @@ def test_builder_fingerprint_inputs_reference_single_build_entry_per_module():
     manifest = cache_manager.load_manifest()
     sig = cache_manager.resolve_module_spec(manifest, "phonepe_sigbypass")
     helper = cache_manager.resolve_module_spec(manifest, "phonepe_phonepehelper")
-    assert cache_manager.REPO_ROOT / "src/signature_bypass/tools/build_artifacts.sh" in sig["fingerprint_inputs"]
-    assert cache_manager.REPO_ROOT / "src/phonepehelper/scripts/build_artifacts.sh" in helper["fingerprint_inputs"]
+    assert cache_manager.REPO_ROOT / "src/apk/signature_bypass/tools/build_artifacts.sh" in sig["fingerprint_inputs"]
+    assert cache_manager.REPO_ROOT / "src/apk/phonepehelper/scripts/build_artifacts.sh" in helper["fingerprint_inputs"]
 ```
 
 **Step 2: Run test to verify it fails**
@@ -166,22 +166,22 @@ Expected: PASS
 **Step 5: Commit**
 
 ```bash
-git add src/signature_bypass/tools/build_artifacts.sh src/signature_bypass/tools/compile.sh src/phonepehelper/scripts/build_artifacts.sh src/phonepehelper/scripts/compile.sh src/build-orchestrator/tests/test_module_artifact_planning.py
+git add src/apk/signature_bypass/tools/build_artifacts.sh src/apk/signature_bypass/tools/compile.sh src/apk/phonepehelper/scripts/build_artifacts.sh src/apk/phonepehelper/scripts/compile.sh src/build-orchestrator/tests/test_module_artifact_planning.py
 git commit -m "perf: streamline module artifact builders"
 ```
 
 ### Task 4: Delete obsolete legacy scripts and their test/docs references
 
 **Files:**
-- Delete: `src/signature_bypass/tools/inject.sh`
-- Delete: `src/signature_bypass/tools/merge.sh`
-- Delete: `src/signature_bypass/tools/inject_hook.py`
-- Delete: `src/signature_bypass/scripts/verify_injection.sh`
-- Delete: `src/https_interceptor/build_and_install.sh`
-- Delete: `src/tools/inject.sh`
-- Delete: `src/tools/test_signature_bypass.sh`
-- Modify: `src/tools/README.md`
-- Modify: `src/signature_bypass/README.md`
+- Delete: `src/apk/signature_bypass/tools/inject.sh`
+- Delete: `src/apk/signature_bypass/tools/merge.sh`
+- Delete: `src/apk/signature_bypass/tools/inject_hook.py`
+- Delete: `src/apk/signature_bypass/scripts/verify_injection.sh`
+- Delete: `src/apk/https_interceptor/build_and_install.sh`
+- Delete: `src/pipeline/tools/inject.sh`
+- Delete: `src/pipeline/tools/test_signature_bypass.sh`
+- Modify: `src/pipeline/tools/README.md`
+- Modify: `src/apk/signature_bypass/README.md`
 - Test: `src/build-orchestrator/tests/test_new_test_scripts_contract.py`
 - Test: `src/build-orchestrator/tests/test_entry_contract.py`
 
@@ -190,13 +190,13 @@ git commit -m "perf: streamline module artifact builders"
 ```python
 def test_removed_legacy_scripts_no_longer_exist():
     removed = [
-        Path("src/signature_bypass/tools/inject.sh"),
-        Path("src/signature_bypass/tools/merge.sh"),
-        Path("src/signature_bypass/tools/inject_hook.py"),
-        Path("src/signature_bypass/scripts/verify_injection.sh"),
-        Path("src/https_interceptor/build_and_install.sh"),
-        Path("src/tools/inject.sh"),
-        Path("src/tools/test_signature_bypass.sh"),
+        Path("src/apk/signature_bypass/tools/inject.sh"),
+        Path("src/apk/signature_bypass/tools/merge.sh"),
+        Path("src/apk/signature_bypass/tools/inject_hook.py"),
+        Path("src/apk/signature_bypass/scripts/verify_injection.sh"),
+        Path("src/apk/https_interceptor/build_and_install.sh"),
+        Path("src/pipeline/tools/inject.sh"),
+        Path("src/pipeline/tools/test_signature_bypass.sh"),
     ]
     for path in removed:
         assert not path.exists()
@@ -212,12 +212,12 @@ Expected: FAIL because files still exist and docs still mention them.
 Delete the obsolete files.
 Update docs to point only to:
 - `yarn orch:*`
-- `src/tools/test_profile_smoke.sh`
-- `src/tools/test_profile_full.sh`
-- `src/tools/test_module_independent.sh`
-- `src/tools/archive_apk.sh`
-- `src/tools/behavior_probe.sh`
-- `src/tools/compare_behavior.sh`
+- `src/pipeline/tools/test_profile_smoke.sh`
+- `src/pipeline/tools/test_profile_full.sh`
+- `src/pipeline/tools/test_module_independent.sh`
+- `src/pipeline/tools/archive_apk.sh`
+- `src/pipeline/tools/behavior_probe.sh`
+- `src/pipeline/tools/compare_behavior.sh`
 
 **Step 4: Run test to verify it passes**
 
@@ -227,16 +227,16 @@ Expected: PASS
 **Step 5: Commit**
 
 ```bash
-git add -A src/signature_bypass src/https_interceptor src/tools src/build-orchestrator/tests src/signature_bypass/README.md
+git add -A src/apk/signature_bypass src/apk/https_interceptor src/pipeline/tools src/build-orchestrator/tests src/apk/signature_bypass/README.md
 git commit -m "chore: remove legacy script entrypoints"
 ```
 
 ### Task 5: Tighten remaining smoke wrappers to minimal orchestrator delegation
 
 **Files:**
-- Modify: `src/tools/test_profile_smoke.sh`
-- Modify: `src/tools/test_profile_full.sh`
-- Modify: `src/tools/test_module_independent.sh`
+- Modify: `src/pipeline/tools/test_profile_smoke.sh`
+- Modify: `src/pipeline/tools/test_profile_full.sh`
+- Modify: `src/pipeline/tools/test_module_independent.sh`
 - Modify: `package.json`
 - Test: `src/build-orchestrator/tests/test_new_test_scripts_contract.py`
 
@@ -245,9 +245,9 @@ git commit -m "chore: remove legacy script entrypoints"
 ```python
 def test_smoke_wrappers_delegate_only_to_orchestrator():
     for path in (
-        Path("src/tools/test_profile_smoke.sh"),
-        Path("src/tools/test_profile_full.sh"),
-        Path("src/tools/test_module_independent.sh"),
+        Path("src/pipeline/tools/test_profile_smoke.sh"),
+        Path("src/pipeline/tools/test_profile_full.sh"),
+        Path("src/pipeline/tools/test_module_independent.sh"),
     ):
         text = path.read_text(encoding="utf-8")
         assert "orchestrator.py" in text
@@ -282,7 +282,7 @@ Expected: PASS
 **Step 5: Commit**
 
 ```bash
-git add src/tools/test_profile_smoke.sh src/tools/test_profile_full.sh src/tools/test_module_independent.sh package.json src/build-orchestrator/tests/test_new_test_scripts_contract.py
+git add src/pipeline/tools/test_profile_smoke.sh src/pipeline/tools/test_profile_full.sh src/pipeline/tools/test_module_independent.sh package.json src/build-orchestrator/tests/test_new_test_scripts_contract.py
 git commit -m "refactor: slim smoke wrapper scripts"
 ```
 
@@ -290,7 +290,7 @@ git commit -m "refactor: slim smoke wrapper scripts"
 
 **Files:**
 - Modify: `src/build-orchestrator/README.md`
-- Modify: `src/tools/README.md`
+- Modify: `src/pipeline/tools/README.md`
 - Test: `src/build-orchestrator/tests/test_cli_backcompat.py`
 - Test: `src/build-orchestrator/tests/test_module_artifact_planning.py`
 - Test: `src/build-orchestrator/tests/test_smoke_mode.py`
@@ -334,6 +334,6 @@ Expected:
 **Step 5: Commit**
 
 ```bash
-git add src/build-orchestrator/README.md src/tools/README.md src/build-orchestrator/tests
+git add src/build-orchestrator/README.md src/pipeline/tools/README.md src/build-orchestrator/tests
 git commit -m "test: verify orchestrator-first script cleanup"
 ```

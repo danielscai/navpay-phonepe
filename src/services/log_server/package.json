@@ -1,0 +1,21 @@
+{
+  "name": "https-interceptor-log-server",
+  "version": "1.0.0",
+  "description": "HTTPS 请求拦截日志服务器",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "concurrently \"node --watch src/server.js\" \"livereload public -w 500 -d\"",
+    "dev:server": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "sql.js": "^1.10.2",
+    "express": "^4.18.2",
+    "ws": "^8.16.0",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "livereload": "^0.9.3"
+  }
+}

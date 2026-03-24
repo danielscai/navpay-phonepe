@@ -1,7 +1,7 @@
 # Pine 注入与 pehelp 测试流程记录
 
 ## 背景
-- Pine 注入模块位于：`src/signature_bypass`
+- Pine 注入模块位于：`src/apk/signature_bypass`
 - 需要通过一系列构建/预缓存步骤，才能在 pehelp 模拟器上测试
 - 目前只有一个已登录的 PhonePe 账号，且运行在 pehelp 对应的模拟器中
 

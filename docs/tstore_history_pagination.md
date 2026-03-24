@@ -13,11 +13,11 @@
 脚本位置：`tools/fetch_tstore_history.py`
 
 功能：
-- 从 `src/log_server/data/logs.db` 中读取最新的 tstore 请求头与 URL 参数。
+- 从 `src/services/log_server/data/logs.db` 中读取最新的 tstore 请求头与 URL 参数。
 - 以 `fromTimestamp=0` 开始分页请求，逐页推进。
 - 合并所有 `changes` 去重后写入：
   - `/tmp/tstore_changes_all.json`
-  - `src/log_server/public/transactions.html`（用于展示）
+  - `src/services/log_server/public/transactions.html`（用于展示）
 
 执行方式：
 ```bash

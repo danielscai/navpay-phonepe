@@ -21,6 +21,6 @@
 3. 保持开关开启，直接点击“发送”即可自动注入 checksum
 
 ## 相关文件
-- `src/log_server/src/server.js`
-- `src/log_server/public/index.html`
-- `src/log_server/public/checksum.html`
+- `src/services/log_server/src/server.js`
+- `src/services/log_server/public/index.html`
+- `src/services/log_server/public/checksum.html`

@@ -1,0 +1,14 @@
+{
+  "emulators": [
+    {
+      "name": "phonepe_nologin",
+      "avd_name": "phonepe_nologin",
+      "modules": ["phonepe_https_interceptor","phonepe_sigbypass"]
+    },
+    {
+      "name": "phonepe_loggedin",
+      "avd_name": "phonpe_loggedin1",
+      "modules": ["phonepe_phonepehelper"]
+    }
+  ]
+}

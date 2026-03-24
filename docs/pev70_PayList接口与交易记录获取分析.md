@@ -833,8 +833,8 @@ public static void printHeaders(String str, Request.Builder builder) {
 | AscTransactionSyncManager | `phonepe_original_jadx/.../datasource/sync/AscTransactionSyncManager.java` | 升序同步管理器 |
 | DescTransactionSyncManager | `phonepe_original_jadx/.../datasource/sync/DescTransactionSyncManager.java` | 降序同步管理器 |
 | PhonePeHelper | `pev70_jadx/.../com/PhonePeTweak/Def/PhonePeHelper.java` | pev70 的核心 Hook 工具类 |
-| RemoteLoggingInterceptor | `src/https_interceptor/.../interceptor/RemoteLoggingInterceptor.java` | HTTP 请求拦截器 |
-| log_server | `src/log_server/src/server.js` | 日志接收服务器 |
+| RemoteLoggingInterceptor | `src/apk/https_interceptor/.../interceptor/RemoteLoggingInterceptor.java` | HTTP 请求拦截器 |
+| log_server | `src/services/log_server/src/server.js` | 日志接收服务器 |
 
 ---
 

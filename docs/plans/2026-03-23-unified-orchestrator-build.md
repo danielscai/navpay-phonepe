@@ -45,9 +45,9 @@ Read:
 - `src/cache-manager/cache_manager.py`
 - `src/cache-manager/cache_manifest.json`
 - `src/cache-manager/cache_profiles.json`
-- `src/signature_bypass/scripts/inject.sh`
-- `src/https_interceptor/scripts/inject.sh`
-- `src/phonepehelper/scripts/inject.sh`
+- `src/apk/signature_bypass/scripts/inject.sh`
+- `src/apk/https_interceptor/scripts/inject.sh`
+- `src/apk/phonepehelper/scripts/inject.sh`
 
 Expected: clear mapping from old module-specific behavior to new artifact schema.
 
@@ -284,13 +284,13 @@ Extend the planning test:
                 "source_subdir": "base_decompiled_clean",
                 "reset_paths": ["smali/com/phonepe/app/PhonePeApplication.smali"],
                 "build_dir": "cache/phonepe_sigbypass_build",
-                "inject_script": "src/signature_bypass/scripts/inject.sh",
+                "inject_script": "src/apk/signature_bypass/scripts/inject.sh",
                 "builder": {
                     "kind": "script",
-                    "command": "src/signature_bypass/tools/compile.sh",
+                    "command": "src/apk/signature_bypass/tools/compile.sh",
                     "inputs": [
-                        "src/signature_bypass/src/main/java",
-                        "src/signature_bypass/tools/compile.sh",
+                        "src/apk/signature_bypass/src/main/java",
+                        "src/apk/signature_bypass/tools/compile.sh",
                     ],
                 },
             },
@@ -298,7 +298,7 @@ Extend the planning test:
         }
         spec = cache_manager.resolve_module_spec(manifest, "phonepe_sigbypass")
         self.assertEqual(spec["builder"]["kind"], "script")
-        self.assertIn("src/signature_bypass/src/main/java", spec["builder"]["inputs"])
+        self.assertIn("src/apk/signature_bypass/src/main/java", spec["builder"]["inputs"])
 ```
 
 **Step 2: Run test to verify it fails**
@@ -314,12 +314,12 @@ Add `builder` metadata to each module in `cache_manifest.json`:
 ```json
 "builder": {
   "kind": "script",
-  "command": "src/signature_bypass/tools/compile.sh",
+  "command": "src/apk/signature_bypass/tools/compile.sh",
   "inputs": [
-    "src/signature_bypass/src/main/java",
-    "src/signature_bypass/tools/compile.sh",
-    "src/signature_bypass/scripts/inject.sh",
-    "src/tools/lib/dispatcher.sh"
+    "src/apk/signature_bypass/src/main/java",
+    "src/apk/signature_bypass/tools/compile.sh",
+    "src/apk/signature_bypass/scripts/inject.sh",
+    "src/pipeline/tools/lib/dispatcher.sh"
   ]
 }
 ```
@@ -329,10 +329,10 @@ For `https_interceptor`, define a temporary migration builder first, then replac
 ```json
 "builder": {
   "kind": "script",
-  "command": "src/https_interceptor/scripts/build_smali_artifacts.sh",
+  "command": "src/apk/https_interceptor/scripts/build_smali_artifacts.sh",
   "inputs": [
-    "src/https_interceptor/app/src/main/java",
-    "src/https_interceptor/scripts/build_smali_artifacts.sh"
+    "src/apk/https_interceptor/app/src/main/java",
+    "src/apk/https_interceptor/scripts/build_smali_artifacts.sh"
   ]
 }
 ```
@@ -436,8 +436,8 @@ git commit -m "feat: add orchestrated module artifact build stage"
 ### Task 6: Refactor signature_bypass to pure artifact builder plus pure injector
 
 **Files:**
-- Create: `src/signature_bypass/tools/build_artifacts.sh`
-- Modify: `src/signature_bypass/scripts/inject.sh`
+- Create: `src/apk/signature_bypass/tools/build_artifacts.sh`
+- Modify: `src/apk/signature_bypass/scripts/inject.sh`
 - Test: `src/cache-manager/tests/test_module_artifact_cache.py`
 
 **Step 1: Write the failing test**
@@ -450,7 +450,7 @@ Add a cache-manager unit test that validates the builder command path:
         spec = cache_manager.resolve_module_spec(manifest, "phonepe_sigbypass")
         self.assertEqual(
             spec["builder"]["command"],
-            "src/signature_bypass/tools/build_artifacts.sh",
+            "src/apk/signature_bypass/tools/build_artifacts.sh",
         )
 ```
 
@@ -495,16 +495,16 @@ Expected: PASS
 **Step 5: Commit**
 
 ```bash
-git add src/signature_bypass/tools/build_artifacts.sh src/signature_bypass/scripts/inject.sh src/cache-manager/cache_manifest.json src/cache-manager/tests/test_module_artifact_cache.py
+git add src/apk/signature_bypass/tools/build_artifacts.sh src/apk/signature_bypass/scripts/inject.sh src/cache-manager/cache_manifest.json src/cache-manager/tests/test_module_artifact_cache.py
 git commit -m "refactor: split sigbypass builder from injector"
 ```
 
 ### Task 7: Refactor phonepehelper to pure artifact builder plus pure injector
 
 **Files:**
-- Create: `src/phonepehelper/scripts/build_artifacts.sh`
-- Modify: `src/phonepehelper/scripts/inject.sh`
-- Modify: `src/phonepehelper/scripts/merge.sh`
+- Create: `src/apk/phonepehelper/scripts/build_artifacts.sh`
+- Modify: `src/apk/phonepehelper/scripts/inject.sh`
+- Modify: `src/apk/phonepehelper/scripts/merge.sh`
 - Test: `src/cache-manager/tests/test_module_artifact_cache.py`
 
 **Step 1: Write the failing test**
@@ -517,7 +517,7 @@ Add:
         spec = cache_manager.resolve_module_spec(manifest, "phonepe_phonepehelper")
         self.assertEqual(
             spec["builder"]["command"],
-            "src/phonepehelper/scripts/build_artifacts.sh",
+            "src/apk/phonepehelper/scripts/build_artifacts.sh",
         )
 ```
 
@@ -548,15 +548,15 @@ Expected: PASS
 **Step 5: Commit**
 
 ```bash
-git add src/phonepehelper/scripts/build_artifacts.sh src/phonepehelper/scripts/inject.sh src/phonepehelper/scripts/merge.sh src/cache-manager/cache_manifest.json src/cache-manager/tests/test_module_artifact_cache.py
+git add src/apk/phonepehelper/scripts/build_artifacts.sh src/apk/phonepehelper/scripts/inject.sh src/apk/phonepehelper/scripts/merge.sh src/cache-manager/cache_manifest.json src/cache-manager/tests/test_module_artifact_cache.py
 git commit -m "refactor: split phonepehelper builder from injector"
 ```
 
 ### Task 8: Replace https_interceptor APK build-back-decompile flow with direct smali artifact build
 
 **Files:**
-- Create: `src/https_interceptor/scripts/build_smali_artifacts.sh`
-- Modify: `src/https_interceptor/scripts/inject.sh`
+- Create: `src/apk/https_interceptor/scripts/build_smali_artifacts.sh`
+- Modify: `src/apk/https_interceptor/scripts/inject.sh`
 - Modify: `src/cache-manager/cache_manifest.json`
 - Test: `src/cache-manager/tests/test_module_artifact_cache.py`
 
@@ -570,7 +570,7 @@ Add:
         spec = cache_manager.resolve_module_spec(manifest, "phonepe_https_interceptor")
         self.assertEqual(
             spec["builder"]["command"],
-            "src/https_interceptor/scripts/build_smali_artifacts.sh",
+            "src/apk/https_interceptor/scripts/build_smali_artifacts.sh",
         )
 ```
 
@@ -604,7 +604,7 @@ Expected: PASS
 **Step 5: Commit**
 
 ```bash
-git add src/https_interceptor/scripts/build_smali_artifacts.sh src/https_interceptor/scripts/inject.sh src/cache-manager/cache_manifest.json src/cache-manager/tests/test_module_artifact_cache.py
+git add src/apk/https_interceptor/scripts/build_smali_artifacts.sh src/apk/https_interceptor/scripts/inject.sh src/cache-manager/cache_manifest.json src/cache-manager/tests/test_module_artifact_cache.py
 git commit -m "refactor: build https interceptor smali artifacts directly"
 ```
 
@@ -612,9 +612,9 @@ git commit -m "refactor: build https interceptor smali artifacts directly"
 
 **Files:**
 - Modify: `src/cache-manager/cache_manager.py`
-- Modify: `src/signature_bypass/scripts/inject.sh`
-- Modify: `src/https_interceptor/scripts/inject.sh`
-- Modify: `src/phonepehelper/scripts/inject.sh`
+- Modify: `src/apk/signature_bypass/scripts/inject.sh`
+- Modify: `src/apk/https_interceptor/scripts/inject.sh`
+- Modify: `src/apk/phonepehelper/scripts/inject.sh`
 - Test: `src/cache-manager/tests/test_module_artifact_cache.py`
 
 **Step 1: Write the failing test**
@@ -678,7 +678,7 @@ Expected: PASS
 **Step 5: Commit**
 
 ```bash
-git add src/cache-manager/cache_manager.py src/signature_bypass/scripts/inject.sh src/https_interceptor/scripts/inject.sh src/phonepehelper/scripts/inject.sh src/cache-manager/tests/test_module_artifact_cache.py
+git add src/cache-manager/cache_manager.py src/apk/signature_bypass/scripts/inject.sh src/apk/https_interceptor/scripts/inject.sh src/apk/phonepehelper/scripts/inject.sh src/cache-manager/tests/test_module_artifact_cache.py
 git commit -m "feat: inject modules only from orchestrated artifacts"
 ```
 
@@ -686,7 +686,7 @@ git commit -m "feat: inject modules only from orchestrated artifacts"
 
 **Files:**
 - Modify: `src/cache-manager/cache_manager.py`
-- Modify: `src/tools/test_profile_smoke.sh`
+- Modify: `src/pipeline/tools/test_profile_smoke.sh`
 - Modify: `src/cache-manager/README.md`
 - Test: `src/cache-manager/tests/test_reuse_artifacts.py`
 - Test: `src/cache-manager/tests/test_smoke_mode.py`
@@ -753,7 +753,7 @@ Expected: PASS
 **Step 5: Commit**
 
 ```bash
-git add src/cache-manager/cache_manager.py src/tools/test_profile_smoke.sh src/cache-manager/README.md src/cache-manager/tests/test_smoke_mode.py src/cache-manager/tests/test_reuse_artifacts.py
+git add src/cache-manager/cache_manager.py src/pipeline/tools/test_profile_smoke.sh src/cache-manager/README.md src/cache-manager/tests/test_smoke_mode.py src/cache-manager/tests/test_reuse_artifacts.py
 git commit -m "feat: run unified module build stage before profile packaging"
 ```
 
@@ -762,7 +762,7 @@ git commit -m "feat: run unified module build stage before profile packaging"
 **Files:**
 - Modify: `src/cache-manager/cache_manager.py`
 - Modify: `src/cache-manager/README.md`
-- Modify: `src/tools/README.md`
+- Modify: `src/pipeline/tools/README.md`
 - Optionally delete: legacy compatibility-only docs/scripts if unreferenced
 
 **Step 1: Write the failing audit checklist**
@@ -778,7 +778,7 @@ Create a checklist in the commit message draft or local notes:
 
 **Step 2: Run repo search to verify old flow references**
 
-Run: `rg -n 'skip-build|build_and_install.sh build|强制构建 demo APK|先运行编译' src/cache-manager src/tools src/signature_bypass src/https_interceptor src/phonepehelper -S`
+Run: `rg -n 'skip-build|build_and_install.sh build|强制构建 demo APK|先运行编译' src/cache-manager src/pipeline/tools src/apk/signature_bypass src/apk/https_interceptor src/apk/phonepehelper -S`
 
 Expected: only legacy docs or intentionally retained compatibility references remain.
 
@@ -802,7 +802,7 @@ Expected: PASS
 **Step 5: Commit**
 
 ```bash
-git add src/cache-manager/cache_manager.py src/cache-manager/README.md src/tools/README.md src/signature_bypass src/https_interceptor src/phonepehelper
+git add src/cache-manager/cache_manager.py src/cache-manager/README.md src/pipeline/tools/README.md src/apk/signature_bypass src/apk/https_interceptor src/apk/phonepehelper
 git commit -m "refactor: remove obsolete per-module profile build paths"
 ```
 
@@ -810,7 +810,7 @@ git commit -m "refactor: remove obsolete per-module profile build paths"
 
 **Files:**
 - Modify: `src/cache-manager/README.md`
-- Modify: `src/tools/README.md`
+- Modify: `src/pipeline/tools/README.md`
 - Create: `docs/plans/2026-03-23-unified-orchestrator-build-verification.md`
 
 **Step 1: Write the verification checklist**
@@ -853,11 +853,11 @@ Record:
 
 Document the new canonical commands in:
 - `src/cache-manager/README.md`
-- `src/tools/README.md`
+- `src/pipeline/tools/README.md`
 
 **Step 5: Commit**
 
 ```bash
-git add docs/plans/2026-03-23-unified-orchestrator-build-verification.md src/cache-manager/README.md src/tools/README.md
+git add docs/plans/2026-03-23-unified-orchestrator-build-verification.md src/cache-manager/README.md src/pipeline/tools/README.md
 git commit -m "docs: record unified orchestrator verification results"
 ```

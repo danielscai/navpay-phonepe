@@ -1,0 +1,16 @@
+{
+  "sigbypass-only": [
+    "phonepe_sigbypass"
+  ],
+  "https-only": [
+    "phonepe_https_interceptor"
+  ],
+  "phonepehelper-only": [
+    "phonepe_phonepehelper"
+  ],
+  "full": [
+    "phonepe_sigbypass",
+    "phonepe_https_interceptor",
+    "phonepe_phonepehelper"
+  ]
+}

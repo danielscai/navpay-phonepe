@@ -22,12 +22,12 @@
 
 ## 注入流程变化
 ### 签名绕过模块
-- `src/signature_bypass/scripts/inject.sh` 现在：
+- `src/apk/signature_bypass/scripts/inject.sh` 现在：
   1. 注入 Dispatcher 入口（`inject_entry.py`）
   2. 生成 Dispatcher.smali（包含 HookEntry 入口）
 
 ### phonepehelper 模块
-- `src/phonepehelper/scripts/merge.sh` 现在：
+- `src/apk/phonepehelper/scripts/merge.sh` 现在：
   - 复制 helper smali 后，确保 Application 已注入 Dispatcher 入口（`inject_entry.py`）
   - 确保 `Dispatcher.smali` 存在（必要时创建）
   - 向 `Dispatcher.init()` 注册 `ModuleInit.init()`（幂等去重）

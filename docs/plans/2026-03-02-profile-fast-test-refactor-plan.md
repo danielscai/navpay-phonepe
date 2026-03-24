@@ -6,7 +6,7 @@
 
 **Architecture:** Keep a single baseline decompiled cache as immutable input, then build independent per-module workspaces and profile-composed workspaces from that baseline. Make `profile` commands the primary path, keep legacy module commands as compatibility wrappers, and add a new two-tier test pipeline (`smoke` fast checks vs `full` integration checks). Conflict detection remains explicit at compose time via reset-path rules.
 
-**Tech Stack:** Python 3 (`src/cache-manager`), Bash (`src/tools`, module scripts), adb/apktool/apksigner, unittest.
+**Tech Stack:** Python 3 (`src/cache-manager`), Bash (`src/pipeline/tools`, module scripts), adb/apktool/apksigner, unittest.
 
 ---
 
@@ -174,7 +174,7 @@ git commit -m "refactor: make compose engine mandatory for profile execution"
 
 **Files:**
 - Modify: `src/cache-manager/cache_manager.py`
-- Create: `src/tools/test_profile_smoke.sh`
+- Create: `src/pipeline/tools/test_profile_smoke.sh`
 - Create: `src/cache-manager/tests/test_smoke_mode.py`
 - Modify: `package.json`
 - Modify: `src/cache-manager/README.md`
@@ -204,13 +204,13 @@ Expected: FAIL until smoke flag and behavior exist.
 ```
 
 ```bash
-# src/tools/test_profile_smoke.sh
+# src/pipeline/tools/test_profile_smoke.sh
 python3 src/cache-manager/cache_manager.py profile "$1" test --smoke --serial "${2:-emulator-5554}"
 ```
 
 ```json
 // package.json
-"test:smoke:full": "bash src/tools/test_profile_smoke.sh full"
+"test:smoke:full": "bash src/pipeline/tools/test_profile_smoke.sh full"
 ```
 
 **Step 4: Run test to verify it passes**
@@ -223,7 +223,7 @@ Expected: PASS + smoke flag accepted by parser.
 **Step 5: Commit**
 
 ```bash
-git add src/cache-manager/cache_manager.py src/tools/test_profile_smoke.sh src/cache-manager/tests/test_smoke_mode.py package.json src/cache-manager/README.md
+git add src/cache-manager/cache_manager.py src/pipeline/tools/test_profile_smoke.sh src/cache-manager/tests/test_smoke_mode.py package.json src/cache-manager/README.md
 git commit -m "feat: add fast smoke mode for profile test loop"
 ```
 
@@ -234,8 +234,8 @@ git commit -m "feat: add fast smoke mode for profile test loop"
 **Files:**
 - Modify: `src/cache-manager/cache_manager.py`
 - Create: `src/cache-manager/tests/test_reuse_artifacts.py`
-- Modify: `src/https_interceptor/scripts/inject.sh`
-- Modify: `src/signature_bypass/scripts/inject.sh`
+- Modify: `src/apk/https_interceptor/scripts/inject.sh`
+- Modify: `src/apk/signature_bypass/scripts/inject.sh`
 
 **Step 1: Write the failing test**
 
@@ -274,7 +274,7 @@ Expected: unit test pass; command accepted and logs whether cache hit/miss.
 **Step 5: Commit**
 
 ```bash
-git add src/cache-manager/cache_manager.py src/cache-manager/tests/test_reuse_artifacts.py src/https_interceptor/scripts/inject.sh src/signature_bypass/scripts/inject.sh
+git add src/cache-manager/cache_manager.py src/cache-manager/tests/test_reuse_artifacts.py src/apk/https_interceptor/scripts/inject.sh src/apk/signature_bypass/scripts/inject.sh
 git commit -m "perf: add artifact reuse and skip-build controls"
 ```
 
@@ -283,10 +283,10 @@ git commit -m "perf: add artifact reuse and skip-build controls"
 ### Task 6: Replace Legacy Slow Test Scripts with New Profile-Oriented Test Suite
 
 **Files:**
-- Create: `src/tools/test_profile_full.sh`
-- Create: `src/tools/test_module_independent.sh`
+- Create: `src/pipeline/tools/test_profile_full.sh`
+- Create: `src/pipeline/tools/test_module_independent.sh`
 - Modify: `package.json`
-- Modify: `src/tools/README.md`
+- Modify: `src/pipeline/tools/README.md`
 - Create: `src/cache-manager/tests/test_new_test_scripts_contract.py`
 
 **Step 1: Write the failing test**
@@ -296,8 +296,8 @@ git commit -m "perf: add artifact reuse and skip-build controls"
 
 def test_new_fast_test_scripts_exist_and_executable():
     for p in [
-        Path("src/tools/test_profile_full.sh"),
-        Path("src/tools/test_module_independent.sh"),
+        Path("src/pipeline/tools/test_profile_full.sh"),
+        Path("src/pipeline/tools/test_module_independent.sh"),
     ]:
         assert p.exists()
 ```
@@ -323,22 +323,22 @@ python3 src/cache-manager/cache_manager.py profile phonepehelper-only test --smo
 
 ```json
 // package.json
-"test:independent": "bash src/tools/test_module_independent.sh",
-"test:full": "bash src/tools/test_profile_full.sh"
+"test:independent": "bash src/pipeline/tools/test_module_independent.sh",
+"test:full": "bash src/pipeline/tools/test_profile_full.sh"
 ```
 
 **Step 4: Run test to verify it passes**
 
 Run:
 - `python3 -m unittest src/cache-manager/tests/test_new_test_scripts_contract.py -v`
-- `bash -n src/tools/test_profile_full.sh`
-- `bash -n src/tools/test_module_independent.sh`
+- `bash -n src/pipeline/tools/test_profile_full.sh`
+- `bash -n src/pipeline/tools/test_module_independent.sh`
 Expected: PASS and syntax OK.
 
 **Step 5: Commit**
 
 ```bash
-git add src/tools/test_profile_full.sh src/tools/test_module_independent.sh package.json src/tools/README.md src/cache-manager/tests/test_new_test_scripts_contract.py
+git add src/pipeline/tools/test_profile_full.sh src/pipeline/tools/test_module_independent.sh package.json src/pipeline/tools/README.md src/cache-manager/tests/test_new_test_scripts_contract.py
 git commit -m "test: introduce profile-based fast independent and full test scripts"
 ```
 
@@ -348,7 +348,7 @@ git commit -m "test: introduce profile-based fast independent and full test scri
 
 **Files:**
 - Modify: `docs/plans/2026-03-02-profile-based-build-refactor-validation.md`
-- Create: `src/tools/collect_validation_evidence.sh`
+- Create: `src/pipeline/tools/collect_validation_evidence.sh`
 - Create: `src/cache-manager/tests/test_validation_doc_links.py`
 
 **Step 1: Write the failing test**
@@ -383,13 +383,13 @@ Expected: FAIL until doc references are updated.
 
 Run:
 - `python3 -m unittest src/cache-manager/tests/test_validation_doc_links.py -v`
-- `bash -n src/tools/collect_validation_evidence.sh`
+- `bash -n src/pipeline/tools/collect_validation_evidence.sh`
 Expected: PASS and script syntax valid.
 
 **Step 5: Commit**
 
 ```bash
-git add docs/plans/2026-03-02-profile-based-build-refactor-validation.md src/tools/collect_validation_evidence.sh src/cache-manager/tests/test_validation_doc_links.py
+git add docs/plans/2026-03-02-profile-based-build-refactor-validation.md src/pipeline/tools/collect_validation_evidence.sh src/cache-manager/tests/test_validation_doc_links.py
 git commit -m "docs: add final validation matrix and evidence automation"
 ```
 
@@ -414,7 +414,7 @@ git commit -m "docs: add final validation matrix and evidence automation"
 - `yarn probe:compare --baseline <baseline_run_dir> --candidate <candidate_run_dir>`
 
 5. Evidence bundle:
-- `bash src/tools/collect_validation_evidence.sh`
+- `bash src/pipeline/tools/collect_validation_evidence.sh`
 
 ## Definition of Done
 

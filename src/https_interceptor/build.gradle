@@ -1,6 +1,0 @@
-// HTTPS 请求拦截演示项目
-// 用于安全研究目的
-
-plugins {
-    id 'com.android.application' version '8.2.0' apply false
-}

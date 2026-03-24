@@ -35,7 +35,7 @@
 
 ## 2) log_server 代理
 
-`src/log_server/src/server.js`:
+`src/services/log_server/src/server.js`:
 
 ```
 POST /api/checksum

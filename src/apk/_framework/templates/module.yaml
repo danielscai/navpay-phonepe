@@ -1,0 +1,13 @@
+id: example_module
+name: Example Module
+version: 0.1.0
+entry: Lcom/example/HookEntry;->init(Landroid/content/Context;)V
+marker:
+  file: assets/inject_manifest.json
+  key: example_module
+payload:
+  smali_dir: payload/smali
+  lib_dir: payload/lib
+scripts:
+  merge: scripts/merge.sh
+  verify: scripts/verify.sh

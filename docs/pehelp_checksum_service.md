@@ -4,8 +4,8 @@
 在 App 进程内通过 `EncryptionUtils.jnmcs(...)` 生成 `X-REQUEST-CHECKSUM-V4`，并通过本地 HTTP 服务暴露给外部工具调用。
 
 ## 实现位置
-- `src/phonepehelper/src/main/java/com/phonepehelper/ChecksumServer.java`
-- `src/phonepehelper/src/main/java/com/phonepehelper/ModuleInit.java`
+- `src/apk/phonepehelper/src/main/java/com/phonepehelper/ChecksumServer.java`
+- `src/apk/phonepehelper/src/main/java/com/phonepehelper/ModuleInit.java`
 
 `ModuleInit.init()` 中启动服务：
 - `ChecksumServer.start(appContext)`
