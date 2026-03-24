@@ -12,8 +12,8 @@ import orchestrator as cache_manager  # noqa: E402
 
 class ModuleArtifactPlanningTest(unittest.TestCase):
     def test_top_level_parser_accepts_build_modules_action(self) -> None:
-        args = cache_manager.build_parser().parse_args(["compile-modules"])
-        self.assertEqual(args.cmd, "compile-modules")
+        args = cache_manager.build_parser().parse_args(["smali"])
+        self.assertEqual(args.cmd, "smali")
         self.assertEqual(args.profile, "full")
 
     def test_profile_plan_build_returns_resolved_profile_modules(self) -> None:
@@ -144,7 +144,7 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
             return_value=["phonepe_phonepehelper"],
         ), mock.patch.object(
             cache_manager,
-            "profile_pre_cache",
+            "profile_prepare",
             return_value=(["phonepe_phonepehelper"], workspace),
         ), mock.patch.object(
             cache_manager,
@@ -183,7 +183,7 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
             return_value=["phonepe_https_interceptor"],
         ), mock.patch.object(
             cache_manager,
-            "profile_pre_cache",
+            "profile_prepare",
             return_value=(["phonepe_https_interceptor"], workspace),
         ), mock.patch.object(
             cache_manager,
@@ -225,7 +225,7 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
             return_value=["phonepe_sigbypass"],
         ), mock.patch.object(
             cache_manager,
-            "profile_pre_cache",
+            "profile_prepare",
             return_value=(["phonepe_sigbypass"], workspace),
         ) as pre_cache_mock, mock.patch.object(
             cache_manager,
@@ -255,7 +255,7 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
             "label": "SIGBYPASS",
         }
 
-        with mock.patch.object(cache_manager, "module_pre_cache") as pre_cache_mock, \
+        with mock.patch.object(cache_manager, "module_prepare") as pre_cache_mock, \
             mock.patch.object(cache_manager, "ensure_module_artifact", return_value=True) as ensure_mock, \
             mock.patch.object(cache_manager, "merge") as merge_mock:
             cache_manager.module_merge(spec, delete_first=False)

@@ -62,10 +62,10 @@
 
 - 推荐主流程（profile，主契约）：
   - `python3 src/pipeline/orch/orchestrator.py plan`
-  - `python3 src/pipeline/orch/orchestrator.py pre-cache`
-  - `python3 src/pipeline/orch/orchestrator.py compile-modules`
+  - `python3 src/pipeline/orch/orchestrator.py prepare`
+  - `python3 src/pipeline/orch/orchestrator.py smali`
   - `python3 src/pipeline/orch/orchestrator.py merge`
-  - `python3 src/pipeline/orch/orchestrator.py compile`
+  - `python3 src/pipeline/orch/orchestrator.py apk`
   - `python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554`（需要 adb/模拟器）
   - 默认 profile 为 `full`，如需切换可追加 `--profile <name>`。
 

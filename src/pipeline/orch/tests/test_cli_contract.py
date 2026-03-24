@@ -11,7 +11,7 @@ import orchestrator as orch  # noqa: E402
 class CliContractTest(unittest.TestCase):
     def test_top_level_profile_actions_exist(self) -> None:
         parser = orch.build_parser()
-        for cmd in ("plan", "pre-cache", "compile-modules", "merge", "compile", "test"):
+        for cmd in ("plan", "prepare", "smali", "merge", "apk", "test"):
             args = parser.parse_args([cmd])
             self.assertEqual(args.cmd, cmd)
             self.assertEqual(args.profile, "full")

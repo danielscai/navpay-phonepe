@@ -45,6 +45,7 @@ SMOKE_TIMEOUT_SEC = 20
 DEFAULT_TEST_MODE = "sigbypass"
 DEFAULT_EMULATOR_BOOT_TIMEOUT = 20
 REUSE_STATE_FILE = "reuse_artifacts_state.json"
+MERGE_STATE_FILE = "profile_merge_state.json"
 ARTIFACT_INJECT_MODULES = {"phonepe_sigbypass", "phonepe_https_interceptor", "phonepe_phonepehelper"}
 
 COLOR_RESET = "\033[0m"
@@ -120,7 +121,7 @@ MODULE_DEFAULTS = {
     },
 }
 
-TOP_LEVEL_PROFILE_ACTIONS = {"plan", "pre-cache", "compile-modules", "merge", "compile", "test"}
+TOP_LEVEL_PROFILE_ACTIONS = {"plan", "prepare", "smali", "merge", "apk", "test"}
 
 
 def load_manifest():
@@ -633,7 +634,7 @@ def refresh_cache_paths(cache_path: Path, source_root: Path, reset_paths, added_
     }
     write_meta(cache_path / "meta.json", meta)
 
-def pre_cache(cache_path: Path, source_root: Path, reset_paths, added_paths, delete_first: bool, label: str):
+def prepare_cache(cache_path: Path, source_root: Path, reset_paths, added_paths, delete_first: bool, label: str):
     if not source_root.exists():
         raise RuntimeError(f"Source decompiled cache not found: {source_root}")
 
@@ -653,7 +654,7 @@ def pre_cache(cache_path: Path, source_root: Path, reset_paths, added_paths, del
     meta = {
         "created_at": datetime.now().isoformat(),
         "source": str(source_root),
-        "mode": "pre-cache",
+        "mode": "prepare",
         "delete": bool(delete_first),
     }
     write_meta(cache_path / "meta.json", meta)
@@ -700,7 +701,7 @@ def validate_cache_integrity(cache_path: Path, source_root: Path, label: str):
         detail_msg = "; ".join(details)
         raise RuntimeError(
             f"[{label}] cache integrity check failed: {detail_msg}. "
-            f"Check upstream cache: {source_root} or re-run pre-cache with --delete."
+            f"Check upstream cache: {source_root} or re-run prepare with --delete."
         )
 
 def merge(
@@ -734,6 +735,17 @@ def merge(
 def compute_inputs_fingerprint(root: Path) -> str:
     if not root.exists():
         raise RuntimeError(f"Input path not found for fingerprint: {root}")
+
+    def file_digest(path: Path) -> bytes:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            while True:
+                chunk = handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+        return digest.digest()
+
     hasher = hashlib.sha256()
     if root.is_file():
         paths = [root]
@@ -749,7 +761,7 @@ def compute_inputs_fingerprint(root: Path) -> str:
         hasher.update(b"\0")
         hasher.update(str(stat.st_size).encode("ascii"))
         hasher.update(b"\0")
-        hasher.update(str(stat.st_mtime_ns).encode("ascii"))
+        hasher.update(file_digest(path))
         hasher.update(b"\n")
     return hasher.hexdigest()
 
@@ -777,6 +789,49 @@ def read_reuse_state(state_path: Path) -> dict:
         return {}
 
 
+def read_profile_merge_state(workspace: Path) -> dict:
+    state_path = workspace / MERGE_STATE_FILE
+    if not state_path.exists():
+        return {}
+    try:
+        return json.loads(state_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def write_profile_merge_state(manifest, profile_name: str, workspace: Path, modules):
+    state_path = workspace / MERGE_STATE_FILE
+    payload = {
+        "created_at": datetime.now().isoformat(),
+        "profile": profile_name,
+        "modules": modules,
+        "module_fingerprints": {
+            module: compute_module_fingerprint(resolve_module_spec(manifest, module))
+            for module in modules
+        },
+    }
+    write_meta(state_path, payload)
+
+
+def has_reusable_merged_workspace(manifest, profile_name: str, workspace: Path, modules) -> bool:
+    state = read_profile_merge_state(workspace)
+    if not state:
+        return False
+    if state.get("profile") != profile_name:
+        return False
+    cached_modules = state.get("modules")
+    if cached_modules != modules:
+        return False
+    cached_fingerprints = state.get("module_fingerprints")
+    if not isinstance(cached_fingerprints, dict):
+        return False
+    for module in modules:
+        current_fp = compute_module_fingerprint(resolve_module_spec(manifest, module))
+        if cached_fingerprints.get(module) != current_fp:
+            return False
+    return True
+
+
 def maybe_reuse_profile_artifacts(manifest, profile_name: str, workspace: Path, work_dir: Path) -> bool:
     signed_apk = work_dir / DEFAULT_SIGNED_APK
     state_path = work_dir / REUSE_STATE_FILE
@@ -785,7 +840,7 @@ def maybe_reuse_profile_artifacts(manifest, profile_name: str, workspace: Path, 
     cached_fp = state.get("fingerprint")
 
     if signed_apk.exists() and cached_fp == fingerprint:
-        log_info(f"[PROFILE:{profile_name}] [CACHE-HIT] --reuse-artifacts matched, reusing {signed_apk}")
+        log_info(f"[PROFILE:{profile_name}] [CACHE-HIT] final apk reuse matched, reusing {signed_apk}")
         return True
 
     reasons = []
@@ -796,7 +851,7 @@ def maybe_reuse_profile_artifacts(manifest, profile_name: str, workspace: Path, 
     elif cached_fp != fingerprint:
         reasons.append("input fingerprint changed")
     reason_text = ", ".join(reasons) if reasons else "unknown"
-    log_info(f"[PROFILE:{profile_name}] [CACHE-MISS] --reuse-artifacts fallback: {reason_text}")
+    log_info(f"[PROFILE:{profile_name}] [CACHE-MISS] final apk reuse fallback: {reason_text}")
     return False
 
 
@@ -1467,8 +1522,8 @@ def resolve_module_spec(manifest, name: str):
     }
 
 
-def module_pre_cache(spec, delete_first: bool):
-    pre_cache(
+def module_prepare(spec, delete_first: bool):
+    prepare_cache(
         spec["cache_path"],
         spec["source_root"],
         spec["reset_paths"],
@@ -1479,7 +1534,7 @@ def module_pre_cache(spec, delete_first: bool):
 
 
 def module_merge(spec, delete_first: bool):
-    module_pre_cache(spec, delete_first)
+    module_prepare(spec, delete_first)
     artifact_dir = module_artifact_path(spec["name"]) if spec["name"] in ARTIFACT_INJECT_MODULES else None
     if artifact_dir is not None:
         ensure_module_artifact(spec, artifact_dir)
@@ -1493,7 +1548,7 @@ def module_merge(spec, delete_first: bool):
     )
 
 
-def module_compile(spec, delete_first: bool):
+def module_apk(spec, delete_first: bool):
     module_merge(spec, delete_first)
     sigbypass_compile(
         spec["cache_path"],
@@ -1506,7 +1561,7 @@ def module_compile(spec, delete_first: bool):
 
 def module_test(spec, delete_first: bool, serial: str):
     serial = resolve_test_serial(spec, serial)
-    module_compile(spec, delete_first)
+    module_apk(spec, delete_first)
     run_test(spec, serial)
 
 
@@ -1534,12 +1589,12 @@ def module_rerun(spec, serial: str):
 
 
 def run_module_action(spec, action: str, delete_first: bool, serial: str):
-    if action == "pre-cache":
-        module_pre_cache(spec, delete_first)
+    if action == "prepare":
+        module_prepare(spec, delete_first)
     elif action == "merge":
         module_merge(spec, delete_first)
-    elif action == "compile":
-        module_compile(spec, delete_first)
+    elif action == "apk":
+        module_apk(spec, delete_first)
     elif action == "test":
         module_test(spec, delete_first, serial)
     elif action == "rerun":
@@ -1572,11 +1627,11 @@ def resolve_profile_workspace(profile_name: str) -> Path:
     if not workspace.exists():
         raise RuntimeError(
             f"Profile workspace not found: {workspace}. "
-            f"Run 'profile {profile_name} pre-cache' first."
+            f"Run 'python3 src/pipeline/orch/orchestrator.py prepare --profile {profile_name}' first."
         )
     return workspace
 
-def profile_pre_cache(manifest, profile_name: str):
+def profile_prepare(manifest, profile_name: str):
     modules = resolve_profile_modules(manifest, profile_name)
     detect_conflicts(manifest, modules)
     baseline = resolve_manifest_path(manifest, "phonepe_decompiled") / "base_decompiled_clean"
@@ -1593,13 +1648,13 @@ def profile_merge(
     modules = resolve_profile_modules(manifest, profile_name)
     detect_conflicts(manifest, modules)
     if refresh_workspace:
-        _, workspace = profile_pre_cache(manifest, profile_name)
+        _, workspace = profile_prepare(manifest, profile_name)
     else:
         try:
             workspace = resolve_profile_workspace(profile_name)
             log_info(f"[PROFILE:{profile_name}] workspace reused: {workspace}")
         except RuntimeError:
-            _, workspace = profile_pre_cache(manifest, profile_name)
+            _, workspace = profile_prepare(manifest, profile_name)
     for module in modules:
         spec = resolve_module_spec(manifest, module)
         artifact_dir = module_artifact_path(module) if module in ARTIFACT_INJECT_MODULES else None
@@ -1614,17 +1669,30 @@ def profile_merge(
             artifact_dir=artifact_dir,
         )
         log_info(f"[PROFILE:{profile_name}] merged: {module}")
+    write_profile_merge_state(manifest, profile_name, workspace, modules)
     return workspace
 
 
-def profile_compile(manifest, profile_name: str, reuse_artifacts: bool = False):
+def profile_apk(manifest, profile_name: str, fresh: bool = False):
+    reuse_artifacts = not fresh
     work_dir = profile_build_path(profile_name)
     work_dir.mkdir(parents=True, exist_ok=True)
+    workspace = None
     if reuse_artifacts:
-        workspace = resolve_profile_workspace(profile_name)
-        if maybe_reuse_profile_artifacts(manifest, profile_name, workspace, work_dir):
+        try:
+            workspace = resolve_profile_workspace(profile_name)
+        except RuntimeError:
+            workspace = None
+        if workspace is not None and maybe_reuse_profile_artifacts(manifest, profile_name, workspace, work_dir):
             return work_dir
-    workspace = profile_merge(manifest, profile_name, reuse_artifacts=reuse_artifacts)
+    if workspace is not None and reuse_artifacts:
+        modules = resolve_profile_modules(manifest, profile_name)
+        if has_reusable_merged_workspace(manifest, profile_name, workspace, modules):
+            log_info(f"[PROFILE:{profile_name}] [CACHE-HIT] merged workspace reuse matched, skipping merge")
+        else:
+            workspace = profile_merge(manifest, profile_name, reuse_artifacts=reuse_artifacts)
+    else:
+        workspace = profile_merge(manifest, profile_name, reuse_artifacts=reuse_artifacts)
     sigbypass_compile(
         workspace,
         work_dir,
@@ -1738,7 +1806,7 @@ def verify_profile_log_tags(manifest, modules, serial: str, strict: bool = False
 def profile_test(manifest, profile_name: str, serial: str, smoke: bool = False):
     modules = resolve_profile_modules(manifest, profile_name)
     profile_build_modules(manifest, profile_name)
-    work_dir = profile_compile(manifest, profile_name, reuse_artifacts=True)
+    work_dir = profile_apk(manifest, profile_name, fresh=False)
     workspace = resolve_profile_workspace(profile_name)
     signed_apk = work_dir / DEFAULT_SIGNED_APK
     primary_spec = resolve_module_spec(manifest, modules[0])
@@ -1767,23 +1835,23 @@ def profile_test(manifest, profile_name: str, serial: str, smoke: bool = False):
         verify_profile_log_tags(manifest, modules[1:], test_serial, strict=False)
 
 
-def run_profile_action(manifest, action: str, profile_name: str, serial: str, smoke: bool, reuse_artifacts: bool):
+def run_profile_action(manifest, action: str, profile_name: str, serial: str, smoke: bool, fresh: bool):
     if smoke and action != "test":
         raise RuntimeError("--smoke is only supported for 'test'")
-    if reuse_artifacts and action != "compile":
-        raise RuntimeError("--reuse-artifacts is only supported for 'compile'")
+    if fresh and action != "apk":
+        raise RuntimeError("--fresh is only supported for 'apk'")
 
     if action == "plan":
         modules = resolve_profile_modules(manifest, profile_name)
         print(json.dumps(modules, ensure_ascii=True))
-    elif action == "pre-cache":
-        profile_pre_cache(manifest, profile_name)
-    elif action == "compile-modules":
+    elif action == "prepare":
+        profile_prepare(manifest, profile_name)
+    elif action == "smali":
         profile_build_modules(manifest, profile_name)
     elif action == "merge":
         profile_merge(manifest, profile_name, refresh_workspace=False)
-    elif action == "compile":
-        profile_compile(manifest, profile_name, reuse_artifacts=reuse_artifacts)
+    elif action == "apk":
+        profile_apk(manifest, profile_name, fresh=fresh)
     elif action == "test":
         profile_test(manifest, profile_name, serial, smoke=smoke)
     else:
@@ -1794,21 +1862,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build orchestrator")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    def add_profile_args(cmd_parser, *, allow_serial: bool = True, allow_smoke: bool = False, allow_reuse: bool = False):
+    def add_profile_args(cmd_parser, *, allow_serial: bool = True, allow_smoke: bool = False, allow_fresh: bool = False):
         cmd_parser.add_argument("--profile", default=DEFAULT_PROFILE)
         if allow_serial:
             cmd_parser.add_argument("--serial")
         if allow_smoke:
             cmd_parser.add_argument("--smoke", action="store_true", default=False)
-        if allow_reuse:
-            cmd_parser.add_argument("--reuse-artifacts", action="store_true", default=False)
+        if allow_fresh:
+            cmd_parser.add_argument("--fresh", action="store_true", default=False)
 
-    for action in ("plan", "pre-cache", "compile-modules", "merge"):
+    for action in ("plan", "prepare", "smali", "merge"):
         action_parser = sub.add_parser(action)
         add_profile_args(action_parser, allow_serial=False)
 
-    compile_parser = sub.add_parser("compile")
-    add_profile_args(compile_parser, allow_serial=False, allow_reuse=True)
+    apk_parser = sub.add_parser("apk")
+    add_profile_args(apk_parser, allow_serial=False, allow_fresh=True)
 
     test_parser = sub.add_parser("test")
     add_profile_args(test_parser, allow_serial=True, allow_smoke=True)
@@ -1848,7 +1916,7 @@ def main(argv=None):
             args.profile,
             getattr(args, "serial", "") or "",
             getattr(args, "smoke", False),
-            getattr(args, "reuse_artifacts", False),
+            getattr(args, "fresh", False),
         )
     else:
         raise RuntimeError("Unknown command")

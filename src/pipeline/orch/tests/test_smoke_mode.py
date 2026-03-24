@@ -28,7 +28,7 @@ class SmokeModeTest(unittest.TestCase):
         primary_spec = {"name": "phonepe_https_interceptor", "log_tag": "HttpInterceptor"}
         with mock.patch.object(cache_manager, "resolve_profile_modules", return_value=["phonepe_https_interceptor"]), \
             mock.patch.object(cache_manager, "profile_build_modules") as build_modules_mock, \
-            mock.patch.object(cache_manager, "profile_compile", return_value=work_dir) as compile_mock, \
+            mock.patch.object(cache_manager, "profile_apk", return_value=work_dir) as apk_mock, \
             mock.patch.object(cache_manager, "resolve_profile_workspace", return_value=workspace), \
             mock.patch.object(cache_manager, "resolve_module_spec", return_value=primary_spec), \
             mock.patch.object(cache_manager, "resolve_test_serial", return_value="emulator-5554"), \
@@ -37,7 +37,7 @@ class SmokeModeTest(unittest.TestCase):
             cache_manager.profile_test(manifest, "https-only", "", smoke=True)
 
         build_modules_mock.assert_called_once_with(manifest, "https-only")
-        compile_mock.assert_called_once_with(manifest, "https-only", reuse_artifacts=True)
+        apk_mock.assert_called_once_with(manifest, "https-only", fresh=False)
         call = unified_test_mock.call_args
         self.assertEqual(call.args[4], "")
         self.assertEqual(call.args[5], cache_manager.SMOKE_TIMEOUT_SEC)
@@ -52,7 +52,7 @@ class SmokeModeTest(unittest.TestCase):
         primary_spec = {"name": "phonepe_sigbypass", "log_tag": "SigBypass"}
         with mock.patch.object(cache_manager, "resolve_profile_modules", return_value=["phonepe_sigbypass"]), \
             mock.patch.object(cache_manager, "profile_build_modules") as build_modules_mock, \
-            mock.patch.object(cache_manager, "profile_compile", return_value=work_dir) as compile_mock, \
+            mock.patch.object(cache_manager, "profile_apk", return_value=work_dir) as apk_mock, \
             mock.patch.object(cache_manager, "resolve_module_spec", return_value=primary_spec), \
             mock.patch.object(cache_manager, "resolve_profile_workspace", return_value=workspace), \
             mock.patch.object(cache_manager, "verify_profile_injection") as verify_injection_mock, \
@@ -62,7 +62,7 @@ class SmokeModeTest(unittest.TestCase):
             cache_manager.profile_test(manifest, "full", "", smoke=False)
 
         build_modules_mock.assert_called_once_with(manifest, "full")
-        compile_mock.assert_called_once_with(manifest, "full", reuse_artifacts=True)
+        apk_mock.assert_called_once_with(manifest, "full", fresh=False)
         call = unified_test_mock.call_args
         self.assertEqual(call.args[4], "SigBypass")
         self.assertEqual(call.args[5], cache_manager.DEFAULT_TIMEOUT_SEC)

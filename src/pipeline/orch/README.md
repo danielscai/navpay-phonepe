@@ -7,15 +7,15 @@ This directory contains the unified build orchestrator for composed PhonePe APK 
 - Plan active modules:
   - `python3 src/pipeline/orch/orchestrator.py plan`
 - Refresh the clean workspace:
-  - `python3 src/pipeline/orch/orchestrator.py pre-cache`
+  - `python3 src/pipeline/orch/orchestrator.py prepare`
 - Build module artifacts:
-  - `python3 src/pipeline/orch/orchestrator.py compile-modules`
+  - `python3 src/pipeline/orch/orchestrator.py smali`
 - Inject artifacts into the workspace:
   - `python3 src/pipeline/orch/orchestrator.py merge`
-- Build and sign the final APK:
-  - `python3 src/pipeline/orch/orchestrator.py compile`
-- Reuse the final signed APK when inputs have not changed:
-  - `python3 src/pipeline/orch/orchestrator.py compile --reuse-artifacts`
+- Build and sign the final APK (default reuses cache when inputs have not changed):
+  - `python3 src/pipeline/orch/orchestrator.py apk`
+- Force full APK rebuild:
+  - `python3 src/pipeline/orch/orchestrator.py apk --fresh`
 - Run the full integration test:
   - `python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554`
 - Run the smoke test:
@@ -27,18 +27,20 @@ Default profile is `full`. For other profiles, append `--profile <name>`, for ex
 
 ## Unified Pipeline
 
-1. `pre-cache`
+1. `prepare`
    - Refreshes `cache/profiles/<name>/workspace` from `cache/phonepe/decompiled/base_decompiled_clean`.
-2. `compile-modules`
+2. `smali`
    - Builds per-module artifacts into `cache/module_artifacts/<module>/`.
    - Rebuilds only when declared `fingerprint_inputs` change.
 3. `merge`
    - Merges each module from its artifact directory via `--artifact-dir`.
-4. `compile`
+4. `apk`
    - Produces the final signed APK once in `cache/profiles/<name>/build/patched_signed.apk`.
+   - Default behavior reuses existing signed APK when fingerprint is unchanged.
+   - Use `--fresh` to force full rebuild.
 5. `test`
    - Ensures module artifacts exist.
-   - Reuses the final APK when possible.
+   - Uses the same APK cache-reuse logic as `apk`.
    - Installs the APK and validates startup on device.
 
 Current artifact-backed modules:
@@ -54,20 +56,20 @@ Run these commands in order if you want to inspect the real build behavior.
 1. `python3 src/pipeline/orch/orchestrator.py plan`
    Meaning: prints the exact module order used by the default composed build. This confirms the orchestrator will build `sigbypass`, then `https_interceptor`, then `phonepehelper`.
 
-2. `python3 src/pipeline/orch/orchestrator.py pre-cache`
+2. `python3 src/pipeline/orch/orchestrator.py prepare`
    Meaning: recreates a clean profile workspace from the decompiled baseline. This guarantees later injection happens on a fresh tree instead of a dirty previous run.
 
-3. `python3 src/pipeline/orch/orchestrator.py compile-modules`
+3. `python3 src/pipeline/orch/orchestrator.py smali`
    Meaning: builds the three module artifacts once into `cache/module_artifacts/`. This is the step that replaces the old “each module compiles during inject” behavior.
 
 4. `python3 src/pipeline/orch/orchestrator.py merge`
    Meaning: merges module artifacts into the workspace once, without APK packaging.
 
-5. `python3 src/pipeline/orch/orchestrator.py compile`
-   Meaning: builds and signs the final APK from the merged workspace.
+5. `python3 src/pipeline/orch/orchestrator.py apk`
+   Meaning: builds/signs the final APK with cache reuse enabled by default.
 
-6. `python3 src/pipeline/orch/orchestrator.py compile --reuse-artifacts`
-   Meaning: re-runs final APK packaging with reuse enabled. If nothing changed, you should see a cache hit and no full rebuild of the signed APK.
+6. `python3 src/pipeline/orch/orchestrator.py apk --fresh`
+   Meaning: force full rebuild for the final APK packaging.
 
 7. `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554`
    Meaning: runs the fastest real device validation path. It uses the built artifacts, reuses the final APK if possible, installs it, and verifies the app reaches the expected activity.
@@ -83,19 +85,18 @@ Run these commands in order if you want to inspect the real build behavior.
 
 See root [`package.json`](/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/package.json) for shortcuts:
 
-- `yarn flow:plan`
-- `yarn flow:pre-cache`
-- `yarn flow:smali`
-- `yarn flow:merge`
-- `yarn flow:apk`
-- `yarn flow:apk:fresh`
-- `yarn flow:compile` (alias of `flow:apk`, default reuse)
-- `yarn flow:compile:fresh` (force full rebuild)
-- `yarn flow:test`
-- `yarn flow:test:smoke`
-- `yarn flow:test:sigbypass`
-- `yarn flow:test:https`
-- `yarn flow:test:phonepehelper`
+- `yarn orch <subcommand> [options]`
+- `yarn plan`
+- `yarn prepare`
+- `yarn smali`
+- `yarn merge`
+- `yarn apk`
+- `yarn apk:fresh`
+- `yarn test:full`
+- `yarn test:smoke`
+- `yarn test:sigbypass`
+- `yarn test:https`
+- `yarn test:phonepehelper`
 
 ## Notes
 
