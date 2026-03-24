@@ -57,5 +57,5 @@ This keeps `apk.sha256` + `meta.json` + `probe.log` in the same directory.
 ## Notes
 
 - `decompile.sh` is a wrapper for the repository root `tools/decompile.sh`.
-- `test_profile_smoke.sh`, `test_profile_full.sh`, and `test_module_independent.sh` are thin delegators to `python3 src/build-orchestrator/orchestrator.py`.
+- `test_profile_smoke.sh`, `test_profile_full.sh`, and `test_module_independent.sh` are thin delegators to `python3 src/orch/orchestrator.py`.
 - Module-local compilation and injection details now live under each module directory and are consumed only through the orchestrator.

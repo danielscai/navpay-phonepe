@@ -4,7 +4,7 @@ set -euo pipefail
 PROFILE_NAME="${1:-full}"
 SERIAL="${2:-}"
 
-CMD=(python3 src/build-orchestrator/orchestrator.py test --profile "$PROFILE_NAME" --smoke)
+CMD=(python3 src/orch/orchestrator.py test --profile "$PROFILE_NAME" --smoke)
 if [ -n "$SERIAL" ]; then
   CMD+=(--serial "$SERIAL")
 fi

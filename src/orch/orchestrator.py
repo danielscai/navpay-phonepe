@@ -45,7 +45,6 @@ SMOKE_TIMEOUT_SEC = 20
 DEFAULT_TEST_MODE = "sigbypass"
 DEFAULT_EMULATOR_BOOT_TIMEOUT = 20
 REUSE_STATE_FILE = "reuse_artifacts_state.json"
-SKIP_BUILD_MODULES = {"phonepe_sigbypass", "phonepe_https_interceptor"}
 ARTIFACT_INJECT_MODULES = {"phonepe_sigbypass", "phonepe_https_interceptor", "phonepe_phonepehelper"}
 
 COLOR_RESET = "\033[0m"
@@ -83,13 +82,13 @@ def log_cmd_output(label: str, line: str):
 
 MODULE_DEFAULTS = {
     "phonepe_from_device": {
-        "path": "cache/phonepe_from_device",
+        "path": "cache/phonepe/from_device",
     },
     "phonepe_merged": {
-        "path": "cache/phonepe_merged",
+        "path": "cache/phonepe/merged",
     },
     "phonepe_decompiled": {
-        "path": "cache/phonepe_decompiled",
+        "path": "cache/phonepe/decompiled",
     },
     "phonepe_sigbypass": {
         "label": "SIGBYPASS",
@@ -98,7 +97,7 @@ MODULE_DEFAULTS = {
         "log_tag": SIGBYPASS_LOG_TAG,
         "login_activity": SIGBYPASS_LOGIN_ACTIVITY,
         "test_mode": "unified",
-        "inject_script": "src/signature_bypass/scripts/inject.sh",
+        "merge_script": "src/signature_bypass/scripts/merge.sh",
     },
     "phonepe_https_interceptor": {
         "label": "HTTPS",
@@ -108,7 +107,7 @@ MODULE_DEFAULTS = {
         "runtime_log_required": False,
         "login_activity": SIGBYPASS_LOGIN_ACTIVITY,
         "test_mode": "unified",
-        "inject_script": "src/https_interceptor/scripts/inject.sh",
+        "merge_script": "src/https_interceptor/scripts/merge.sh",
     },
     "phonepe_phonepehelper": {
         "label": "PPHELPER",
@@ -117,17 +116,11 @@ MODULE_DEFAULTS = {
         "log_tag": PPHELPER_LOG_TAG,
         "login_activity": SIGBYPASS_LOGIN_ACTIVITY,
         "test_mode": "unified",
-        "inject_script": "src/phonepehelper/scripts/inject.sh",
+        "merge_script": "src/phonepehelper/scripts/merge.sh",
     },
 }
 
-LEGACY_ALIAS_TO_MODULE = {
-    "sigbypass": "phonepe_sigbypass",
-    "https": "phonepe_https_interceptor",
-    "phonepehelper": "phonepe_phonepehelper",
-}
-
-TOP_LEVEL_PROFILE_ACTIONS = {"plan", "pre-cache", "build-modules", "inject", "compile", "test"}
+TOP_LEVEL_PROFILE_ACTIONS = {"plan", "pre-cache", "compile-modules", "merge", "compile", "test"}
 
 
 def load_manifest():
@@ -698,21 +691,20 @@ def validate_cache_integrity(cache_path: Path, source_root: Path, label: str):
             f"Check upstream cache: {source_root} or re-run pre-cache with --delete."
         )
 
-def inject(
+def merge(
     cache_path: Path,
-    inject_script: Path,
+    merge_script: Path,
     reset_paths,
     added_paths,
     label: str,
-    skip_build: bool = False,
     artifact_dir: Optional[Path] = None,
 ):
     if not cache_path.exists():
         raise RuntimeError(f"{label} cache not found: {cache_path}")
-    if not inject_script.exists():
-        raise RuntimeError(f"Inject script not found: {inject_script}")
-    if not os.access(inject_script, os.X_OK):
-        raise RuntimeError(f"Inject script not executable: {inject_script}")
+    if not merge_script.exists():
+        raise RuntimeError(f"Merge script not found: {merge_script}")
+    if not os.access(merge_script, os.X_OK):
+        raise RuntimeError(f"Merge script not executable: {merge_script}")
     ensure_writable_shallow(cache_path)
     for rel in (reset_paths or []):
         for p in expand_globs(cache_path, rel):
@@ -720,9 +712,7 @@ def inject(
     for rel in (added_paths or []):
         for p in expand_globs(cache_path, rel):
             ensure_writable_shallow(p)
-    cmd = [str(inject_script)]
-    if skip_build:
-        cmd.append("--skip-build")
+    cmd = [str(merge_script)]
     if artifact_dir is not None:
         cmd.extend(["--artifact-dir", str(artifact_dir)])
     cmd.append(str(cache_path))
@@ -1408,8 +1398,8 @@ def resolve_module_spec(manifest, name: str):
     if not reset_paths:
         raise RuntimeError(f"{name} missing reset_paths in manifest")
 
-    inject_script_cfg = resolve_cfg_value(name, cfg, "inject_script", required=True)
-    inject_script = (REPO_ROOT / inject_script_cfg).resolve()
+    merge_script_cfg = resolve_cfg_value(name, cfg, "merge_script", required=True)
+    merge_script = (REPO_ROOT / merge_script_cfg).resolve()
 
     build_dir = resolve_cfg_value(name, cfg, "build_dir", required=True)
 
@@ -1436,7 +1426,7 @@ def resolve_module_spec(manifest, name: str):
         "source_root": source_root,
         "reset_paths": reset_paths,
         "added_paths": added_paths,
-        "inject_script": inject_script,
+        "merge_script": merge_script,
         "work_dir": resolve_cache_path(build_dir),
         "unsigned": cfg.get("unsigned") or DEFAULT_UNSIGNED_APK,
         "aligned": cfg.get("aligned") or DEFAULT_ALIGNED_APK,
@@ -1476,14 +1466,14 @@ def module_pre_cache(spec, delete_first: bool):
     )
 
 
-def module_inject(spec, delete_first: bool):
+def module_merge(spec, delete_first: bool):
     module_pre_cache(spec, delete_first)
     artifact_dir = module_artifact_path(spec["name"]) if spec["name"] in ARTIFACT_INJECT_MODULES else None
     if artifact_dir is not None:
         ensure_module_artifact(spec, artifact_dir)
-    inject(
+    merge(
         spec["cache_path"],
-        spec["inject_script"],
+        spec["merge_script"],
         spec["reset_paths"],
         spec["added_paths"],
         spec["label"],
@@ -1492,7 +1482,7 @@ def module_inject(spec, delete_first: bool):
 
 
 def module_compile(spec, delete_first: bool):
-    module_inject(spec, delete_first)
+    module_merge(spec, delete_first)
     sigbypass_compile(
         spec["cache_path"],
         spec["work_dir"],
@@ -1534,8 +1524,8 @@ def module_rerun(spec, serial: str):
 def run_module_action(spec, action: str, delete_first: bool, serial: str):
     if action == "pre-cache":
         module_pre_cache(spec, delete_first)
-    elif action == "inject":
-        module_inject(spec, delete_first)
+    elif action == "merge":
+        module_merge(spec, delete_first)
     elif action == "compile":
         module_compile(spec, delete_first)
     elif action == "test":
@@ -1582,7 +1572,7 @@ def profile_pre_cache(manifest, profile_name: str):
     log_info(f"[PROFILE:{profile_name}] workspace refreshed: {workspace}")
     return modules, workspace
 
-def profile_inject(manifest, profile_name: str, reuse_artifacts: bool = False):
+def profile_merge(manifest, profile_name: str, reuse_artifacts: bool = False):
     modules = resolve_profile_modules(manifest, profile_name)
     detect_conflicts(manifest, modules)
     _, workspace = profile_pre_cache(manifest, profile_name)
@@ -1591,13 +1581,12 @@ def profile_inject(manifest, profile_name: str, reuse_artifacts: bool = False):
         artifact_dir = module_artifact_path(module) if module in ARTIFACT_INJECT_MODULES else None
         if artifact_dir is not None:
             ensure_module_artifact(spec, artifact_dir)
-        inject(
+        merge(
             workspace,
-            spec["inject_script"],
+            spec["merge_script"],
             spec["reset_paths"],
             spec["added_paths"],
             f"PROFILE:{profile_name}:{module}",
-            skip_build=bool(reuse_artifacts and module in SKIP_BUILD_MODULES),
             artifact_dir=artifact_dir,
         )
     return workspace
@@ -1610,7 +1599,7 @@ def profile_compile(manifest, profile_name: str, reuse_artifacts: bool = False):
         workspace = resolve_profile_workspace(profile_name)
         if maybe_reuse_profile_artifacts(manifest, profile_name, workspace, work_dir):
             return work_dir
-    workspace = profile_inject(manifest, profile_name, reuse_artifacts=reuse_artifacts)
+    workspace = profile_merge(manifest, profile_name, reuse_artifacts=reuse_artifacts)
     sigbypass_compile(
         workspace,
         work_dir,
@@ -1753,13 +1742,6 @@ def profile_test(manifest, profile_name: str, serial: str, smoke: bool = False):
         verify_profile_log_tags(manifest, modules[1:], test_serial, strict=False)
 
 
-def dispatch_legacy_alias(manifest, args):
-    # Compatibility-only wrapper: legacy aliases forward to single-module actions.
-    # New integrations should call the top-level orchestrator actions as the primary path.
-    spec = resolve_module_spec(manifest, LEGACY_ALIAS_TO_MODULE[args.cmd])
-    run_module_action(spec, args.action, args.delete, args.serial or "")
-
-
 def run_profile_action(manifest, action: str, profile_name: str, serial: str, smoke: bool, reuse_artifacts: bool):
     if smoke and action != "test":
         raise RuntimeError("--smoke is only supported for 'test'")
@@ -1771,10 +1753,10 @@ def run_profile_action(manifest, action: str, profile_name: str, serial: str, sm
         print(json.dumps(modules, ensure_ascii=True))
     elif action == "pre-cache":
         profile_pre_cache(manifest, profile_name)
-    elif action == "build-modules":
+    elif action == "compile-modules":
         profile_build_modules(manifest, profile_name)
-    elif action == "inject":
-        profile_inject(manifest, profile_name)
+    elif action == "merge":
+        profile_merge(manifest, profile_name)
     elif action == "compile":
         profile_compile(manifest, profile_name, reuse_artifacts=reuse_artifacts)
     elif action == "test":
@@ -1796,7 +1778,7 @@ def build_parser() -> argparse.ArgumentParser:
         if allow_reuse:
             cmd_parser.add_argument("--reuse-artifacts", action="store_true", default=False)
 
-    for action in ("plan", "pre-cache", "build-modules", "inject"):
+    for action in ("plan", "pre-cache", "compile-modules", "merge"):
         action_parser = sub.add_parser(action)
         add_profile_args(action_parser, allow_serial=False)
 
@@ -1805,14 +1787,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     test_parser = sub.add_parser("test")
     add_profile_args(test_parser, allow_serial=True, allow_smoke=True)
-
-    # Compatibility-only contract: `profile <name> <action>` remains accepted.
-    profile = sub.add_parser("profile")
-    profile.add_argument("name")
-    profile.add_argument("action", choices=["plan", "pre-cache", "build-modules", "inject", "compile", "test"])
-    profile.add_argument("--serial")
-    profile.add_argument("--smoke", action="store_true", default=False)
-    profile.add_argument("--reuse-artifacts", action="store_true", default=False)
 
     sub.add_parser("graph")
     sub.add_parser("status")
@@ -1825,36 +1799,6 @@ def build_parser() -> argparse.ArgumentParser:
     rebuild.add_argument("--with-downstream", action="store_true")
     rebuild.add_argument("--serial")
     rebuild.add_argument("--package")
-
-    sigbypass = sub.add_parser("sigbypass")
-    sigbypass.add_argument(
-        "action",
-        choices=["pre-cache", "inject", "compile", "test", "rerun"],
-        nargs="?",
-        default="test",
-    )
-    sigbypass.add_argument("--serial")
-    sigbypass.add_argument("-d", "--delete", action="store_true", default=False)
-
-    https = sub.add_parser("https")
-    https.add_argument(
-        "action",
-        choices=["pre-cache", "inject", "compile", "test", "rerun"],
-        nargs="?",
-        default="test",
-    )
-    https.add_argument("--serial")
-    https.add_argument("-d", "--delete", action="store_true", default=False)
-
-    phonepehelper = sub.add_parser("phonepehelper")
-    phonepehelper.add_argument(
-        "action",
-        choices=["pre-cache", "inject", "compile", "test", "rerun"],
-        nargs="?",
-        default="test",
-    )
-    phonepehelper.add_argument("--serial")
-    phonepehelper.add_argument("-d", "--delete", action="store_true", default=False)
 
     return parser
 
@@ -1881,17 +1825,6 @@ def main(argv=None):
             getattr(args, "smoke", False),
             getattr(args, "reuse_artifacts", False),
         )
-    elif args.cmd == "profile":
-        run_profile_action(
-            manifest,
-            args.action,
-            args.name,
-            args.serial or "",
-            args.smoke,
-            args.reuse_artifacts,
-        )
-    elif args.cmd in LEGACY_ALIAS_TO_MODULE:
-        dispatch_legacy_alias(manifest, args)
     else:
         raise RuntimeError("Unknown command")
 

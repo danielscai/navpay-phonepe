@@ -12,8 +12,8 @@ import orchestrator as cache_manager  # noqa: E402
 
 class ModuleArtifactPlanningTest(unittest.TestCase):
     def test_top_level_parser_accepts_build_modules_action(self) -> None:
-        args = cache_manager.build_parser().parse_args(["build-modules"])
-        self.assertEqual(args.cmd, "build-modules")
+        args = cache_manager.build_parser().parse_args(["compile-modules"])
+        self.assertEqual(args.cmd, "compile-modules")
         self.assertEqual(args.profile, "full")
 
     def test_profile_plan_build_returns_resolved_profile_modules(self) -> None:
@@ -32,13 +32,12 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
         manifest = cache_manager.load_manifest()
         expected = {
             "phonepe_sigbypass": {
-                "command": "src/signature_bypass/tools/build_artifacts.sh",
+                "command": "src/signature_bypass/scripts/compile.sh",
                 "args": [],
                 "fingerprint_inputs": [
                     cache_manager.REPO_ROOT / "src/signature_bypass/src/main/java",
-                    cache_manager.REPO_ROOT / "src/signature_bypass/tools/build_artifacts.sh",
-                    cache_manager.REPO_ROOT / "src/signature_bypass/tools/compile.sh",
-                    cache_manager.REPO_ROOT / "src/signature_bypass/scripts/inject.sh",
+                    cache_manager.REPO_ROOT / "src/signature_bypass/scripts/compile.sh",
+                    cache_manager.REPO_ROOT / "src/signature_bypass/scripts/merge.sh",
                     cache_manager.REPO_ROOT / "src/tools/lib/dispatcher.sh",
                 ],
                 "outputs": {
@@ -49,26 +48,26 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
                 },
             },
             "phonepe_https_interceptor": {
-                "command": "src/https_interceptor/scripts/build_smali_artifacts.sh",
+                "command": "src/https_interceptor/scripts/compile.sh",
                 "args": [],
                 "fingerprint_inputs": [
                     cache_manager.REPO_ROOT / "src/https_interceptor/app/build.gradle",
                     cache_manager.REPO_ROOT / "src/https_interceptor/app/src/main/java/com/httpinterceptor/interceptor/RemoteLoggingInterceptor.java",
                     cache_manager.REPO_ROOT / "src/https_interceptor/app/src/main/java/com/httpinterceptor/interceptor/LogSender.java",
                     cache_manager.REPO_ROOT / "src/https_interceptor/app/src/main/java/com/httpinterceptor/hook/HookUtil.java",
-                    cache_manager.REPO_ROOT / "src/https_interceptor/scripts/build_smali_artifacts.sh",
-                    cache_manager.REPO_ROOT / "src/https_interceptor/scripts/inject.sh",
+                    cache_manager.REPO_ROOT / "src/https_interceptor/scripts/compile.sh",
+                    cache_manager.REPO_ROOT / "src/https_interceptor/scripts/merge.sh",
                 ],
                 "outputs": {
                     "smali": cache_manager.REPO_ROOT / "src/https_interceptor/build/smali",
                 },
             },
             "phonepe_phonepehelper": {
-                "command": "src/phonepehelper/scripts/build_artifacts.sh",
+                "command": "src/phonepehelper/scripts/compile.sh",
                 "args": [],
                 "fingerprint_inputs": [
                     cache_manager.REPO_ROOT / "src/phonepehelper/src/main/java",
-                    cache_manager.REPO_ROOT / "src/phonepehelper/scripts/build_artifacts.sh",
+                    cache_manager.REPO_ROOT / "src/phonepehelper/scripts/merge.sh",
                     cache_manager.REPO_ROOT / "src/phonepehelper/scripts/compile.sh",
                 ],
                 "outputs": {
@@ -129,12 +128,12 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
             [cache_manager.module_artifact_path(module) for module in ordered_modules],
         )
 
-    def test_profile_inject_passes_artifact_dir_for_phonepehelper(self) -> None:
+    def test_profile_merge_passes_artifact_dir_for_phonepehelper(self) -> None:
         manifest = {"phonepe_phonepehelper": {"deps": []}}
         workspace = Path("/tmp/profile-workspace")
         spec = {
             "name": "phonepe_phonepehelper",
-            "inject_script": Path("/tmp/inject.sh"),
+            "merge_script": Path("/tmp/merge.sh"),
             "reset_paths": [],
             "added_paths": [],
         }
@@ -157,24 +156,23 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
             return_value=True,
         ) as ensure_mock, mock.patch.object(
             cache_manager,
-            "inject",
-        ) as inject_mock:
-            result = cache_manager.profile_inject(manifest, "phonepehelper-only")
+            "merge",
+        ) as merge_mock:
+            result = cache_manager.profile_merge(manifest, "phonepehelper-only")
 
         self.assertEqual(result, workspace)
         ensure_mock.assert_called_once_with(
             spec,
             cache_manager.module_artifact_path("phonepe_phonepehelper"),
         )
-        self.assertEqual(inject_mock.call_args.kwargs["artifact_dir"], cache_manager.module_artifact_path("phonepe_phonepehelper"))
-        self.assertEqual(inject_mock.call_args.kwargs["skip_build"], False)
+        self.assertEqual(merge_mock.call_args.kwargs["artifact_dir"], cache_manager.module_artifact_path("phonepe_phonepehelper"))
 
-    def test_profile_inject_passes_artifact_dir_for_https(self) -> None:
+    def test_profile_merge_passes_artifact_dir_for_https(self) -> None:
         manifest = {"phonepe_https_interceptor": {"deps": []}}
         workspace = Path("/tmp/profile-workspace")
         spec = {
             "name": "phonepe_https_interceptor",
-            "inject_script": Path("/tmp/inject.sh"),
+            "merge_script": Path("/tmp/merge.sh"),
             "reset_paths": [],
             "added_paths": [],
         }
@@ -197,9 +195,9 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
             return_value=True,
         ) as ensure_mock, mock.patch.object(
             cache_manager,
-            "inject",
-        ) as inject_mock:
-            result = cache_manager.profile_inject(manifest, "https-only")
+            "merge",
+        ) as merge_mock:
+            result = cache_manager.profile_merge(manifest, "https-only")
 
         self.assertEqual(result, workspace)
         ensure_mock.assert_called_once_with(
@@ -207,17 +205,16 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
             cache_manager.module_artifact_path("phonepe_https_interceptor"),
         )
         self.assertEqual(
-            inject_mock.call_args.kwargs["artifact_dir"],
+            merge_mock.call_args.kwargs["artifact_dir"],
             cache_manager.module_artifact_path("phonepe_https_interceptor"),
         )
-        self.assertEqual(inject_mock.call_args.kwargs["skip_build"], False)
 
-    def test_profile_inject_refreshes_workspace_before_injecting(self) -> None:
+    def test_profile_merge_refreshes_workspace_before_injecting(self) -> None:
         manifest = {"phonepe_sigbypass": {"deps": []}}
         workspace = Path("/tmp/profile-workspace")
         spec = {
             "name": "phonepe_sigbypass",
-            "inject_script": Path("/tmp/inject.sh"),
+            "merge_script": Path("/tmp/merge.sh"),
             "reset_paths": [],
             "added_paths": [],
         }
@@ -240,19 +237,19 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
             return_value=True,
         ), mock.patch.object(
             cache_manager,
-            "inject",
-        ) as inject_mock:
-            result = cache_manager.profile_inject(manifest, "sigbypass-only")
+            "merge",
+        ) as merge_mock:
+            result = cache_manager.profile_merge(manifest, "sigbypass-only")
 
         self.assertEqual(result, workspace)
         pre_cache_mock.assert_called_once_with(manifest, "sigbypass-only")
-        self.assertEqual(inject_mock.call_args.args[0], workspace)
+        self.assertEqual(merge_mock.call_args.args[0], workspace)
 
-    def test_module_inject_passes_artifact_dir_for_supported_module(self) -> None:
+    def test_module_merge_passes_artifact_dir_for_supported_module(self) -> None:
         spec = {
             "name": "phonepe_sigbypass",
             "cache_path": Path("/tmp/cache"),
-            "inject_script": Path("/tmp/inject.sh"),
+            "merge_script": Path("/tmp/merge.sh"),
             "reset_paths": [],
             "added_paths": [],
             "label": "SIGBYPASS",
@@ -260,13 +257,13 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
 
         with mock.patch.object(cache_manager, "module_pre_cache") as pre_cache_mock, \
             mock.patch.object(cache_manager, "ensure_module_artifact", return_value=True) as ensure_mock, \
-            mock.patch.object(cache_manager, "inject") as inject_mock:
-            cache_manager.module_inject(spec, delete_first=False)
+            mock.patch.object(cache_manager, "merge") as merge_mock:
+            cache_manager.module_merge(spec, delete_first=False)
 
         pre_cache_mock.assert_called_once_with(spec, False)
         ensure_mock.assert_called_once_with(spec, cache_manager.module_artifact_path("phonepe_sigbypass"))
         self.assertEqual(
-            inject_mock.call_args.kwargs["artifact_dir"],
+            merge_mock.call_args.kwargs["artifact_dir"],
             cache_manager.module_artifact_path("phonepe_sigbypass"),
         )
 

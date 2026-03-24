@@ -94,35 +94,28 @@ for entry in entries:
 PYCODE
 }
 
-if [ -n "$ARTIFACT_DIR" ] && [ ! -d "$ARTIFACT_DIR" ]; then
+if [ -z "$ARTIFACT_DIR" ]; then
+    log_error "必须通过 --artifact-dir 提供预构建产物目录"
+    exit 1
+fi
+
+if [ ! -d "$ARTIFACT_DIR" ]; then
     log_error "artifact 目录不存在: $ARTIFACT_DIR"
     exit 1
 fi
 
-if [ -n "$ARTIFACT_DIR" ]; then
-    BUILD_DIR="$ARTIFACT_DIR"
-else
-    BUILD_DIR="$PROJECT_DIR/build"
-fi
+BUILD_DIR="$ARTIFACT_DIR"
 SMALI_DIR="$BUILD_DIR/smali"
 
 log_step "检查编译输出"
 
-if [ -n "$ARTIFACT_DIR" ]; then
-    if [ ! -d "$SMALI_DIR/com/phonepehelper" ]; then
-        log_error "artifact 中缺少 phonepehelper smali: $SMALI_DIR/com/phonepehelper"
-        exit 1
-    fi
-    if [ ! -f "$SMALI_DIR/com/PhonePeTweak/Def/PhonePeHelper.smali" ]; then
-        log_error "artifact 中缺少关键入口文件: $SMALI_DIR/com/PhonePeTweak/Def/PhonePeHelper.smali"
-        exit 1
-    fi
-else
-    # 检查是否已编译
-    if [ ! -d "$SMALI_DIR/com/phonepehelper" ]; then
-        log_warn "PhonePeHelper 代码未编译，先运行编译..."
-        "$SCRIPT_DIR/compile.sh"
-    fi
+if [ ! -d "$SMALI_DIR/com/phonepehelper" ]; then
+    log_error "artifact 中缺少 phonepehelper smali: $SMALI_DIR/com/phonepehelper"
+    exit 1
+fi
+if [ ! -f "$SMALI_DIR/com/PhonePeTweak/Def/PhonePeHelper.smali" ]; then
+    log_error "artifact 中缺少关键入口文件: $SMALI_DIR/com/PhonePeTweak/Def/PhonePeHelper.smali"
+    exit 1
 fi
 
 log_info "Smali 目录: $SMALI_DIR"

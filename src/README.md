@@ -2,9 +2,11 @@
 
 适用范围：`src/` 下除 `log_server` 外的所有模块都会注入到同一个 PhonePe APK。
 
+统一标准文档：[`docs/编排统一规范.md`](/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/docs/编排统一规范.md)。
+
 ## 统一要求
 
-- **统一编排入口是 `src/build-orchestrator/orchestrator.py`**。模块目录只保留 orchestrator 直接消费的最小 builder / injector 脚本；`src/tools/` 只保留薄包装 smoke/full 验证脚本与行为采样工具。
+- **统一编排入口是 `src/orch/orchestrator.py`**。模块目录只保留 orchestrator 直接消费的最小 `compile/merge` 脚本；`src/tools/` 只保留薄包装 smoke/full 验证脚本与行为采样工具。
 - **参考 pev70 的行为逻辑，不复用 pev70 代码或 smali**。所有注入代码必须是本仓库自行实现的 Java/Smali。
 - **只允许一个“主入口”修改 Application**（`attachBaseContext()` 或 Manifest）。
   - 其他模块必须通过主入口调用自身的 `ModuleInit.init(Context)` 进行初始化。
@@ -17,8 +19,8 @@
 - **默认测试模拟器**：`emulator-5554`（后续测试默认使用该串号，除非在脚本参数中显式覆盖）。
 - **Android SDK 依赖**：测试脚本默认在 `$ANDROID_HOME` 或 `~/Library/Android/sdk` 下寻找 build-tools，优先 `35.0.0`；若缺失会自动搜索其他版本的 `zipalign/apksigner`，找不到则报错并提示安装 build-tools。
 - **Java 运行时**：`apksigner` 需要 Java，可用 `JAVA_HOME=/opt/homebrew/opt/openjdk`（macOS Homebrew 默认路径）。测试脚本会自动设置该默认值。
-- **测试 APK 基线**：统一从 `cache/phonepe_decompiled/base_decompiled_clean` 复制到工作目录，避免污染缓存；缓存由 `python3 src/build-orchestrator/orchestrator.py rebuild` 生成。
-- **统一编排入口**：`src/build-orchestrator/orchestrator.py`（依赖关系配置见 `src/build-orchestrator/cache_manifest.json`，`src/build-orchestrator/cache_manager.py` 仅保留兼容壳）。
+- **测试 APK 基线**：统一从 `cache/phonepe/decompiled/base_decompiled_clean` 复制到工作目录，避免污染缓存；缓存由 `python3 src/orch/orchestrator.py rebuild` 生成。
+- **统一编排入口**：`src/orch/orchestrator.py`（依赖关系配置见 `src/orch/cache_manifest.json`）。
 - **ADB 守护进程异常**：若出现 `could not install *smartsocket* listener: Operation not permitted`，优先使用 SDK 自带 adb（`$ANDROID_HOME/platform-tools/adb`），并执行 `adb kill-server && adb start-server` 后再重试。
 
 ## 推荐组织方式
@@ -50,22 +52,15 @@
 
 > 注：如果确实需要新的 Application 注入点，必须先评估与主入口冲突的风险并在 `src/README.md` 更新方案。
 
-## 当前推荐命令与兼容说明
+## 当前推荐命令
 
 - 推荐主流程（profile，主契约）：
-  - `python3 src/build-orchestrator/orchestrator.py plan`
-  - `python3 src/build-orchestrator/orchestrator.py pre-cache`
-  - `python3 src/build-orchestrator/orchestrator.py build-modules`
-  - `python3 src/build-orchestrator/orchestrator.py inject`
-  - `python3 src/build-orchestrator/orchestrator.py compile`
-  - `python3 src/build-orchestrator/orchestrator.py test --serial emulator-5554`（需要 adb/模拟器）
+  - `python3 src/orch/orchestrator.py plan`
+  - `python3 src/orch/orchestrator.py pre-cache`
+  - `python3 src/orch/orchestrator.py compile-modules`
+  - `python3 src/orch/orchestrator.py merge`
+  - `python3 src/orch/orchestrator.py compile`
+  - `python3 src/orch/orchestrator.py test --serial emulator-5554`（需要 adb/模拟器）
   - 默认 profile 为 `full`，如需切换可追加 `--profile <name>`。
 
-- 旧命令兼容（compatibility-only wrapper，仍可用）：
-  - `python3 src/build-orchestrator/orchestrator.py sigbypass <action>`
-  - `python3 src/build-orchestrator/orchestrator.py https <action>`
-  - `python3 src/build-orchestrator/orchestrator.py phonepehelper <action>`
-
-- 兼容命令定位：
-  - 旧命令仅用于模块级独立执行与历史脚本兼容。
-  - 新增流程与日常联调默认使用 `profile` 子命令。
+- 已移除旧模块别名命令，统一走上述 profile 主流程。

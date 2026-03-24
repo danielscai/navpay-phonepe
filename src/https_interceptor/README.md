@@ -259,7 +259,7 @@ public static boolean isSensitiveHeader(Object unused, String headerName) {
 
 ### 本项目的实现
 
-`inject.sh` 脚本在步骤 3.1 中自动查找并 patch `Util.isSensitiveHeader()` 方法：
+`merge.sh` 脚本在步骤 3.1 中自动查找并 patch `Util.isSensitiveHeader()` 方法：
 
 1. **查找方法**：由于 ProGuard 混淆，方法名可能是 `isSensitiveHeader` 或 `r` 等。脚本通过查找包含 `"Authorization"` 字符串的方法来定位。
 
@@ -298,6 +298,6 @@ curl -s "http://localhost:8088/api/logs?limit=50" | \
 
 ### 注意事项
 
-- 方法名因 ProGuard 混淆而不同，inject.sh 通过内容特征（`"Authorization"` 字符串）自动定位
+- 方法名因 ProGuard 混淆而不同，merge.sh 通过内容特征（`"Authorization"` 字符串）自动定位
 - 如果目标 APK 的 OkHttp 版本不同，可能需要调整匹配逻辑
 - 此功能仅用于安全研究，请勿用于非法目的

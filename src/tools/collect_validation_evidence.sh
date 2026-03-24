@@ -108,9 +108,9 @@ record_only() {
     } | tee -a "$COMMAND_LOG" >"$log_path"
 }
 
-run_logged "gate_a_cli_backcompat" python3 -m unittest src/build-orchestrator/tests/test_cli_backcompat.py -v
-run_logged "gate_a_all_tests" python3 -m unittest discover -s src/build-orchestrator/tests -p 'test_*.py' -v
-run_logged "gate_a_plan" python3 src/build-orchestrator/orchestrator.py plan
+run_logged "gate_a_cli_contract" python3 -m unittest src/orch/tests/test_cli_contract.py -v
+run_logged "gate_a_all_tests" python3 -m unittest discover -s src/orch/tests -p 'test_*.py' -v
+run_logged "gate_a_plan" python3 src/orch/orchestrator.py plan
 
 if [ "$RUN_ADB_GATES" = "1" ]; then
     run_logged "gate_b_test_independent" yarn test:independent "$SERIAL"

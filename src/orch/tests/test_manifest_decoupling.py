@@ -17,7 +17,7 @@ TARGET_MODULES = (
 
 sys.path.insert(0, str(CACHE_MANAGER_DIR))
 
-import cache_manager  # noqa: E402
+import orchestrator as cache_manager  # noqa: E402
 
 
 class ManifestDecouplingTest(unittest.TestCase):
@@ -34,14 +34,14 @@ class ManifestDecouplingTest(unittest.TestCase):
 
     def test_resolve_module_spec_fails_fast_for_invalid_source_cache(self) -> None:
         manifest = {
-            "phonepe_decompiled": {"deps": [], "path": "cache/phonepe_decompiled"},
+            "phonepe_decompiled": {"deps": [], "path": "cache/phonepe/decompiled"},
             "phonepe_sigbypass": {
                 "deps": ["phonepe_decompiled"],
                 "path": "cache/phonepe_sigbypass",
                 "source_cache": "missing_cache",
                 "source_subdir": "base_decompiled_clean",
                 "reset_paths": ["smali/Foo.smali"],
-                "inject_script": "src/signature_bypass/scripts/inject.sh",
+                "merge_script": "src/signature_bypass/scripts/merge.sh",
                 "build_dir": "cache/build",
             },
         }
@@ -54,17 +54,17 @@ class ManifestDecouplingTest(unittest.TestCase):
             base = Path(tempdir)
             fake_repo = base / "repo"
             fake_repo.mkdir(parents=True)
-            (fake_repo / "cache/phonepe_decompiled").mkdir(parents=True)
+            (fake_repo / "cache/phonepe/decompiled").mkdir(parents=True)
 
             manifest = {
-                "phonepe_decompiled": {"deps": [], "path": "cache/phonepe_decompiled"},
+                "phonepe_decompiled": {"deps": [], "path": "cache/phonepe/decompiled"},
                 "phonepe_sigbypass": {
                     "deps": ["phonepe_decompiled"],
                     "path": "cache/phonepe_sigbypass",
                     "source_cache": "phonepe_decompiled",
                     "source_subdir": "base_decompiled_clean",
                     "reset_paths": ["smali/Foo.smali"],
-                    "inject_script": "src/signature_bypass/scripts/inject.sh",
+                    "merge_script": "src/signature_bypass/scripts/merge.sh",
                     "build_dir": "cache/build",
                 },
             }
@@ -77,17 +77,17 @@ class ManifestDecouplingTest(unittest.TestCase):
                     cache_manager.resolve_module_spec(manifest, "phonepe_sigbypass")
             self.assertIn("source_subdir", str(exc.exception))
 
-    def test_module_injectors_are_artifact_only(self) -> None:
+    def test_module_mergers_are_artifact_only(self) -> None:
         injectors = (
-            Path("src/signature_bypass/scripts/inject.sh"),
-            Path("src/https_interceptor/scripts/inject.sh"),
-            Path("src/phonepehelper/scripts/inject.sh"),
+            Path("src/signature_bypass/scripts/merge.sh"),
+            Path("src/https_interceptor/scripts/merge.sh"),
+            Path("src/phonepehelper/scripts/merge.sh"),
         )
         for path in injectors:
             with self.subTest(path=path):
                 text = path.read_text(encoding="utf-8")
                 self.assertIn("--artifact-dir", text)
-                self.assertNotIn("build_smali_artifacts.sh", text)
+                self.assertNotIn("compile.sh", text)
                 self.assertNotIn('"$SCRIPT_DIR/compile.sh"', text)
 
 

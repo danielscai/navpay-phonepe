@@ -1,11 +1,14 @@
 {
   "phonepe_from_device": {
+    "path": "cache/phonepe/from_device",
     "deps": []
   },
   "phonepe_merged": {
+    "path": "cache/phonepe/merged",
     "deps": ["phonepe_from_device"]
   },
   "phonepe_decompiled": {
+    "path": "cache/phonepe/decompiled",
     "deps": ["phonepe_merged"]
   },
   "phonepe_sigbypass": {
@@ -13,13 +16,12 @@
     "source_cache": "phonepe_decompiled",
     "source_subdir": "base_decompiled_clean",
     "builder": {
-      "command": "src/signature_bypass/tools/build_artifacts.sh",
+      "command": "src/signature_bypass/scripts/compile.sh",
       "args": [],
       "fingerprint_inputs": [
         "src/signature_bypass/src/main/java",
-        "src/signature_bypass/tools/build_artifacts.sh",
-        "src/signature_bypass/tools/compile.sh",
-        "src/signature_bypass/scripts/inject.sh",
+        "src/signature_bypass/scripts/compile.sh",
+        "src/signature_bypass/scripts/merge.sh",
         "src/tools/lib/dispatcher.sh"
       ],
       "outputs": [
@@ -36,11 +38,12 @@
           "target": "classes.dex"
         },
         {
-          "source": "src/signature_bypass/libs/jni",
+      "source": "src/signature_bypass/libs/jni",
           "target": "libs/jni"
         }
       ]
     },
+    "merge_script": "src/signature_bypass/scripts/merge.sh",
     "reset_paths": [
       "smali/com/phonepe/app/PhonePeApplication.smali"
     ],
@@ -55,15 +58,15 @@
     "source_cache": "phonepe_decompiled",
     "source_subdir": "base_decompiled_clean",
     "builder": {
-      "command": "src/https_interceptor/scripts/build_smali_artifacts.sh",
+      "command": "src/https_interceptor/scripts/compile.sh",
       "args": [],
       "fingerprint_inputs": [
         "src/https_interceptor/app/build.gradle",
         "src/https_interceptor/app/src/main/java/com/httpinterceptor/interceptor/RemoteLoggingInterceptor.java",
         "src/https_interceptor/app/src/main/java/com/httpinterceptor/interceptor/LogSender.java",
         "src/https_interceptor/app/src/main/java/com/httpinterceptor/hook/HookUtil.java",
-        "src/https_interceptor/scripts/build_smali_artifacts.sh",
-        "src/https_interceptor/scripts/inject.sh"
+        "src/https_interceptor/scripts/compile.sh",
+        "src/https_interceptor/scripts/merge.sh"
       ],
       "outputs": [
         {
@@ -72,6 +75,7 @@
         }
       ]
     },
+    "merge_script": "src/https_interceptor/scripts/merge.sh",
     "reset_paths": [
       "smali*/okhttp3/OkHttpClient$Builder.smali",
       "AndroidManifest.xml",
@@ -87,11 +91,11 @@
     "source_cache": "phonepe_decompiled",
     "source_subdir": "base_decompiled_clean",
     "builder": {
-      "command": "src/phonepehelper/scripts/build_artifacts.sh",
+      "command": "src/phonepehelper/scripts/compile.sh",
       "args": [],
       "fingerprint_inputs": [
         "src/phonepehelper/src/main/java",
-        "src/phonepehelper/scripts/build_artifacts.sh",
+        "src/phonepehelper/scripts/merge.sh",
         "src/phonepehelper/scripts/compile.sh"
       ],
       "outputs": [
@@ -101,6 +105,7 @@
         }
       ]
     },
+    "merge_script": "src/phonepehelper/scripts/merge.sh",
     "uninstall_before_install": false,
     "reset_paths": [
       "smali_classes*/com/sigbypass/HookEntry.smali"

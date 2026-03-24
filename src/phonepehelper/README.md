@@ -19,9 +19,7 @@
 phonepehelper/
 ├── README.md
 ├── scripts/
-│   ├── build_artifacts.sh
 │   ├── compile.sh
-│   ├── inject.sh
 │   └── merge.sh
 └── src/main/java/
     ├── com/phonepehelper/ModuleInit.java
@@ -33,7 +31,7 @@ phonepehelper/
 
 ```bash
 cd src/phonepehelper
-./scripts/build_artifacts.sh
+./scripts/compile.sh
 ```
 
 输出：
@@ -43,10 +41,10 @@ cd src/phonepehelper
 ## 注入与测试
 
 ```bash
-python3 src/build-orchestrator/orchestrator.py test --profile phonepehelper-only --smoke --serial emulator-5554
+python3 src/orch/orchestrator.py test --profile phonepehelper-only --smoke --serial emulator-5554
 ```
 
-`scripts/inject.sh` 现在只消费 `--artifact-dir`，由 orchestrator 在构建阶段提前准备产物。
+`scripts/merge.sh` 现在只消费 `--artifact-dir`，由 orchestrator 在构建阶段提前准备产物。
 
 ## 验证
 
@@ -63,5 +61,5 @@ adb logcat -s PPHelper
 ## 推荐入口
 
 ```bash
-yarn orch:test:phonepehelper
+yarn flow:test:phonepehelper
 ```

@@ -10,7 +10,7 @@
 # 2. 复制拦截器 smali 到目标 APK
 # 3. 修改 HookUtil 或 OkHttpClient.Builder.build() 注入拦截器
 #
-# 用法：./inject.sh [--skip-build] --artifact-dir <path> <decompiled_dir>
+# 用法：./merge.sh --artifact-dir <path> <decompiled_dir>
 #######################################################################
 
 set -euo pipefail
@@ -34,7 +34,7 @@ ARTIFACT_DIR=""
 TARGET_DIR=""
 
 usage() {
-    echo "用法: $0 [--artifact-dir <path>] [--skip-build] <decompiled_dir>"
+    echo "用法: $0 --artifact-dir <path> <decompiled_dir>"
 }
 
 while [ $# -gt 0 ]; do
@@ -47,10 +47,6 @@ while [ $# -gt 0 ]; do
                 exit 1
             fi
             ARTIFACT_DIR="$1"
-            shift
-            ;;
-        --skip-build)
-            log_warn "--skip-build 已废弃；inject.sh 现在只消费现成 artifact"
             shift
             ;;
         -h|--help)

@@ -6,6 +6,7 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[1]
 CACHE_DIR = REPO_ROOT / "cache"
+PROFILES_DIR = CACHE_DIR / "profiles"
 
 
 def detect_conflicts(mod_cfg: dict, modules: list):
@@ -25,11 +26,11 @@ def detect_conflicts(mod_cfg: dict, modules: list):
 
 
 def profile_workspace_path(profile: str) -> Path:
-    return CACHE_DIR / f"profile_{profile}_workspace"
+    return PROFILES_DIR / profile / "workspace"
 
 
 def profile_build_path(profile: str) -> Path:
-    return CACHE_DIR / f"profile_{profile}_build"
+    return PROFILES_DIR / profile / "build"
 
 
 def make_workspace_writable(path: Path) -> None:

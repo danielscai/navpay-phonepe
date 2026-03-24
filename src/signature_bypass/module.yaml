@@ -10,5 +10,5 @@ payload:
   pine_smali_dir: build/pine_smali
   lib_dir: libs/jni
 scripts:
-  inject: tools/inject.sh
+  merge: scripts/merge.sh
   verify: scripts/verify.sh

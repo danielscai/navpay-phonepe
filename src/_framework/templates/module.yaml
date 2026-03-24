@@ -9,5 +9,5 @@ payload:
   smali_dir: payload/smali
   lib_dir: payload/lib
 scripts:
-  inject: scripts/inject.sh
+  merge: scripts/merge.sh
   verify: scripts/verify.sh

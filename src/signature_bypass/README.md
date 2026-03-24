@@ -19,11 +19,9 @@ signature_bypass_src/
 │   ├── ReflectUtils.java              # 反射工具类
 │   ├── SignatureHook.java             # 签名 Hook 核心逻辑
 │   └── HookEntry.java                 # 入口类
-├── tools/
-│   ├── build_artifacts.sh             # orchestrator builder 入口
-│   └── compile.sh                     # 实际编译逻辑
 ├── scripts/
-│   └── inject.sh                      # orchestrator injector 入口
+│   ├── compile.sh                     # orchestrator compiler 入口
+│   └── merge.sh                       # orchestrator merger 入口
 ├── libs/                              # 依赖库（自动下载）
 │   ├── pine-core.aar                  # Pine 框架 AAR
 │   ├── pine-core-classes.jar          # Pine 框架 JAR
@@ -56,7 +54,7 @@ public static final String ORIGINAL_SIGNATURE = "3082...";
 ### 2. 构建 artifact
 
 ```bash
-./tools/build_artifacts.sh
+./scripts/compile.sh
 ```
 
 输出：
@@ -73,7 +71,7 @@ public static final String ORIGINAL_SIGNATURE = "3082...";
 ### 3. 通过 orchestrator 注入并测试
 
 ```bash
-python3 src/build-orchestrator/orchestrator.py test --profile sigbypass-only --smoke --serial emulator-5554
+python3 src/orch/orchestrator.py test --profile sigbypass-only --smoke --serial emulator-5554
 ```
 
 ## 验证
@@ -171,9 +169,9 @@ SignatureMethodHook.afterCall() ← 拦截并替换签名
 ## 运行方式
 
 - 推荐命令：
-  - `python3 src/build-orchestrator/orchestrator.py build-modules --profile sigbypass-only`
-  - `python3 src/build-orchestrator/orchestrator.py test --profile sigbypass-only --smoke --serial emulator-5554`
-- `scripts/inject.sh` 现在只消费 `--artifact-dir`，不再在注入阶段隐式编译。
+  - `python3 src/orch/orchestrator.py compile-modules --profile sigbypass-only`
+  - `python3 src/orch/orchestrator.py test --profile sigbypass-only --smoke --serial emulator-5554`
+- `scripts/merge.sh` 现在只消费 `--artifact-dir`，不再在注入阶段隐式编译。
 
 ## 自定义修改
 

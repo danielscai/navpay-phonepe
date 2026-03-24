@@ -3,11 +3,11 @@
 #######################################################################
 # 签名绕过代码合并脚本
 #
-# 功能：将编译后的 smali 代码注入到反编译的 APK 目录
+# 功能：将编译后的 smali 代码合并到反编译的 APK 目录
 #
-# 用法：./inject.sh <decompiled_apk_dir>
+# 用法：./merge.sh --artifact-dir <artifact_dir> <decompiled_apk_dir>
 #
-# 示例：./inject.sh /path/to/decompiled/base
+# 示例：./merge.sh --artifact-dir ./build /path/to/decompiled/base
 #######################################################################
 
 set -e
@@ -27,7 +27,6 @@ log_step() { echo -e "\n${BLUE}==== $1 ====${NC}"; }
 # 路径配置
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-TOOLS_DIR="$PROJECT_DIR/tools"
 SRC_DIR="$(dirname "$PROJECT_DIR")"
 DISPATCHER_INJECT_SCRIPT="$SRC_DIR/_framework/dispatcher/scripts/inject_entry.py"
 DISPATCHER_LIB_SCRIPT="$SRC_DIR/tools/lib/dispatcher.sh"
@@ -35,14 +34,10 @@ DISPATCHER_LIB_SCRIPT="$SRC_DIR/tools/lib/dispatcher.sh"
 ARTIFACT_DIR=""
 TARGET_DIR=""
 
-usage() { echo "用法: $0 [--skip-build] --artifact-dir <artifact_dir> <decompiled_apk_dir>"; }
+usage() { echo "用法: $0 --artifact-dir <artifact_dir> <decompiled_apk_dir>"; }
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --skip-build)
-            log_warn "--skip-build 已废弃；inject.sh 现在只消费现成 artifact"
-            shift
-            ;;
         --artifact-dir)
             if [ $# -lt 2 ]; then
                 log_error "--artifact-dir 需要一个路径参数"
