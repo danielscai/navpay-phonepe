@@ -8,13 +8,11 @@
     "logd": "cd src/services/log_server && npm run dev",
     "emu": "/Users/danielscai/Library/Android/sdk/emulator/emulator @phonepe1",
     "orch": "python3 src/pipeline/orch/orchestrator.py",
-    "plan": "yarn orch plan",
     "prepare": "yarn orch prepare",
     "smali": "yarn orch smali",
     "merge": "yarn orch merge",
     "apk": "yarn orch apk",
     "apk:fresh": "yarn orch apk --fresh",
-    "test": "yarn orch test",
-    "test:smoke": "yarn orch test --smoke"
+    "test": "yarn orch test"
   }
 }

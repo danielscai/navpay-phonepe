@@ -125,6 +125,37 @@ class ReuseArtifactsTest(unittest.TestCase):
             merged_workspace_mock.assert_called_once_with({}, "full", workspace, ["phonepe_sigbypass"])
             merge_mock.assert_not_called()
 
+    def test_compute_profile_reuse_fingerprint_prefers_merge_state_fast_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            workspace = Path(tempdir) / "workspace"
+            workspace.mkdir(parents=True)
+            state_path = workspace / cache_manager.MERGE_STATE_FILE
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "profile": "full",
+                        "modules": ["m1", "m2"],
+                        "module_fingerprints": {"m1": "fp-m1", "m2": "fp-m2"},
+                    },
+                    ensure_ascii=True,
+                ),
+                encoding="utf-8",
+            )
+
+            def fake_resolve_module_spec(_manifest, name):
+                return {"name": name, "fingerprint_inputs": []}
+
+            def fake_compute_module_fingerprint(spec):
+                return f"fp-{spec['name']}"
+
+            with mock.patch.object(cache_manager, "resolve_profile_modules", return_value=["m1", "m2"]), \
+                mock.patch.object(cache_manager, "resolve_module_spec", side_effect=fake_resolve_module_spec), \
+                mock.patch.object(cache_manager, "compute_module_fingerprint", side_effect=fake_compute_module_fingerprint), \
+                mock.patch.object(cache_manager, "compute_inputs_fingerprint", side_effect=AssertionError("should not compute workspace fingerprint")):
+                fp = cache_manager.compute_profile_reuse_fingerprint({}, "full", workspace)
+
+            self.assertTrue(fp)
+
 
 if __name__ == "__main__":
     unittest.main()

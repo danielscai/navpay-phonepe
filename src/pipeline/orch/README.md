@@ -17,9 +17,17 @@ This directory contains the unified build orchestrator for composed PhonePe APK 
 - Force full APK rebuild:
   - `python3 src/pipeline/orch/orchestrator.py apk --fresh`
 - Run the full integration test:
-  - `python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554`
+  - `python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554 --install-mode reinstall`
+- Run the full integration test with clean reinstall:
+  - `python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554 --install-mode clean`
+- Run the full integration test with keep-data reinstall (`pm uninstall -k --user 0`):
+  - `python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554 --install-mode keep`
 - Run the smoke test:
-  - `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554`
+  - `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554 --install-mode reinstall`
+- Run the smoke test with clean reinstall:
+  - `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554 --install-mode clean`
+- Run the smoke test with keep-data reinstall:
+  - `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554 --install-mode keep`
 
 Default profile is `full`. For other profiles, append `--profile <name>`, for example:
 
@@ -91,14 +99,14 @@ Run these commands in order if you want to inspect the real build behavior.
 6. `python3 src/pipeline/orch/orchestrator.py apk --fresh`
    Meaning: force full rebuild for the final APK packaging.
 
-7. `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554`
+7. `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554 --install-mode reinstall`
    Meaning: runs the fastest real device validation path. It uses the built artifacts, reuses the final APK if possible, installs it, and verifies the app reaches the expected activity.
 
 8. Run the same smoke command again:
-   `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554`
+   `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554 --install-mode reinstall`
    Meaning: validates incremental speedup. The second run should show artifact reuse and final APK reuse if no inputs changed.
 
-9. `python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554`
+9. `python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554 --install-mode keep`
    Meaning: runs the full integration path. This keeps the same unified build flow but also checks the non-smoke validation behavior.
 
 ## Package Shortcuts
@@ -112,11 +120,24 @@ See root [`package.json`](/Users/danielscai/Documents/workspace/navpay/navpay-ph
 - `yarn merge`
 - `yarn apk`
 - `yarn apk:fresh`
-- `yarn test:full`
-- `yarn test:smoke`
-- `yarn test:sigbypass`
-- `yarn test:https`
-- `yarn test:phonepehelper`
+- `yarn log`
+- `yarn logd`
+- `yarn test` (default: reinstall mode, 不卸载直接 `install -r`)
+- `yarn test reinstall` (full test + reinstall)
+- `yarn test clean` (full test + clean install)
+- `yarn test keep` (full test + `pm uninstall -k --user 0` + fresh install)
+- `yarn test smoke` (smoke + reinstall)
+- `yarn test smoke clean` (smoke + clean install)
+- `yarn test smoke keep` (smoke + keep-data reinstall)
+
+Keep-data mode note:
+- `reinstall` 与 `keep` 都是保留数据语义模式，都会在拉起阶段使用更长等待窗口与重试策略。
+- `reinstall`：不卸载，直接 `install -r`。
+- `keep`：`pm uninstall -k --user 0` 后 fresh install。
+- In preserve-data modes, runtime detection logic remains strict (activity + process + required log tags). To improve success rate without weakening checks, preserve-data modes use a longer wait window.
+- Startup flow uses launcher-style entry (`MAIN` + `LAUNCHER`) and returns to Home before launch, matching manual icon tap behavior.
+- If launcher start is intercepted by an existing top task, orchestrator triggers a launcher click simulation (`monkey`) fallback.
+- APK install in test flow has one automatic retry for transient ADB install failures; detection criteria are unchanged.
 
 ## Notes
 

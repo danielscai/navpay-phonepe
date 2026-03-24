@@ -815,6 +815,30 @@ def compute_inputs_fingerprint(root: Path) -> str:
 
 def compute_profile_reuse_fingerprint(manifest, profile_name: str, workspace: Path) -> str:
     modules = resolve_profile_modules(manifest, profile_name)
+    state = read_profile_merge_state(workspace)
+    if state.get("profile") == profile_name and state.get("modules") == modules:
+        cached_fingerprints = state.get("module_fingerprints")
+        if isinstance(cached_fingerprints, dict):
+            current_fingerprints = {}
+            fingerprints_match = True
+            for module in modules:
+                spec = resolve_module_spec(manifest, module)
+                current = compute_module_fingerprint(spec)
+                current_fingerprints[module] = current
+                if cached_fingerprints.get(module) != current:
+                    fingerprints_match = False
+                    break
+            if fingerprints_match:
+                payload = {
+                    "mode": "merge_state_fast_v1",
+                    "profile": profile_name,
+                    "modules": modules,
+                    "module_fingerprints": current_fingerprints,
+                }
+                return hashlib.sha256(
+                    json.dumps(payload, ensure_ascii=True, sort_keys=True).encode("utf-8")
+                ).hexdigest()
+
     hasher = hashlib.sha256()
     hasher.update(compute_inputs_fingerprint(workspace).encode("ascii"))
     hasher.update(b"\0")
@@ -1172,7 +1196,7 @@ def unified_test(
     serial: str,
     start_retries: int = 3,
     check_interval: int = 1,
-    uninstall_before_install: bool = True,
+    install_mode: str = "clean",
 ):
     if not signed_apk.exists():
         raise RuntimeError(f"Signed APK not found: {signed_apk}")
@@ -1184,42 +1208,142 @@ def unified_test(
     logcat_path = (work_dir / f"logcat_{log_tag}.txt") if has_log_tag else (work_dir / "logcat_smoke.txt")
     dumpsys_path = work_dir / "dumpsys_activities.txt"
 
-    log_info("准备安装环境：停止旧进程并清理 logcat")
-    run([adb, "-s", device, "shell", "am", "force-stop", package], concise=True)
-    stopped = False
-    for _ in range(5):
-        try:
-            out = subprocess.check_output([adb, "-s", device, "shell", "pidof", package], text=True).strip()
-        except subprocess.CalledProcessError:
-            out = ""
-        if not out:
-            stopped = True
-            break
-        time.sleep(1)
-        run([adb, "-s", device, "shell", "am", "force-stop", package], concise=True)
-    if not stopped:
-        raise RuntimeError(f"Failed to stop app before install: {package}")
-
-    run([adb, "-s", device, "logcat", "-c"], concise=True)
-    # Important: uninstall then reinstall to avoid stale app state.
-    # We observed flaky start/log detection unless the old APK is removed first.
-    # Can be disabled per-module via uninstall_before_install: false in manifest.
-    if uninstall_before_install:
-        run([adb, "-s", device, "uninstall", package], check=False, concise=True)
-    log_info("安装测试 APK 到设备")
-    run([adb, "-s", device, "install", "-r", str(signed_apk)], concise=True)
-    log_info("尝试拉起应用并等待进入目标页面")
-    last_start_out = ""
-    for _ in range(max(1, start_retries)):
-        run([adb, "-s", device, "shell", "am", "force-stop", package], concise=True)
-        out = subprocess.check_output(
-            [adb, "-s", device, "shell", "am", "start", "-W", "-n", f"{package}/{activity}"],
+    def run_capture(cmd, check: bool = True) -> str:
+        log_run(cmd)
+        proc = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
         )
-        last_start_out = out or ""
-        if "Error:" not in last_start_out and "Exception" not in last_start_out:
+        output = proc.stdout or ""
+        label = Path(cmd[0]).name if cmd else "cmd"
+        for line in output.splitlines():
+            if line.strip():
+                log_cmd_output(label, line)
+        if proc.returncode != 0 and check:
+            raise subprocess.CalledProcessError(proc.returncode, cmd, output=output)
+        return output
+
+    def ensure_process_stopped(max_tries: int = 5):
+        run([adb, "-s", device, "shell", "am", "force-stop", package], concise=True)
+        for _ in range(max_tries):
+            try:
+                out = subprocess.check_output([adb, "-s", device, "shell", "pidof", package], text=True).strip()
+            except subprocess.CalledProcessError:
+                out = ""
+            if not out:
+                return
+            time.sleep(1)
+            run([adb, "-s", device, "shell", "am", "force-stop", package], concise=True)
+        raise RuntimeError(f"Failed to stop app before launch/install: {package}")
+
+    def extract_app_crash_lines(crash_text: str, android_rt_text: str):
+        """Only treat app-specific fatal signals as crash, ignore tooling runtime noise (e.g. monkey)."""
+        lines = []
+        for raw in (crash_text.splitlines() + android_rt_text.splitlines()):
+            line = raw.strip()
+            if not line:
+                continue
+            upper = line.upper()
+            if f">>> {package} <<<" in line:
+                lines.append(line)
+                continue
+            if package in line and (
+                "ANDROIDRUNTIME" in upper
+                or "FATAL EXCEPTION" in upper
+                or "PROCESS:" in upper
+                or "SIGSEGV" in upper
+                or "SIGABRT" in upper
+                or "BACKTRACE" in upper
+            ):
+                lines.append(line)
+                continue
+            if "FATAL EXCEPTION" in upper:
+                lines.append(line)
+        return lines
+
+    log_info("准备安装环境：停止旧进程并清理 logcat")
+    ensure_process_stopped()
+    run([adb, "-s", device, "logcat", "-c"], concise=True)
+    if install_mode == "clean":
+        log_info("安装前清理：卸载旧版本应用")
+        run([adb, "-s", device, "uninstall", package], check=False, concise=True)
+        install_cmd = [adb, "-s", device, "install", str(signed_apk)]
+    elif install_mode == "keep":
+        log_info("安装前执行 keep 模式：卸载程序但保留数据（pm uninstall -k --user 0）")
+        run([adb, "-s", device, "shell", "pm", "uninstall", "-k", "--user", "0", package], check=False, concise=True)
+        install_cmd = [adb, "-s", device, "install", str(signed_apk)]
+    elif install_mode == "reinstall":
+        log_info("安装前保留应用数据：跳过卸载")
+        install_cmd = [adb, "-s", device, "install", "-r", str(signed_apk)]
+    else:
+        raise RuntimeError(f"Unknown install mode: {install_mode}")
+    log_info("安装测试 APK 到设备")
+    last_install_error = ""
+    for install_attempt in range(1, 3):
+        try:
+            run_capture(install_cmd, check=True)
+            last_install_error = ""
             break
-        time.sleep(1)
+        except subprocess.CalledProcessError as exc:
+            last_install_error = (exc.output or "").strip()
+            if install_attempt >= 2:
+                break
+            log_warn(f"安装失败，准备重试 ({install_attempt}/2)")
+            run([adb, "-s", device, "wait-for-device"], concise=True)
+            time.sleep(1)
+    if last_install_error:
+        raise RuntimeError(f"APK 安装失败（重试后仍失败）: {last_install_error}")
+    log_info("尝试拉起应用并等待进入目标页面")
+    last_start_out = ""
+    total_start_retries = max(1, start_retries)
+    for attempt in range(1, total_start_retries + 1):
+        log_info(f"应用拉起尝试 {attempt}/{total_start_retries}")
+        ensure_process_stopped()
+        run([adb, "-s", device, "shell", "input", "keyevent", "KEYCODE_HOME"], concise=True)
+        out = run_capture(
+            [
+                adb,
+                "-s",
+                device,
+                "shell",
+                "am",
+                "start",
+                "-W",
+                "-a",
+                "android.intent.action.MAIN",
+                "-c",
+                "android.intent.category.LAUNCHER",
+                # NEW_TASK | CLEAR_TASK: clear stale top task (e.g. GMS PhoneNumberHintActivity)
+                # so launcher entry behaves like a fresh icon launch.
+                "-f",
+                "0x10008000",
+                "-n",
+                f"{package}/{activity}",
+            ],
+            check=True,
+        )
+        last_start_out = out or ""
+        has_error = "Error:" in last_start_out or "Exception" in last_start_out
+        top_instance_warning = "Warning: Activity not started" in last_start_out
+        if top_instance_warning:
+            log_warn("检测到任务栈拦截，切换为 LAUNCHER 点击模拟再次拉起")
+            monkey_out = run_capture(
+                [adb, "-s", device, "shell", "monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1"],
+                check=True,
+            )
+            last_start_out = (last_start_out.rstrip() + "\n" + monkey_out.strip()).strip()
+            time.sleep(2)
+        try:
+            pid_after_start = subprocess.check_output([adb, "-s", device, "shell", "pidof", package], text=True).strip()
+        except subprocess.CalledProcessError:
+            pid_after_start = ""
+        if not has_error and pid_after_start:
+            break
+        if attempt < total_start_retries:
+            time.sleep(1)
+            continue
     if last_start_out.strip():
         for line in last_start_out.splitlines():
             if "Warning" in line or "Error" in line:
@@ -1263,16 +1387,14 @@ def unified_test(
             activity_mgr = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-s", "ActivityManager"], text=True)
             last_crash = crash
             last_android = android_rt
-            combined = "\n".join([crash.strip(), android_rt.strip()]).strip()
+            crash_lines = extract_app_crash_lines(crash, android_rt)
             debug_blob = "\n".join([crash.strip(), android_rt.strip(), activity_mgr.strip()]).strip()
             if debug_blob:
                 crash_path.write_text(debug_blob + "\n", encoding="utf-8")
-            if combined:
-                lines = [ln for ln in combined.splitlines() if ln.strip()]
-                if lines:
-                    log_error("Crash log (latest, max 10 lines):")
-                    for ln in lines[-10:]:
-                        log_error(ln)
+            if crash_lines:
+                log_error("Crash log (latest, max 10 lines):")
+                for ln in crash_lines[-10:]:
+                    log_error(ln)
                 log_error("测试失败：检测到崩溃日志")
                 raise RuntimeError(f"Crash detected. See: {crash_path}")
             elapsed = datetime.now().timestamp() - start_time
@@ -1318,18 +1440,16 @@ def unified_test(
     crash = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-b", "crash"], text=True)
     android_rt = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-s", "AndroidRuntime"], text=True)
     activity_mgr = subprocess.check_output([adb, "-s", device, "logcat", "-d", "-s", "ActivityManager"], text=True)
-    if crash.strip() or android_rt.strip():
+    crash_lines = extract_app_crash_lines(crash, android_rt)
+    if crash_lines:
         last_crash = crash
         last_android = android_rt
-        combined = "\n".join([crash.strip(), android_rt.strip()]).strip()
         debug_blob = "\n".join([crash.strip(), android_rt.strip(), activity_mgr.strip()]).strip()
         if debug_blob:
             crash_path.write_text(debug_blob + "\n", encoding="utf-8")
-        lines = [ln for ln in combined.splitlines() if ln.strip()]
-        if lines:
-            log_error("Crash log (latest, max 10 lines):")
-            for ln in lines[-10:]:
-                log_error(ln)
+        log_error("Crash log (latest, max 10 lines):")
+        for ln in crash_lines[-10:]:
+            log_error(ln)
         log_error("测试失败：检测到崩溃日志")
         log_error("Debug cmds: adb logcat -d -b crash; adb logcat -d -s AndroidRuntime; adb logcat -d -s ActivityManager")
         raise RuntimeError(f"Crash detected. See: {crash_path}")
@@ -1853,7 +1973,13 @@ def verify_profile_log_tags(manifest, modules, serial: str, strict: bool = False
     log_info(f"[PROFILE] all required log tags detected: {', '.join(checked_tags)}")
     return True
 
-def profile_test(manifest, profile_name: str, serial: str, smoke: bool = False):
+def profile_test(
+    manifest,
+    profile_name: str,
+    serial: str,
+    smoke: bool = False,
+    install_mode: str = "reinstall",
+):
     log_step(f"[PROFILE:{profile_name}] 准备测试上下文")
     modules = resolve_profile_modules(manifest, profile_name)
     log_info(f"[PROFILE:{profile_name}] 激活模块: {', '.join(modules)}")
@@ -1864,14 +1990,32 @@ def profile_test(manifest, profile_name: str, serial: str, smoke: bool = False):
     workspace = resolve_profile_workspace(profile_name)
     signed_apk = work_dir / DEFAULT_SIGNED_APK
     primary_spec = resolve_module_spec(manifest, modules[0])
+    preserve_mode = install_mode in {"reinstall", "keep"}
     primary_log_tag = ""
     if not smoke:
         primary_log_tag = primary_spec.get("log_tag") or SIGBYPASS_LOG_TAG
     test_serial = resolve_test_serial(primary_spec, serial)
     log_info(f"[PROFILE:{profile_name}] 目标设备: {test_serial}")
     timeout_sec = SMOKE_TIMEOUT_SEC if smoke else DEFAULT_TIMEOUT_SEC
-    start_retries = 1 if smoke else 3
-    uninstall_before_install = True
+    if preserve_mode:
+        timeout_sec = 25 if smoke else 30
+    # preserve-data modes are more sensitive to historical app state; retry activity launch up to 3 times.
+    if preserve_mode:
+        start_retries = 3
+    else:
+        start_retries = 1 if smoke else 3
+    if install_mode == "clean":
+        mode_desc = "全新安装（先卸载，确保环境干净）"
+    elif install_mode == "reinstall":
+        mode_desc = "reinstall（不卸载，直接 install -r）"
+    elif install_mode == "keep":
+        mode_desc = "keep（pm uninstall -k --user 0 后 fresh install）"
+    else:
+        raise RuntimeError(f"Unknown install mode: {install_mode}")
+    log_info(f"[PROFILE:{profile_name}] 安装策略: {mode_desc}")
+    log_info(f"[PROFILE:{profile_name}] 拉起重试次数: {start_retries}")
+    if preserve_mode:
+        log_info(f"[PROFILE:{profile_name}] keep 模式等待窗口: {timeout_sec}s")
     log_step(f"[PROFILE:{profile_name}] 部署 APK 并执行启动验证")
     unified_test(
         signed_apk,
@@ -1882,7 +2026,7 @@ def profile_test(manifest, profile_name: str, serial: str, smoke: bool = False):
         timeout_sec,
         test_serial,
         start_retries=start_retries,
-        uninstall_before_install=uninstall_before_install,
+        install_mode=install_mode,
     )
     if not smoke:
         verify_profile_injection(manifest, workspace, modules)
@@ -1891,11 +2035,21 @@ def profile_test(manifest, profile_name: str, serial: str, smoke: bool = False):
         verify_profile_log_tags(manifest, modules[1:], test_serial, strict=False)
 
 
-def run_profile_action(manifest, action: str, profile_name: str, serial: str, smoke: bool, fresh: bool):
+def run_profile_action(
+    manifest,
+    action: str,
+    profile_name: str,
+    serial: str,
+    smoke: bool,
+    fresh: bool,
+    install_mode: str,
+):
     if smoke and action != "test":
         raise RuntimeError("--smoke is only supported for 'test'")
     if fresh and action != "apk":
         raise RuntimeError("--fresh is only supported for 'apk'")
+    if install_mode != "reinstall" and action != "test":
+        raise RuntimeError("--install-mode is only supported for 'test'")
 
     if action == "plan":
         modules = resolve_profile_modules(manifest, profile_name)
@@ -1909,9 +2063,39 @@ def run_profile_action(manifest, action: str, profile_name: str, serial: str, sm
     elif action == "apk":
         profile_apk(manifest, profile_name, fresh=fresh)
     elif action == "test":
-        profile_test(manifest, profile_name, serial, smoke=smoke)
+        profile_test(manifest, profile_name, serial, smoke=smoke, install_mode=install_mode)
     else:
         raise RuntimeError(f"Unknown profile action: {action}")
+
+
+def parse_test_mode_tokens(tokens, smoke: bool, install_mode: str, serial: str):
+    mode_smoke = smoke
+    mode_install = install_mode
+    mode_serial = serial
+    items = [t for t in (tokens or []) if t]
+    idx = 0
+
+    if idx < len(items) and items[idx] == "smoke":
+        mode_smoke = True
+        idx += 1
+
+    if idx < len(items):
+        token = items[idx]
+        if token in ("clean", "keep", "reinstall", "preserve"):
+            if token == "preserve":
+                mode_install = "reinstall"
+            else:
+                mode_install = token
+            idx += 1
+
+    if idx < len(items):
+        mode_serial = items[idx]
+        idx += 1
+
+    if idx < len(items):
+        raise RuntimeError("Too many test mode arguments. Use: test [smoke] [reinstall|clean|keep] [serial]")
+
+    return mode_smoke, mode_install, mode_serial
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1936,6 +2120,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     test_parser = sub.add_parser("test")
     add_profile_args(test_parser, allow_serial=True, allow_smoke=True)
+    test_parser.add_argument(
+        "--install-mode",
+        choices=("reinstall", "clean", "keep"),
+        default="reinstall",
+        help="reinstall: keep app and install -r; clean: uninstall then install; keep: pm uninstall -k --user 0 then install",
+    )
+    test_parser.add_argument(
+        "test_mode",
+        nargs="*",
+        help="Shorthand: test [smoke] [reinstall|clean|keep] [serial]",
+    )
 
     sub.add_parser("graph")
     sub.add_parser("status")
@@ -1966,13 +2161,24 @@ def main(argv=None):
     elif args.cmd == "rebuild":
         cmd_rebuild(manifest, args.target, args.serial, args.package, args.with_downstream)
     elif args.cmd in TOP_LEVEL_PROFILE_ACTIONS:
+        smoke = getattr(args, "smoke", False)
+        install_mode = getattr(args, "install_mode", "clean")
+        serial = getattr(args, "serial", "") or ""
+        if args.cmd == "test":
+            smoke, install_mode, serial = parse_test_mode_tokens(
+                getattr(args, "test_mode", []),
+                smoke,
+                install_mode,
+                serial,
+            )
         run_profile_action(
             manifest,
             args.cmd,
             args.profile,
-            getattr(args, "serial", "") or "",
-            getattr(args, "smoke", False),
+            serial,
+            smoke,
             getattr(args, "fresh", False),
+            install_mode,
         )
     else:
         raise RuntimeError("Unknown command")
