@@ -9,6 +9,10 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# 从 yarn script 进入时，可能带有 Yarn PnP 注入（NODE_OPTIONS=--require .pnp.cjs）。
+# 该服务依赖本地 node_modules，需清理此变量避免模块解析冲突。
+unset NODE_OPTIONS
+
 # 颜色
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
