@@ -49,6 +49,26 @@ Current artifact-backed modules:
 - `phonepe_https_interceptor`
 - `phonepe_phonepehelper`
 
+## Auto-discover Module Relationships
+
+Module relationships are resolved automatically by the orchestrator from two files:
+
+- `src/pipeline/orch/cache_profiles.json`
+  - Defines which modules are included for each profile (`full`, `sigbypass-only`, `https-only`, `phonepehelper-only`).
+- `src/pipeline/orch/cache_manifest.json`
+  - Defines per-module dependency metadata (`deps`, `source_cache`, `source_subdir`, `builder`, `merger`).
+
+How to auto-discover the active relationship graph for a profile:
+
+1. Run `python3 src/pipeline/orch/orchestrator.py plan --profile <name>`
+2. Or use shortcut `yarn plan` (defaults to `full`)
+
+Interpretation:
+
+- `plan` output gives the concrete module apply order for that profile.
+- The orchestrator then resolves each module using manifest metadata, so merge/build dependencies are not guessed manually.
+- If profile or module definitions change, rerun `plan`; no extra manual mapping docs are needed.
+
 ## Manual Verification
 
 Run these commands in order if you want to inspect the real build behavior.

@@ -72,9 +72,56 @@ def log_error(msg: str):
     print(f"{COLOR_RED}[FAIL]{COLOR_RESET} {msg}")
 
 
+def summarize_cmd(cmd) -> str:
+    if not cmd:
+        return "执行任务"
+    tool = Path(cmd[0]).name
+    args = cmd[1:]
+
+    if tool == "adb":
+        # Normalize optional target serial: adb -s <serial> ...
+        if len(args) >= 2 and args[0] == "-s":
+            args = args[2:]
+        if "install" in args:
+            return "向设备安装 APK"
+        if "uninstall" in args:
+            return "卸载设备上的旧版本应用"
+        if "reverse" in args:
+            return "配置 adb 端口反向映射"
+        if args[:5] == ["shell", "am", "force-stop", DEFAULT_PACKAGE]:
+            return "停止目标应用进程"
+        if args[:2] == ["shell", "pidof"]:
+            return "检查应用进程状态"
+        if args[:3] == ["shell", "am", "start"]:
+            return "启动应用入口 Activity"
+        if args[:2] == ["logcat", "-c"]:
+            return "清空设备 logcat 缓冲区"
+        if "pull" in args:
+            return "从设备拉取文件到本地缓存"
+        return "执行 adb 设备操作"
+
+    if tool == "apktool":
+        if "d" in args:
+            return "反编译 APK 到工作目录"
+        if "b" in args:
+            return "回编 APK 产物"
+        return "执行 apktool 任务"
+
+    if tool == "zipalign":
+        return "对 APK 执行 zipalign 对齐"
+    if tool == "apksigner":
+        if "verify" in args:
+            return "校验 APK 签名"
+        return "对 APK 执行签名"
+    if tool in {"python", "python3"} and any("orchestrator.py" in part for part in cmd):
+        return "执行编排流程阶段"
+    if tool == "node" and any("server.js" in part for part in cmd):
+        return "启动日志服务进程"
+    return f"执行 {tool} 任务"
+
+
 def log_run(cmd):
-    cmd_str = " ".join(cmd)
-    print(f"{COLOR_DIM}[RUN]{COLOR_RESET} {cmd_str}")
+    print(f"{COLOR_DIM}[RUN]{COLOR_RESET} {summarize_cmd(cmd)}")
 
 
 def log_cmd_output(label: str, line: str):
@@ -840,7 +887,7 @@ def maybe_reuse_profile_artifacts(manifest, profile_name: str, workspace: Path, 
     cached_fp = state.get("fingerprint")
 
     if signed_apk.exists() and cached_fp == fingerprint:
-        log_info(f"[PROFILE:{profile_name}] [CACHE-HIT] final apk reuse matched, reusing {signed_apk}")
+        log_info(f"[PROFILE:{profile_name}] 命中缓存，复用已构建 APK")
         return True
 
     reasons = []
@@ -851,7 +898,7 @@ def maybe_reuse_profile_artifacts(manifest, profile_name: str, workspace: Path, 
     elif cached_fp != fingerprint:
         reasons.append("input fingerprint changed")
     reason_text = ", ".join(reasons) if reasons else "unknown"
-    log_info(f"[PROFILE:{profile_name}] [CACHE-MISS] final apk reuse fallback: {reason_text}")
+    log_info(f"[PROFILE:{profile_name}] 未命中缓存，需要重新构建（{reason_text}）")
     return False
 
 
@@ -1137,7 +1184,8 @@ def unified_test(
     logcat_path = (work_dir / f"logcat_{log_tag}.txt") if has_log_tag else (work_dir / "logcat_smoke.txt")
     dumpsys_path = work_dir / "dumpsys_activities.txt"
 
-    run([adb, "-s", device, "shell", "am", "force-stop", package])
+    log_info("准备安装环境：停止旧进程并清理 logcat")
+    run([adb, "-s", device, "shell", "am", "force-stop", package], concise=True)
     stopped = False
     for _ in range(5):
         try:
@@ -1148,20 +1196,22 @@ def unified_test(
             stopped = True
             break
         time.sleep(1)
-        run([adb, "-s", device, "shell", "am", "force-stop", package])
+        run([adb, "-s", device, "shell", "am", "force-stop", package], concise=True)
     if not stopped:
         raise RuntimeError(f"Failed to stop app before install: {package}")
 
-    run([adb, "-s", device, "logcat", "-c"])
+    run([adb, "-s", device, "logcat", "-c"], concise=True)
     # Important: uninstall then reinstall to avoid stale app state.
     # We observed flaky start/log detection unless the old APK is removed first.
     # Can be disabled per-module via uninstall_before_install: false in manifest.
     if uninstall_before_install:
-        run([adb, "-s", device, "uninstall", package], check=False)
-    run([adb, "-s", device, "install", "-r", str(signed_apk)])
+        run([adb, "-s", device, "uninstall", package], check=False, concise=True)
+    log_info("安装测试 APK 到设备")
+    run([adb, "-s", device, "install", "-r", str(signed_apk)], concise=True)
+    log_info("尝试拉起应用并等待进入目标页面")
     last_start_out = ""
     for _ in range(max(1, start_retries)):
-        run([adb, "-s", device, "shell", "am", "force-stop", package])
+        run([adb, "-s", device, "shell", "am", "force-stop", package], concise=True)
         out = subprocess.check_output(
             [adb, "-s", device, "shell", "am", "start", "-W", "-n", f"{package}/{activity}"],
             text=True,
@@ -1176,9 +1226,9 @@ def unified_test(
                 log_warn(f"[am start] {line.strip()}")
 
     if has_log_tag:
-        log_step(f"Test: wait for activities + log tag '{log_tag}'")
+        log_step(f"测试中：等待目标页面与日志标签（{log_tag}）")
     else:
-        log_step("Test: wait for activities (smoke mode, log tag check skipped)")
+        log_step("测试中：等待目标页面（smoke 模式跳过日志标签校验）")
     deadline = datetime.now().timestamp() + timeout_sec
     found_log = False
     found_activity = False
@@ -1223,20 +1273,20 @@ def unified_test(
                     log_error("Crash log (latest, max 10 lines):")
                     for ln in lines[-10:]:
                         log_error(ln)
-                log_error("TEST RESULT: FAILED (crash detected)")
+                log_error("测试失败：检测到崩溃日志")
                 raise RuntimeError(f"Crash detected. See: {crash_path}")
             elapsed = datetime.now().timestamp() - start_time
             missing_pid_count += 1
             if seen_pid and missing_pid_count >= 3 and (found_activity or found_login):
                 if debug_blob:
                     crash_path.write_text(debug_blob + "\n", encoding="utf-8")
-                log_error("TEST RESULT: FAILED (app exited)")
+                log_error("测试失败：应用进程已退出")
                 log_error("Debug cmds: adb logcat -d -b crash; adb logcat -d -s AndroidRuntime; adb logcat -d -s ActivityManager")
                 raise RuntimeError(f"App process not running after activity appeared. See: {crash_path}")
             if elapsed > timeout_sec:
                 if debug_blob:
                     crash_path.write_text(debug_blob + "\n", encoding="utf-8")
-                log_error("TEST RESULT: FAILED (app did not start)")
+                log_error("测试失败：应用未成功拉起")
                 log_error("Debug cmds: adb logcat -d -b crash; adb logcat -d -s AndroidRuntime; adb logcat -d -s ActivityManager")
                 raise RuntimeError(f"App process not running within timeout. See: {crash_path}")
             time.sleep(check_interval)
@@ -1247,7 +1297,7 @@ def unified_test(
                 which.append(activity)
             if found_login:
                 which.append(login_activity)
-            log_info(f"[TEST] activity ready: {' | '.join(which)}")
+            log_info(f"[测试] 页面已就绪：{' | '.join(which)}")
             if not has_log_tag:
                 found_log = True
                 break
@@ -1260,7 +1310,7 @@ def unified_test(
 
     if not found_activity and not found_login:
         dumpsys_path.write_text(last_dumpsys or "", encoding="utf-8")
-        log_error("TEST RESULT: FAILED (activity check)")
+        log_error("测试失败：未进入预期页面")
         raise RuntimeError(
             f"Activity check failed (activity={activity} OR login={login_activity}). "
             f"See: {dumpsys_path}"
@@ -1280,22 +1330,22 @@ def unified_test(
             log_error("Crash log (latest, max 10 lines):")
             for ln in lines[-10:]:
                 log_error(ln)
-        log_error("TEST RESULT: FAILED (crash detected)")
+        log_error("测试失败：检测到崩溃日志")
         log_error("Debug cmds: adb logcat -d -b crash; adb logcat -d -s AndroidRuntime; adb logcat -d -s ActivityManager")
         raise RuntimeError(f"Crash detected. See: {crash_path}")
     if has_log_tag and not found_log:
         logcat_path.write_text(last_log or "", encoding="utf-8")
-        log_error("TEST RESULT: FAILED (log tag not found)")
+        log_error("测试失败：未检测到预期日志标签")
         raise RuntimeError(
             f"No log output for tag '{log_tag}' within {timeout_sec}s. "
             f"See: {logcat_path}"
         )
     if has_log_tag:
-        log_info(f"[TEST] injection verified: log tag '{log_tag}' present")
-        log_step(f"TEST RESULT: SUCCESS ({log_tag})")
+        log_info(f"[测试] 注入校验通过：检测到日志标签 {log_tag}")
+        log_step(f"测试结果：成功（{log_tag}）")
     else:
-        log_info("[TEST] smoke verification passed: app installed and activity/login is visible")
-        log_step("TEST RESULT: SUCCESS (smoke)")
+        log_info("[测试] smoke 校验通过：应用已安装且页面可见")
+        log_step("测试结果：成功（smoke）")
 
 
 def cmd_graph(manifest):
@@ -1688,7 +1738,7 @@ def profile_apk(manifest, profile_name: str, fresh: bool = False):
     if workspace is not None and reuse_artifacts:
         modules = resolve_profile_modules(manifest, profile_name)
         if has_reusable_merged_workspace(manifest, profile_name, workspace, modules):
-            log_info(f"[PROFILE:{profile_name}] [CACHE-HIT] merged workspace reuse matched, skipping merge")
+            log_info(f"[PROFILE:{profile_name}] 模块合并结果可复用，跳过 merge")
         else:
             workspace = profile_merge(manifest, profile_name, reuse_artifacts=reuse_artifacts)
     else:
@@ -1804,8 +1854,12 @@ def verify_profile_log_tags(manifest, modules, serial: str, strict: bool = False
     return True
 
 def profile_test(manifest, profile_name: str, serial: str, smoke: bool = False):
+    log_step(f"[PROFILE:{profile_name}] 准备测试上下文")
     modules = resolve_profile_modules(manifest, profile_name)
+    log_info(f"[PROFILE:{profile_name}] 激活模块: {', '.join(modules)}")
+    log_step(f"[PROFILE:{profile_name}] 检查并构建模块产物")
     profile_build_modules(manifest, profile_name)
+    log_step(f"[PROFILE:{profile_name}] 组装并获取可测试 APK")
     work_dir = profile_apk(manifest, profile_name, fresh=False)
     workspace = resolve_profile_workspace(profile_name)
     signed_apk = work_dir / DEFAULT_SIGNED_APK
@@ -1814,9 +1868,11 @@ def profile_test(manifest, profile_name: str, serial: str, smoke: bool = False):
     if not smoke:
         primary_log_tag = primary_spec.get("log_tag") or SIGBYPASS_LOG_TAG
     test_serial = resolve_test_serial(primary_spec, serial)
+    log_info(f"[PROFILE:{profile_name}] 目标设备: {test_serial}")
     timeout_sec = SMOKE_TIMEOUT_SEC if smoke else DEFAULT_TIMEOUT_SEC
     start_retries = 1 if smoke else 3
     uninstall_before_install = True
+    log_step(f"[PROFILE:{profile_name}] 部署 APK 并执行启动验证")
     unified_test(
         signed_apk,
         DEFAULT_PACKAGE,

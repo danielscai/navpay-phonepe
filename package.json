@@ -4,6 +4,10 @@
   "packageManager": "yarn@4.0.0",
   "scripts": {
     "logs:crash": "adb logcat | grep -i -E \"(FATAL EXCEPTION|AndroidRuntime|SIGABRT|SIGSEGV|CRASH)\"",
+    "log": "cd src/services/log_server && ./start.sh",
+    "logd": "cd src/services/log_server && npm run dev",
+    "log:server": "cd src/services/log_server && ./start.sh",
+    "log:server:dev": "cd src/services/log_server && npm run dev",
     "emu": "/Users/danielscai/Library/Android/sdk/emulator/emulator @phonepe1",
     "orch": "python3 src/pipeline/orch/orchestrator.py",
     "plan": "yarn orch plan",
