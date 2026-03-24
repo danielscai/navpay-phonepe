@@ -144,6 +144,9 @@ log_step "3. 复制 HTTPS interceptor smali"
 copy_artifact_files "com/httpinterceptor/interceptor/RemoteLoggingInterceptor*.smali" "$INTERCEPTOR_SMALI_DIR" "RemoteLoggingInterceptor"
 copy_artifact_files "com/httpinterceptor/interceptor/LogSender*.smali" "$INTERCEPTOR_SMALI_DIR" "LogSender"
 copy_artifact_files "com/httpinterceptor/interceptor/LogEndpointResolver*.smali" "$INTERCEPTOR_SMALI_DIR" "LogEndpointResolver"
+copy_artifact_files "com/httpinterceptor/interceptor/AndroidIdCache*.smali" "$INTERCEPTOR_SMALI_DIR" "AndroidIdCache"
+copy_artifact_files "com/httpinterceptor/interceptor/DeviceInfoEnricher*.smali" "$INTERCEPTOR_SMALI_DIR" "DeviceInfoEnricher"
+copy_artifact_files "com/httpinterceptor/interceptor/DeviceSnapshot*.smali" "$INTERCEPTOR_SMALI_DIR" "DeviceSnapshot"
 copy_artifact_files "com/httpinterceptor/hook/HookUtil*.smali" "$HOOK_SMALI_DIR" "HookUtil"
 
 log_info "smali 产物复制完成"
@@ -327,6 +330,33 @@ if [ ${#resolver_files[@]} -eq 0 ] || [ ! -f "${resolver_files[0]}" ]; then
     echo -e "  ${RED}✗${NC} LogEndpointResolver*.smali - 缺失!"
 else
     for f in "${resolver_files[@]}"; do
+        [ -f "$f" ] && check_file "$f"
+    done
+fi
+
+android_id_cache_files=("$INTERCEPTOR_SMALI_DIR"/AndroidIdCache*.smali)
+if [ ${#android_id_cache_files[@]} -eq 0 ] || [ ! -f "${android_id_cache_files[0]}" ]; then
+    echo -e "  ${RED}✗${NC} AndroidIdCache*.smali - 缺失!"
+else
+    for f in "${android_id_cache_files[@]}"; do
+        [ -f "$f" ] && check_file "$f"
+    done
+fi
+
+device_enricher_files=("$INTERCEPTOR_SMALI_DIR"/DeviceInfoEnricher*.smali)
+if [ ${#device_enricher_files[@]} -eq 0 ] || [ ! -f "${device_enricher_files[0]}" ]; then
+    echo -e "  ${RED}✗${NC} DeviceInfoEnricher*.smali - 缺失!"
+else
+    for f in "${device_enricher_files[@]}"; do
+        [ -f "$f" ] && check_file "$f"
+    done
+fi
+
+device_snapshot_files=("$INTERCEPTOR_SMALI_DIR"/DeviceSnapshot*.smali)
+if [ ${#device_snapshot_files[@]} -eq 0 ] || [ ! -f "${device_snapshot_files[0]}" ]; then
+    echo -e "  ${RED}✗${NC} DeviceSnapshot*.smali - 缺失!"
+else
+    for f in "${device_snapshot_files[@]}"; do
         [ -f "$f" ] && check_file "$f"
     done
 fi

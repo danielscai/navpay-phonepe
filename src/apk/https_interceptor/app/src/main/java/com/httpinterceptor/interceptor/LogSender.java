@@ -1,6 +1,7 @@
 package com.httpinterceptor.interceptor;
 
 import android.app.Application;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
@@ -14,6 +15,11 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.TimeZone;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -48,7 +54,7 @@ public class LogSender {
     private int failureCount = 0;
     private static final int MAX_FAILURES = 10;
     private static final String DEFAULT_SOURCE_APP = "phonepe";
-    private static volatile String cachedAndroidId;
+    private static final AndroidIdCache ANDROID_ID_CACHE = new AndroidIdCache();
 
     private static final class QueuedLog {
         final JSONObject payload;
@@ -240,56 +246,99 @@ public class LogSender {
             payload = new JSONObject();
         }
 
-        try {
-            if (isMissingOrEmpty(payload, "sourceApp")) {
-                payload.put("sourceApp", DEFAULT_SOURCE_APP);
-            }
-            if (isMissingOrEmpty(payload, "androidId")) {
-                payload.put("androidId", getAndroidId());
-            }
-        } catch (JSONException e) {
-            Log.w(TAG, "Failed to enrich payload", e);
+        Map<String, Object> payloadMap = toMap(payload);
+        if (isMissingOrEmpty(payloadMap, "sourceApp")) {
+            payloadMap.put("sourceApp", DEFAULT_SOURCE_APP);
         }
 
-        return payload;
+        return toJson(DeviceInfoEnricher.enrich(payloadMap, captureDeviceSnapshot()));
     }
 
-    private static boolean isMissingOrEmpty(JSONObject json, String key) {
-        if (json == null || key == null) {
+    private static boolean isMissingOrEmpty(Map<String, Object> payload, String key) {
+        if (payload == null || key == null) {
             return true;
         }
-        if (!json.has(key) || json.isNull(key)) {
+        if (!payload.containsKey(key)) {
             return true;
         }
-        Object value = json.opt(key);
+        Object value = payload.get(key);
+        if (value == null) {
+            return true;
+        }
         if (!(value instanceof String)) {
             return false;
         }
         return ((String) value).trim().isEmpty();
     }
 
-    private static String getAndroidId() {
-        String cached = cachedAndroidId;
-        if (cached != null) {
-            return cached;
+    private static Map<String, Object> toMap(JSONObject json) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        if (json == null) {
+            return map;
         }
+        Iterator<String> keys = json.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            map.put(key, json.opt(key));
+        }
+        return map;
+    }
+
+    private static JSONObject toJson(Map<String, Object> map) {
+        JSONObject json = new JSONObject();
+        if (map == null) {
+            return json;
+        }
+        for (Map.Entry<String, Object> entry : map.entrySet()) {
+            try {
+                json.put(entry.getKey(), entry.getValue());
+            } catch (JSONException e) {
+                Log.w(TAG, "Failed to write enriched field " + entry.getKey(), e);
+            }
+        }
+        return json;
+    }
+
+    private static String getAndroidId() {
+        return ANDROID_ID_CACHE.get(LogSender::lookupAndroidId);
+    }
+
+    private static String lookupAndroidId() {
         try {
             Class<?> activityThread = Class.forName("android.app.ActivityThread");
             Object application = activityThread.getMethod("currentApplication").invoke(null);
             if (!(application instanceof Application)) {
-                cachedAndroidId = "unknown";
-                return cachedAndroidId;
+                return "unknown";
             }
             String androidId = Settings.Secure.getString(
                 ((Application) application).getContentResolver(),
                 Settings.Secure.ANDROID_ID
             );
-            cachedAndroidId = androidId == null || androidId.isEmpty() ? "unknown" : androidId;
-            return cachedAndroidId;
+            return androidId == null || androidId.trim().isEmpty() ? "unknown" : androidId.trim();
         } catch (Throwable t) {
-            cachedAndroidId = "unknown";
-            return cachedAndroidId;
+            return "unknown";
         }
+    }
+
+    private static DeviceSnapshot captureDeviceSnapshot() {
+        String androidId = getAndroidId();
+        return new DeviceSnapshot(
+            androidId,
+            androidId,
+            Build.DEVICE,
+            Build.BRAND,
+            Build.MODEL,
+            Build.VERSION.RELEASE,
+            Build.VERSION.SDK_INT,
+            TimeZone.getDefault().getID(),
+            localeTag()
+        );
+    }
+
+    private static String localeTag() {
+        Locale locale = Locale.getDefault();
+        String tag = locale.toLanguageTag();
+        return tag == null || tag.trim().isEmpty() ? locale.toString() : tag;
     }
 
     /**

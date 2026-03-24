@@ -128,7 +128,10 @@ class ReuseArtifactsTest(unittest.TestCase):
     def test_compute_profile_reuse_fingerprint_prefers_merge_state_fast_path(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             workspace = Path(tempdir) / "workspace"
-            workspace.mkdir(parents=True)
+            (workspace / "res" / "values").mkdir(parents=True)
+            (workspace / "res" / "values" / "public.xml").write_text("<resources/>", encoding="utf-8")
+            (workspace / "AndroidManifest.xml").write_text("<manifest/>", encoding="utf-8")
+            (workspace / "apktool.yml").write_text("version: 2.0", encoding="utf-8")
             state_path = workspace / cache_manager.MERGE_STATE_FILE
             state_path.write_text(
                 json.dumps(
@@ -155,6 +158,34 @@ class ReuseArtifactsTest(unittest.TestCase):
                 fp = cache_manager.compute_profile_reuse_fingerprint({}, "full", workspace)
 
             self.assertTrue(fp)
+
+    def test_has_reusable_merged_workspace_rejects_incomplete_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            workspace = Path(tempdir) / "workspace"
+            (workspace / "res" / "xml").mkdir(parents=True)
+            (workspace / "res" / "xml" / "network_security_config.xml").write_text(
+                "<network-security-config/>",
+                encoding="utf-8",
+            )
+            (workspace / "AndroidManifest.xml").write_text("<manifest/>", encoding="utf-8")
+            (workspace / "apktool.yml").write_text("version: 2.0", encoding="utf-8")
+            (workspace / cache_manager.MERGE_STATE_FILE).write_text(
+                json.dumps(
+                    {
+                        "profile": "full",
+                        "modules": ["m1"],
+                        "module_fingerprints": {"m1": "fp-m1"},
+                    },
+                    ensure_ascii=True,
+                ),
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(cache_manager, "resolve_module_spec", return_value={"name": "m1"}), \
+                mock.patch.object(cache_manager, "compute_module_fingerprint", return_value="fp-m1"):
+                reusable = cache_manager.has_reusable_merged_workspace({}, "full", workspace, ["m1"])
+
+            self.assertFalse(reusable)
 
 
 if __name__ == "__main__":

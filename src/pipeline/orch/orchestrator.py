@@ -828,7 +828,7 @@ def compute_profile_reuse_fingerprint(manifest, profile_name: str, workspace: Pa
                 if cached_fingerprints.get(module) != current:
                     fingerprints_match = False
                     break
-            if fingerprints_match:
+            if fingerprints_match and has_required_workspace_inputs(workspace):
                 payload = {
                     "mode": "merge_state_fast_v1",
                     "profile": profile_name,
@@ -870,6 +870,15 @@ def read_profile_merge_state(workspace: Path) -> dict:
         return {}
 
 
+def has_required_workspace_inputs(workspace: Path) -> bool:
+    required = (
+        workspace / "AndroidManifest.xml",
+        workspace / "apktool.yml",
+        workspace / "res" / "values" / "public.xml",
+    )
+    return all(path.exists() for path in required)
+
+
 def write_profile_merge_state(manifest, profile_name: str, workspace: Path, modules):
     state_path = workspace / MERGE_STATE_FILE
     payload = {
@@ -885,6 +894,8 @@ def write_profile_merge_state(manifest, profile_name: str, workspace: Path, modu
 
 
 def has_reusable_merged_workspace(manifest, profile_name: str, workspace: Path, modules) -> bool:
+    if not has_required_workspace_inputs(workspace):
+        return False
     state = read_profile_merge_state(workspace)
     if not state:
         return False
