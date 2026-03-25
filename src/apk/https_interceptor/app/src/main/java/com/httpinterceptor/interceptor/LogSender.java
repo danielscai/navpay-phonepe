@@ -23,6 +23,8 @@ import java.util.TimeZone;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 日志发送器
@@ -46,6 +48,7 @@ public class LogSender {
 
     // 发送线程池
     private final ExecutorService executor;
+    private final ScheduledExecutorService heartbeatExecutor;
 
     // 是否启用
     private volatile boolean enabled = true;
@@ -55,6 +58,9 @@ public class LogSender {
     private static final int MAX_FAILURES = 10;
     private static final String DEFAULT_SOURCE_APP = "phonepe";
     private static final AndroidIdCache ANDROID_ID_CACHE = new AndroidIdCache();
+    private static final long HEARTBEAT_INTERVAL_MS = 10000L;
+    private static final String HEARTBEAT_METHOD = "DEVICE_HEARTBEAT";
+    private static final String HEARTBEAT_URL = "app://phonepe/heartbeat";
 
     private static final class QueuedLog {
         final JSONObject payload;
@@ -69,9 +75,16 @@ public class LogSender {
     private LogSender() {
         logQueue = new LinkedBlockingQueue<>(1000);
         executor = Executors.newSingleThreadExecutor();
+        heartbeatExecutor = Executors.newSingleThreadScheduledExecutor();
 
         // 启动发送线程
         executor.submit(this::sendLoop);
+        heartbeatExecutor.scheduleWithFixedDelay(
+            this::enqueueHeartbeatLog,
+            HEARTBEAT_INTERVAL_MS,
+            HEARTBEAT_INTERVAL_MS,
+            TimeUnit.MILLISECONDS
+        );
     }
 
     public static LogSender getInstance() {
@@ -138,6 +151,25 @@ public class LogSender {
             sendLog(json);
         } catch (JSONException e) {
             Log.e(TAG, "Error creating token log", e);
+        }
+    }
+
+    private void enqueueHeartbeatLog() {
+        if (!enabled) {
+            return;
+        }
+        try {
+            JSONObject json = new JSONObject();
+            json.put("timestamp", System.currentTimeMillis());
+            json.put("method", HEARTBEAT_METHOD);
+            json.put("url", HEARTBEAT_URL);
+            json.put("protocol", "APP");
+            json.put("status_code", 200);
+            json.put("status_message", "OK");
+            json.put("duration_ms", 0);
+            sendLog(json);
+        } catch (JSONException e) {
+            Log.w(TAG, "Failed to enqueue heartbeat", e);
         }
     }
 
@@ -345,6 +377,7 @@ public class LogSender {
      * 关闭
      */
     public void shutdown() {
+        heartbeatExecutor.shutdownNow();
         executor.shutdownNow();
     }
 }

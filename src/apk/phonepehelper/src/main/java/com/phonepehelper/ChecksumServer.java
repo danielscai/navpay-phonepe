@@ -1,6 +1,7 @@
 package com.phonepehelper;
 
 import android.content.Context;
+import android.provider.Settings;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -12,11 +13,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -60,13 +63,16 @@ final class ChecksumServer {
             }
         } catch (Throwable t) {
             Log.e(TAG, "Checksum server stopped", t);
+        } finally {
+            started = false;
         }
     }
 
     private static void handle(Socket socket, Context context) {
-        try (Socket s = socket;
-             InputStream in = s.getInputStream();
-             OutputStream out = s.getOutputStream()) {
+        try (Socket s = socket) {
+            s.setSoTimeout(5000);
+            InputStream in = s.getInputStream();
+            OutputStream out = s.getOutputStream();
 
             Request req = parseRequest(in);
             if (req == null) {
@@ -76,6 +82,16 @@ final class ChecksumServer {
 
             if ("/health".equals(req.path)) {
                 writeJson(out, 200, ok(new JSONObject().put("status", "ok")));
+                return;
+            }
+
+            if ("/debug/runtime".equals(req.path)) {
+                writeJson(out, 200, ok(buildRuntimeSnapshot(context)));
+                return;
+            }
+
+            if ("/debug/checksum".equals(req.path)) {
+                writeJson(out, 200, handleDebugChecksum(context, req));
                 return;
             }
 
@@ -109,7 +125,38 @@ final class ChecksumServer {
 
         } catch (Throwable t) {
             Log.e(TAG, "handler error", t);
+            try {
+                OutputStream out = socket.getOutputStream();
+                writeJson(out, 500, error("internal error: " + t.getClass().getSimpleName()));
+            } catch (Throwable ignored) {
+                // swallow secondary write failures
+            }
         }
+    }
+
+    private static JSONObject handleDebugChecksum(Context context, Request req) throws JSONException {
+        JSONObject body = new JSONObject(req.body.isEmpty() ? "{}" : req.body);
+        String path = body.optString("path", "");
+        String rawBody = body.optString("body", "");
+        String uuid = body.optString("uuid", "");
+        if (uuid.isEmpty()) {
+            uuid = UUID.randomUUID().toString();
+        }
+        if (path.isEmpty()) {
+            return error("missing path");
+        }
+
+        JSONObject runtime = buildRuntimeSnapshot(context);
+        String checksum = computeChecksum(context, path, rawBody, uuid);
+        if (checksum == null) {
+            return error("checksum failed");
+        }
+
+        JSONObject data = new JSONObject();
+        data.put("checksum", checksum);
+        data.put("uuid", uuid);
+        data.put("runtime", runtime);
+        return ok(data);
     }
 
     private static String computeChecksum(Context context, String path, String body, String uuid) {
@@ -132,6 +179,138 @@ final class ChecksumServer {
             Log.e(TAG, "computeChecksum failed", t);
         }
         return null;
+    }
+
+    private static JSONObject buildRuntimeSnapshot(Context context) throws JSONException {
+        JSONObject data = new JSONObject();
+        Context safeContext = resolveContext(context);
+        if (safeContext == null) {
+            data.put("context", "null");
+            return data;
+        }
+
+        data.put("packageName", safeContext.getPackageName());
+        data.put("packageCodePath", safeContext.getPackageCodePath());
+        data.put("localTimeMs", System.currentTimeMillis());
+
+        String androidId = Settings.Secure.getString(safeContext.getContentResolver(), "android_id");
+        if (androidId != null) {
+            data.put("androidId", androidId);
+        }
+
+        String deviceId = resolveDeviceId();
+        if (deviceId != null) {
+            data.put("deviceId", deviceId);
+        }
+
+        Long serverTimeOffsetMs = resolveServerTimeOffsetMs(safeContext);
+        if (serverTimeOffsetMs != null) {
+            data.put("serverTimeOffsetMs", serverTimeOffsetMs.longValue());
+        }
+
+        Long adjustedTimeMs = resolveAdjustedTimeMs();
+        if (adjustedTimeMs != null) {
+            data.put("adjustedTimeMs", adjustedTimeMs.longValue());
+        }
+
+        String signatureSha256 = resolveSignatureSha256(safeContext);
+        if (signatureSha256 != null) {
+            data.put("signatureSha256", signatureSha256);
+        }
+
+        return data;
+    }
+
+    private static String resolveDeviceId() {
+        try {
+            Class<?> fetcherClass = Class.forName("com.phonepe.network.base.utils.DeviceIdFetcher");
+            Field field = fetcherClass.getDeclaredField("b");
+            field.setAccessible(true);
+            Object contract = field.get(null);
+            if (contract != null) {
+                Method method = contract.getClass().getMethod("generateDeviceIdSync");
+                Object value = method.invoke(contract);
+                if (value instanceof String) {
+                    return (String) value;
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "resolveDeviceId via fetcher failed", t);
+        }
+        try {
+            Class<?> generatorClass = Class.forName("com.phonepe.ncore.tool.device.identification.DeviceIdGenerator");
+            Field field = generatorClass.getDeclaredField("h");
+            field.setAccessible(true);
+            Object generator = field.get(null);
+            if (generator != null) {
+                Method method = generatorClass.getMethod("generateDeviceIdSync");
+                Object value = method.invoke(generator);
+                if (value instanceof String) {
+                    return (String) value;
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "resolveDeviceId via generator failed", t);
+        }
+        return null;
+    }
+
+    private static Long resolveServerTimeOffsetMs(Context context) {
+        try {
+            Class<?> configClass = Class.forName("com.phonepe.network.external.preference.NetworkConfig");
+            Object config = configClass.getConstructor(Context.class).newInstance(context);
+            Method method = configClass.getMethod("getServerTimeOffset");
+            Object value = method.invoke(config);
+            if (value instanceof Long) {
+                return (Long) value;
+            }
+            if (value instanceof Number) {
+                return ((Number) value).longValue();
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "resolveServerTimeOffsetMs failed", t);
+        }
+        return null;
+    }
+
+    private static Long resolveAdjustedTimeMs() {
+        try {
+            Class<?> chClass = Class.forName("com.phonepe.networkclient.utils.CH");
+            Method method = chClass.getMethod("e");
+            Object value = method.invoke(null);
+            if (value instanceof Long) {
+                return (Long) value;
+            }
+            if (value instanceof Number) {
+                return ((Number) value).longValue();
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "resolveAdjustedTimeMs failed", t);
+        }
+        return null;
+    }
+
+    private static String resolveSignatureSha256(Context context) {
+        try {
+            byte[] signatureBytes = context.getPackageManager()
+                    .getPackageInfo(context.getPackageName(), 64)
+                    .signatures[0]
+                    .toByteArray();
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            return toHex(digest.digest(signatureBytes));
+        } catch (Throwable t) {
+            Log.w(TAG, "resolveSignatureSha256 failed", t);
+            return null;
+        }
+    }
+
+    private static String toHex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            sb.append(Character.forDigit((b >> 4) & 0xf, 16));
+            sb.append(Character.forDigit(b & 0xf, 16));
+        }
+        return sb.toString();
     }
 
     private static Context resolveContext(Context context) {
