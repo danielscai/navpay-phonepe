@@ -33,6 +33,10 @@ yarn checksum:test
 yarn checksum:android:start
 ```
 
+项目级接入文档：
+
+- [docs/checksum_service_integration.md](/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/docs/checksum_service_integration.md)
+
 ## HTTP API
 
 ### `GET /health`
@@ -68,6 +72,36 @@ curl -sS http://127.0.0.1:19190/validate \
 - 返回值为合法 Base64
 - 解码后为 ASCII 风格 token 串
 - 长度落在当前成功样本区间
+
+## Real-Log Validation
+
+本模块已经用一条真实的 `navpay-admin` 拦截日志做过 real-fixture 验证。
+
+- 样本来源：`navpay-admin` 日志 `654`
+- 请求形态：真实 `phonepe` `POST`
+- 真实头字段：`X-REQUEST-CHECKMATE`
+- 验证目标：确认 `19190` 的 checksum 服务可以用真实的 `path` 和 `body` 返回 `structureOk=true`
+
+复跑流程：
+
+```bash
+cd /Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum
+bash scripts/validate_real_fixture.sh
+```
+
+这个命令会：
+
+- 读取 `src/test/resources/fixtures/phonepe_intercept_replay.json`
+- 调用 `127.0.0.1:19190/checksum`
+- 将稳定的校验结果与 `src/test/resources/fixtures/phonepe_intercept_replay.expected.json` 比对
+
+如果你要更新期望快照，只在明确需要时使用：
+
+```bash
+UPDATE_REAL_FIXTURE=1 bash scripts/validate_real_fixture.sh
+```
+
+只建议在重新确认真实样本后使用这个更新模式。
 
 ## Files
 
