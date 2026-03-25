@@ -1,0 +1,11 @@
+{
+  "ok": true,
+  "data": {
+    "length": 184,
+    "decodedLength": 138,
+    "mode": "emulate",
+    "structureOk": true,
+    "asciiLike": true,
+    "hyphenCount": 2
+  }
+}

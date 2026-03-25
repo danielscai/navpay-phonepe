@@ -1,0 +1,39 @@
+{
+  "source": {
+    "logId": 654,
+    "timestamp": "1774423971827",
+    "receivedAtMs": 1774423984422,
+    "sourceApp": "phonepe",
+    "sourceClientDeviceId": "44a44ad43b7c07a7",
+    "sourceDeviceId": "dev_c5b8a148-f418-44b0-928d-874333d72e4b",
+    "sourceLabel": "phonepe:emu64a",
+    "exportedAt": "2026-03-25T10:29:34.156Z"
+  },
+  "request": {
+    "method": "POST",
+    "url": "https://apicp2.phonepe.com/apis/chimera/pz/v1/whitelisted/Auth/evaluate/bulk",
+    "path": "/apis/chimera/pz/v1/whitelisted/Auth/evaluate/bulk",
+    "body": "{\"appContext\":{\"osVersion\":\"36\",\"buildTrack\":\"RELEASE\",\"deviceModel\":\"sdk_gphone64_arm64\",\"location\":{\"latitude\":0.0,\"longitude\":0.0},\"appversion\":\"26.01.02.0\",\"deviceManufacturer\":\"Google\",\"deviceId\":\"tNCcXW76cKS1iycrmKzD65M68gwF8IWxiYoeqehxes\",\"versionCode\":\"26010205\",\"buildGenerationTime\":\"1768847400000\",\"ckv\":\"42\",\"clientId\":\"OCL2405101536344115870712\"},\"keyCrisp\":[{\"crisp\":\"rc##ipnCountriesMetaData\\u003dcsv1::;loginConfig\\u003dcsv1::;smsHurdleMetaMap\\u003dcsv1::;isNetworkLoggingEnabled\\u003dcsv1::1;pinHurdleMetaMap\\u003dcsv1::;otpLoginHurdleConfig\\u003dcsv1::2;loginFeatureFlagConfig\\u003dcsv1::;hurdleMetaMap\\u003dcsv1::;loginUiConfig\\u003dcsv1::;otpHurdleMetaMap\\u003dcsv1::;loginBottomSheetCount\\u003dcsv1::;webViewConfig\\u003dcsv1::;ipnMetaConfig\\u003dcsv1::;isUniversalNetworkEventEnabled\\u003dcsv1::1,3;isIPNLoginEnabled\\u003dcsv1::;newHelpBaseUrl\\u003dcsv1::;loginHurdleConfig\\u003dcsv1::;isInterceptorLoggingEnabled\\u003dcsv1::;loginAnalyticsConfig\\u003dcsv1::1,1;allowLogoutInBGV2\\u003dcsv1::;countriesMetaUsecaseMapping\\u003dcsv1::;networkAnalyticsConfig\\u003dcsv1::\",\"key\":\"loginConfig\",\"version\":1766041854735}],\"maxSize\":25}",
+    "rawHeaders": "X-ORG-ID: AUTH\nContent-Type: application/json\naccept: application/json\nX-SOURCE-TYPE: APP\nX-SOURCE-PLATFORM: Android\nX-SOURCE-VERSION: 26010205\nX-MERCHANT-ID: FXM\nX-APP-ID: fdab17054b934ee28271230cb743d3a7\nX-SOURCE-LOCALE: en\nX-Device-Fingerprint: 0000000684Yc/sxI05VF+F7zRHDsryQS0rMg8Lj5dDaynQdBZoAvX7g2n7fQZDquXl+0LRiatbFB2z2rfN4163XJZDFkgDEshtzd0+Gm488kkFR3vglfAHIkTSGuE6wPKRDMdnor3GnnKbXkkXsq+sT2xxjph9kNCfTpdSQFnrnfV6qtg+LmAdZcc+u+/L1O1+xBB5Ti66h9rQ9Gck1oE/IfmphHNjuIkssCBeNvmduFZbA2sHsK6GAxkt2lXdzGtcbD93spA8hdl4lG6oMxYou5OPELh4+AoOH8fRBglbQU7hlBEtGKcFZaUXcegQspeB9mMWVvnbclNdxiiQZfMraYKq4suBlCUIAYzQeQ3O/iFPwYPkaeKasxUziATSbh6b34CDeswsBYV5PBmT27gr13zLy1KPLVlv+0UupeVcdZ3yctKEfvQTCHF7eW1rZAzJfcFkkH5kxEEetc+Bh3kKRvSkmQBvEs9X91qWweaCjcqwhfe9JY/CMy73KqDsIu/U2idw9CTKH7/jmY2FW/U06i833P+K4EougEl4k9FqEPBiIQYj1y40sLiIsM6meMF9wYi36ZbnI29PD1X7w5E0K1u0MGQIPm3VnjcMfY76MdUcvUZchoeohEGzVEX3OMjxff7vgbTnvV+8HpPbhHUk0OjkTDb5NvC+ld/xCx4uP1wKYfVAhtI=/EniMRm61mBdFHUH/q8qRg+OO33vvp6X59TI5SZPfOFr3q9gvb2FgcanutXkgfxg/35q5ntlzOjDAmUuv0pycg==\nX-CHECKMATE-CLIENT-ID: ANDROID\nX-CHECKMATE-KEY-VERSION: 3\nX-REQUEST-CHECKMATE: NjlhODQyMFJkNDZmWWx0Zy04ZDN0c2dOZi00MTBqN21EalI2Vjg4RjJDUHkybUJqaW9JS1ZMa2NpWkdJMGVQUHdRTG0rOTc5R2daVnd3TFdVem5xK0RYZ2tuTVVXdmIvdEVzU2l6eHc9PXROQ2NYVzc2Y0tTMWl5Y3JtS3pENjVNNjhnd0Y4SVd4aVlvZXFlaHhlcw==\nX-REQUEST-START-TIME: 1774424004483\n",
+    "headers": {
+      "X-ORG-ID": "AUTH",
+      "Content-Type": "application/json",
+      "accept": "application/json",
+      "X-SOURCE-TYPE": "APP",
+      "X-SOURCE-PLATFORM": "Android",
+      "X-SOURCE-VERSION": "26010205",
+      "X-MERCHANT-ID": "FXM",
+      "X-APP-ID": "fdab17054b934ee28271230cb743d3a7",
+      "X-SOURCE-LOCALE": "en",
+      "X-Device-Fingerprint": "0000000684Yc/sxI05VF+F7zRHDsryQS0rMg8Lj5dDaynQdBZoAvX7g2n7fQZDquXl+0LRiatbFB2z2rfN4163XJZDFkgDEshtzd0+Gm488kkFR3vglfAHIkTSGuE6wPKRDMdnor3GnnKbXkkXsq+sT2xxjph9kNCfTpdSQFnrnfV6qtg+LmAdZcc+u+/L1O1+xBB5Ti66h9rQ9Gck1oE/IfmphHNjuIkssCBeNvmduFZbA2sHsK6GAxkt2lXdzGtcbD93spA8hdl4lG6oMxYou5OPELh4+AoOH8fRBglbQU7hlBEtGKcFZaUXcegQspeB9mMWVvnbclNdxiiQZfMraYKq4suBlCUIAYzQeQ3O/iFPwYPkaeKasxUziATSbh6b34CDeswsBYV5PBmT27gr13zLy1KPLVlv+0UupeVcdZ3yctKEfvQTCHF7eW1rZAzJfcFkkH5kxEEetc+Bh3kKRvSkmQBvEs9X91qWweaCjcqwhfe9JY/CMy73KqDsIu/U2idw9CTKH7/jmY2FW/U06i833P+K4EougEl4k9FqEPBiIQYj1y40sLiIsM6meMF9wYi36ZbnI29PD1X7w5E0K1u0MGQIPm3VnjcMfY76MdUcvUZchoeohEGzVEX3OMjxff7vgbTnvV+8HpPbhHUk0OjkTDb5NvC+ld/xCx4uP1wKYfVAhtI=/EniMRm61mBdFHUH/q8qRg+OO33vvp6X59TI5SZPfOFr3q9gvb2FgcanutXkgfxg/35q5ntlzOjDAmUuv0pycg==",
+      "X-CHECKMATE-CLIENT-ID": "ANDROID",
+      "X-CHECKMATE-KEY-VERSION": "3",
+      "X-REQUEST-CHECKMATE": "NjlhODQyMFJkNDZmWWx0Zy04ZDN0c2dOZi00MTBqN21EalI2Vjg4RjJDUHkybUJqaW9JS1ZMa2NpWkdJMGVQUHdRTG0rOTc5R2daVnd3TFdVem5xK0RYZ2tuTVVXdmIvdEVzU2l6eHc9PXROQ2NYVzc2Y0tTMWl5Y3JtS3pENjVNNjhnd0Y4SVd4aVlvZXFlaHhlcw==",
+      "X-REQUEST-START-TIME": "1774424004483"
+    }
+  },
+  "replay": {
+    "headerName": "X-REQUEST-CHECKMATE",
+    "headerValue": "NjlhODQyMFJkNDZmWWx0Zy04ZDN0c2dOZi00MTBqN21EalI2Vjg4RjJDUHkybUJqaW9JS1ZMa2NpWkdJMGVQUHdRTG0rOTc5R2daVnd3TFdVem5xK0RYZ2tuTVVXdmIvdEVzU2l6eHc9PXROQ2NYVzc2Y0tTMWl5Y3JtS3pENjVNNjhnd0Y4SVd4aVlvZXFlaHhlcw=="
+  }
+}
