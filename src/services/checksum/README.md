@@ -32,7 +32,7 @@
 初始化 runtime：
 
 ```bash
-yarn checksum:init /absolute/path/to/patched_signed.apk
+yarn checksum:init /absolute/path/to/com.phonepe.app_merged_signed.apk
 ```
 
 启动服务：
@@ -55,7 +55,7 @@ yarn checksum:android:start
 
 APK 更新后的推荐流程：
 
-1. 重新运行 `yarn checksum:init /absolute/path/to/patched_signed.apk`
+1. 重新运行 `yarn checksum:init /absolute/path/to/com.phonepe.app_merged_signed.apk`
 2. 检查 `src/services/checksum/runtime/manifest.json`
 3. 运行 `yarn checksum:test` 或 `cd src/services/checksum && mvn test`
 

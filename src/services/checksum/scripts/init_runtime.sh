@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 SERVICE_DIR="${ROOT_DIR}/src/services/checksum"
 RUNTIME_DIR="${SERVICE_DIR}/runtime"
 LIB_DIR="${RUNTIME_DIR}/lib/arm64-v8a"
-DEFAULT_APK="${ROOT_DIR}/cache/profiles/full/build/patched_signed.apk"
+DEFAULT_APK="${ROOT_DIR}/cache/phonepe/merged/com.phonepe.app_merged_signed.apk"
 APK_PATH="${1:-${PROBE_TARGET_APK:-${DEFAULT_APK}}}"
 
 if [[ -z "${APK_PATH}" || ! -f "${APK_PATH}" ]]; then

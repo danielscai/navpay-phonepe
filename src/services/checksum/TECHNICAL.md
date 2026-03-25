@@ -27,7 +27,7 @@
 
 ### `ApkSignatureExtractor`
 
-负责从 `patched_signed.apk` 中提取真实包签名证书字节，避免 `Signature->toByteArray()` 继续返回假数据。
+负责从 `patched_signed.apk`（或等效签名 APK）中提取真实包签名证书字节，避免 `Signature->toByteArray()` 继续返回假数据。
 
 ### `runtime/`
 
@@ -89,7 +89,7 @@
 ## Operational Notes
 
 - 默认端口：`19190`
-- 初始化时默认目标 APK：`cache/profiles/full/build/patched_signed.apk`
+- 初始化时默认目标 APK：`cache/phonepe/merged/com.phonepe.app_merged_signed.apk`
 - 默认运行时目录：`src/services/checksum/runtime`
 - `yarn checksum:test` 会在服务未启动时自动拉起服务，再做健康检查和结构校验
 - 后续默认运行模式会优先从 `src/services/checksum/runtime/` 读取已准备好的依赖文件
