@@ -2,6 +2,20 @@
 
 正式的 Scheme 3 checksum 服务模块。
 
+## Runtime Bundle
+
+`src/services/checksum/runtime/` 是 checksum 服务的本地运行时目录。
+
+目录内会保留：
+
+- `manifest.json`
+- `signature.bin`
+- `lib/arm64-v8a/libphonepe-cryptography-support-lib.so`
+- `lib/arm64-v8a/liba41935.so`
+- `lib/arm64-v8a/libc++_shared.so`
+
+后续会通过单独的初始化步骤把这些文件从 APK 提取出来。默认启动路径将优先依赖这个 runtime 目录，而不是在每次启动时重新读取 APK。
+
 ## What It Does
 
 - 使用 `unidbg` 调用 `EncryptionUtils.nmcs(...)`
@@ -14,6 +28,12 @@
 - `127.0.0.1:19190`
 
 ## Commands
+
+初始化 runtime：
+
+```bash
+yarn checksum:init /absolute/path/to/patched_signed.apk
+```
 
 启动服务：
 
@@ -32,6 +52,12 @@ yarn checksum:test
 ```bash
 yarn checksum:android:start
 ```
+
+APK 更新后的推荐流程：
+
+1. 重新运行 `yarn checksum:init /absolute/path/to/patched_signed.apk`
+2. 检查 `src/services/checksum/runtime/manifest.json`
+3. 运行 `yarn checksum:test` 或 `cd src/services/checksum && mvn test`
 
 项目级接入文档：
 
@@ -107,6 +133,8 @@ UPDATE_REAL_FIXTURE=1 bash scripts/validate_real_fixture.sh
 
 - Java 服务入口：`src/main/java/com/navpay/phonepe/unidbg/ChecksumHttpService.java`
 - probe：`src/main/java/com/navpay/phonepe/unidbg/UnidbgChecksumProbe.java`
+- runtime 初始化器：`src/main/java/com/navpay/phonepe/unidbg/ChecksumRuntimeInitializer.java`
 - 启动脚本：`scripts/start_http_service.sh`
+- runtime 初始化脚本：`scripts/init_runtime.sh`
 - 测试脚本：`scripts/test_http_service.sh`
 - 技术说明：`TECHNICAL.md`

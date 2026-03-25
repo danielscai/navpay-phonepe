@@ -27,6 +27,12 @@
 
 ## 启动方式
 
+首次或 APK 更新后，先初始化 runtime：
+
+```bash
+yarn checksum:init /absolute/path/to/patched_signed.apk
+```
+
 启动正式 checksum 服务：
 
 ```bash
@@ -179,6 +185,7 @@ checksum="$(curl -sS http://127.0.0.1:19190/checksum \
 
 ## 推荐实践
 
+- 把 `src/services/checksum/runtime/manifest.json` 当成当前 runtime 的来源记录
 - 所有调用方统一访问 `127.0.0.1:19190`
 - 显式传入 `uuid`，便于问题复现
 - 先调 `/health`，再调 `/checksum`

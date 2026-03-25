@@ -11,35 +11,35 @@ import org.junit.jupiter.api.Test;
 final class ChecksumFixtureLoaderTest {
 
     @Test
-    void resolvesProbeTargetApkSystemPropertyBeforeRepoCache() throws Exception {
-        Path tempApk = Files.createTempFile("checksum-probe", ".apk");
-        String previous = System.getProperty("probe.target.apk");
+    void resolvesPreparedRuntimeSystemPropertyBeforeRepoDefault() throws Exception {
+        Path tempRuntime = Files.createTempDirectory("checksum-runtime");
+        String previous = System.getProperty("probe.runtime.root");
         try {
-            System.setProperty("probe.target.apk", tempApk.toString());
-            Path resolved = ChecksumFixtureLoader.resolveTargetApkPath();
-            assertEquals(tempApk.toAbsolutePath().normalize(), resolved);
+            System.setProperty("probe.runtime.root", tempRuntime.toString());
+            Path resolved = ChecksumFixtureLoader.resolvePreparedRuntimeRoot();
+            assertEquals(tempRuntime.toAbsolutePath().normalize(), resolved);
         } finally {
             if (previous == null) {
-                System.clearProperty("probe.target.apk");
+                System.clearProperty("probe.runtime.root");
             } else {
-                System.setProperty("probe.target.apk", previous);
+                System.setProperty("probe.runtime.root", previous);
             }
-            Files.deleteIfExists(tempApk);
+            Files.deleteIfExists(tempRuntime);
         }
     }
 
     @Test
-    void failsFastWhenProbeTargetApkOverridePointsToMissingFile() throws Exception {
-        String previous = System.getProperty("probe.target.apk");
+    void failsFastWhenPreparedRuntimeOverridePointsToMissingDirectory() throws Exception {
+        String previous = System.getProperty("probe.runtime.root");
         try {
-            System.setProperty("probe.target.apk", "/tmp/navpay-missing-checksum.apk");
-            IOException error = assertThrows(IOException.class, ChecksumFixtureLoader::resolveTargetApkPath);
-            assertEquals("configured checksum APK does not exist: /tmp/navpay-missing-checksum.apk (provide -Dprobe.target.apk=/absolute/path/to/patched_signed.apk or PROBE_TARGET_APK=/absolute/path/to/patched_signed.apk)", error.getMessage());
+            System.setProperty("probe.runtime.root", "/tmp/navpay-missing-checksum-runtime");
+            IOException error = assertThrows(IOException.class, ChecksumFixtureLoader::resolvePreparedRuntimeRoot);
+            assertEquals("configured checksum runtime does not exist: /tmp/navpay-missing-checksum-runtime (provide -Dprobe.runtime.root=/absolute/path/to/runtime or PROBE_RUNTIME_ROOT=/absolute/path/to/runtime)", error.getMessage());
         } finally {
             if (previous == null) {
-                System.clearProperty("probe.target.apk");
+                System.clearProperty("probe.runtime.root");
             } else {
-                System.setProperty("probe.target.apk", previous);
+                System.setProperty("probe.runtime.root", previous);
             }
         }
     }

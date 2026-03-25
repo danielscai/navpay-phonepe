@@ -13,9 +13,9 @@ final class ChecksumFixtureLoader {
 
     private static final String REAL_FIXTURE_RESOURCE = "/fixtures/phonepe_intercept_replay.json";
     private static final String EXPECTED_FIXTURE_RESOURCE = "/fixtures/phonepe_intercept_replay.expected.json";
-    private static final String PROBE_TARGET_APK_PROPERTY = "probe.target.apk";
-    private static final String PROBE_TARGET_APK_ENV = "PROBE_TARGET_APK";
-    private static final String REPO_CACHE_APK = "cache/profiles/full/build/patched_signed.apk";
+    private static final String PROBE_RUNTIME_ROOT_PROPERTY = "probe.runtime.root";
+    private static final String PROBE_RUNTIME_ROOT_ENV = "PROBE_RUNTIME_ROOT";
+    private static final String REPO_CHECKSUM_DIR = "src/services/checksum";
     private static final Pattern JSON_STRING_FIELD =
             Pattern.compile("\"%s\"\\s*:\\s*\"((?:\\\\.|[^\\\\\"])*)\"");
     private static final Pattern JSON_NUMBER_FIELD =
@@ -47,41 +47,35 @@ final class ChecksumFixtureLoader {
         );
     }
 
-    static Path resolveTargetApkPath() throws IOException {
-        String override = firstNonBlank(System.getProperty(PROBE_TARGET_APK_PROPERTY), System.getenv(PROBE_TARGET_APK_ENV));
+    static Path resolvePreparedRuntimeRoot() throws IOException {
+        String override = firstNonBlank(System.getProperty(PROBE_RUNTIME_ROOT_PROPERTY), System.getenv(PROBE_RUNTIME_ROOT_ENV));
         if (override != null) {
             Path candidate = Path.of(override).toAbsolutePath().normalize();
-            if (Files.isRegularFile(candidate)) {
+            if (Files.isDirectory(candidate)) {
                 return candidate;
             }
-            throw new IOException("configured checksum APK does not exist: " + candidate
-                    + " (provide -D" + PROBE_TARGET_APK_PROPERTY + "=/absolute/path/to/patched_signed.apk or "
-                    + PROBE_TARGET_APK_ENV + "=/absolute/path/to/patched_signed.apk)");
+            throw new IOException("configured checksum runtime does not exist: " + candidate
+                    + " (provide -D" + PROBE_RUNTIME_ROOT_PROPERTY + "=/absolute/path/to/runtime or "
+                    + PROBE_RUNTIME_ROOT_ENV + "=/absolute/path/to/runtime)");
         }
 
         Path repoRoot = findRepoRoot();
-        Path candidate = repoRoot.resolve(REPO_CACHE_APK);
-        if (Files.isRegularFile(candidate)) {
-            return candidate;
-        }
-        throw new IOException("missing checksum APK. Provide -D" + PROBE_TARGET_APK_PROPERTY
-                + "=/absolute/path/to/patched_signed.apk or " + PROBE_TARGET_APK_ENV
-                + "=/absolute/path/to/patched_signed.apk, or place the APK at " + candidate);
+        return ChecksumRuntimePaths.resolveRuntimeRoot(repoRoot);
     }
 
     static Path findRepoRoot() throws IOException {
         Path current = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
         for (int i = 0; i < 6 && current != null; i++) {
-            if (Files.isRegularFile(current.resolve(REPO_CACHE_APK))) {
+            if (Files.isDirectory(current.resolve(REPO_CHECKSUM_DIR))) {
                 return current;
             }
             current = current.getParent();
         }
-        throw new IOException("unable to locate repo root containing " + REPO_CACHE_APK);
+        throw new IOException("unable to locate repo root containing " + REPO_CHECKSUM_DIR);
     }
 
-    static boolean hasExplicitTargetApkOverride() {
-        return firstNonBlank(System.getProperty(PROBE_TARGET_APK_PROPERTY), System.getenv(PROBE_TARGET_APK_ENV)) != null;
+    static boolean hasExplicitRuntimeOverride() {
+        return firstNonBlank(System.getProperty(PROBE_RUNTIME_ROOT_PROPERTY), System.getenv(PROBE_RUNTIME_ROOT_ENV)) != null;
     }
 
     static String extractJsonString(String json, String field) {

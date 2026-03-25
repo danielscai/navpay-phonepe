@@ -1,3 +1,10 @@
 /Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/src/test/java/com/navpay/phonepe/unidbg/ChecksumFixtureLoaderTest.java
+/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/src/test/java/com/navpay/phonepe/unidbg/ChecksumRuntimeInitScriptTest.java
+/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/src/test/java/com/navpay/phonepe/unidbg/ChecksumPreparedRuntimeTest.java
+/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/src/test/java/com/navpay/phonepe/unidbg/ChecksumRuntimeConfigTest.java
+/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/src/test/java/com/navpay/phonepe/unidbg/ChecksumRuntimeInitializerTest.java
+/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/src/test/java/com/navpay/phonepe/unidbg/ChecksumRuntimeLayoutTest.java
+/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/src/test/java/com/navpay/phonepe/unidbg/ChecksumRuntimeInitDefaultPathTest.java
 /Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/src/test/java/com/navpay/phonepe/unidbg/ChecksumHttpServiceRealFixtureTest.java
 /Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/src/test/java/com/navpay/phonepe/unidbg/ChecksumFixtureLoader.java
+/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/src/test/java/com/navpay/phonepe/unidbg/ChecksumStartScriptTest.java

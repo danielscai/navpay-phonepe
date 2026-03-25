@@ -21,8 +21,8 @@ final class ChecksumHttpServiceRealFixtureTest {
     void realFixtureProducesStableStructure() throws Exception {
         ChecksumFixtureLoader.RealFixture fixture = ChecksumFixtureLoader.load();
         ChecksumFixtureLoader.ExpectedSnapshot expected = ChecksumFixtureLoader.loadExpected();
-        Path apkPath = resolveTargetApkPathForTest();
-        Object service = newService(apkPath);
+        Path runtimeRoot = resolveRuntimeRootForTest();
+        Object service = newService(runtimeRoot);
 
         Method handleChecksum = ChecksumHttpService.class.getDeclaredMethod("handleChecksum", Map.class);
         handleChecksum.setAccessible(true);
@@ -55,11 +55,13 @@ final class ChecksumHttpServiceRealFixtureTest {
         assertEquals(expected.hyphenCount(), hyphenCount);
     }
 
-    private static Path resolveTargetApkPathForTest() throws Exception {
+    private static Path resolveRuntimeRootForTest() throws Exception {
         try {
-            return ChecksumFixtureLoader.resolveTargetApkPath();
+            Path runtimeRoot = ChecksumFixtureLoader.resolvePreparedRuntimeRoot();
+            ChecksumRuntimePaths.validatePreparedRuntime(runtimeRoot);
+            return runtimeRoot;
         } catch (Exception e) {
-            if (ChecksumFixtureLoader.hasExplicitTargetApkOverride()) {
+            if (ChecksumFixtureLoader.hasExplicitRuntimeOverride()) {
                 throw new IllegalStateException(e.getMessage(), e);
             }
             assumeTrue(false, e.getMessage());
@@ -67,9 +69,7 @@ final class ChecksumHttpServiceRealFixtureTest {
         }
     }
 
-    private static Object newService(Path apkPath) throws Exception {
-        String libPath = UnidbgChecksumProbe.extractLibraryOnce(apkPath.toString(), "libphonepe-cryptography-support-lib.so");
-
+    private static Object newService(Path runtimeRoot) throws Exception {
         Constructor<ChecksumHttpService> ctor = ChecksumHttpService.class.getDeclaredConstructor(
                 String.class,
                 String.class,
@@ -77,6 +77,10 @@ final class ChecksumHttpServiceRealFixtureTest {
                 boolean.class
         );
         ctor.setAccessible(true);
-        return ctor.newInstance(apkPath.toString(), libPath, "e755b7-first", false);
+        return ctor.newInstance(
+                runtimeRoot.toString(),
+                ChecksumRuntimePaths.runtimeLib(runtimeRoot, "libphonepe-cryptography-support-lib.so").toString(),
+                "e755b7-first",
+                false);
     }
 }

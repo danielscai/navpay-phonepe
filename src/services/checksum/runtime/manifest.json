@@ -1,0 +1,7 @@
+{
+  "sourceApk":"/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/cache/profiles/full/build/patched_signed.apk",
+  "apkSha256":"f9972e20eaee931879bd8fc52b71be04932e04210559c42a36e040194f75241d",
+  "generatedAt":"2026-03-25T11:31:39.046125Z",
+  "signatureLength":744,
+  "libraries":["libphonepe-cryptography-support-lib.so","liba41935.so","libc++_shared.so"]
+}

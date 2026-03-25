@@ -1,5 +1,12 @@
 com/navpay/phonepe/unidbg/ChecksumFixtureLoaderTest.class
+com/navpay/phonepe/unidbg/ChecksumStartScriptTest.class
+com/navpay/phonepe/unidbg/ChecksumPreparedRuntimeTest.class
+com/navpay/phonepe/unidbg/ChecksumRuntimeInitScriptTest.class
+com/navpay/phonepe/unidbg/ChecksumRuntimeInitDefaultPathTest.class
+com/navpay/phonepe/unidbg/ChecksumFixtureLoader.class
+com/navpay/phonepe/unidbg/ChecksumRuntimeInitializerTest.class
+com/navpay/phonepe/unidbg/ChecksumRuntimeConfigTest.class
+com/navpay/phonepe/unidbg/ChecksumFixtureLoader$ExpectedSnapshot.class
+com/navpay/phonepe/unidbg/ChecksumRuntimeLayoutTest.class
 com/navpay/phonepe/unidbg/ChecksumHttpServiceRealFixtureTest.class
 com/navpay/phonepe/unidbg/ChecksumFixtureLoader$RealFixture.class
-com/navpay/phonepe/unidbg/ChecksumFixtureLoader.class
-com/navpay/phonepe/unidbg/ChecksumFixtureLoader$ExpectedSnapshot.class

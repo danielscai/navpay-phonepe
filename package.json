@@ -7,6 +7,7 @@
     "log": "cd src/services/log_server && ./start.sh",
     "logd": "cd src/services/log_server && npm run dev",
     "checksum:android:start": "bash ./scripts/start_checksum_emulator.sh",
+    "checksum:init": "src/services/checksum/scripts/init_runtime.sh",
     "checksum:start": "src/services/checksum/scripts/start_http_service.sh",
     "checksum:test": "src/services/checksum/scripts/test_http_service.sh",
     "emu": "/Users/danielscai/Library/Android/sdk/emulator/emulator @phonepe1",

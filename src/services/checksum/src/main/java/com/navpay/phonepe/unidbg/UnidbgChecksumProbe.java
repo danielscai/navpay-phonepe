@@ -49,6 +49,7 @@ public final class UnidbgChecksumProbe extends AbstractJni {
     private String chMode = "emulate";
     private String configuredDeviceId = "stub-device-id";
     private long configuredTimeMs = 1700000000000L;
+    private String configuredRuntimeRoot = "";
     private String configuredApkPath = "/data/app/com.phonepe.app/base.apk";
     private byte[] configuredSignatureBytes = DEFAULT_SIGNATURE_HEX.getBytes(StandardCharsets.UTF_8);
     private int chFallbackHits;
@@ -186,13 +187,15 @@ public final class UnidbgChecksumProbe extends AbstractJni {
         this.configuredDeviceId = readConfig("probe.device.id", "PROBE_DEVICE_ID", "stub-device-id");
         this.configuredTimeMs = Long.parseLong(readConfig("probe.fixed.time.ms", "PROBE_FIXED_TIME_MS",
                 String.valueOf(System.currentTimeMillis())));
+        this.configuredRuntimeRoot = readConfig("probe.runtime.root", "PROBE_RUNTIME_ROOT", "");
         this.configuredApkPath = readConfig("probe.target.apk", "PROBE_TARGET_APK", "/data/app/com.phonepe.app/base.apk");
-        this.configuredSignatureBytes = resolveSignatureBytes(configuredApkPath, report);
+        this.configuredSignatureBytes = resolveSignatureBytesForConfig(configuredRuntimeRoot, configuredApkPath, report);
         this.chFallbackHits = 0;
         this.stubHits = 0;
         report.put("probe_ch_mode", chMode);
         report.put("probe_device_id", configuredDeviceId);
         report.put("probe_time_ms", Long.toString(configuredTimeMs));
+        report.put("probe_runtime_root", configuredRuntimeRoot);
         report.put("probe_target_apk", configuredApkPath);
         AndroidEmulator emulator = AndroidEmulatorBuilder.for64Bit().setProcessName("com.phonepe.app").build();
         try {
@@ -420,7 +423,24 @@ public final class UnidbgChecksumProbe extends AbstractJni {
         return null;
     }
 
-    private byte[] resolveSignatureBytes(String apkPath, Map<String, String> report) {
+    static byte[] resolveSignatureBytesForConfig(String runtimeRoot, String apkPath, Map<String, String> report) {
+        if (runtimeRoot != null && !runtimeRoot.isBlank()) {
+            Path runtimeSignature = ChecksumRuntimePaths.runtimeSignature(Path.of(runtimeRoot));
+            if (Files.isRegularFile(runtimeSignature)) {
+                try {
+                    byte[] bytes = Files.readAllBytes(runtimeSignature);
+                    report.put("probe_signature_source", "runtime-signature");
+                    report.put("probe_signature_length", Integer.toString(bytes.length));
+                    return bytes;
+                } catch (IOException e) {
+                    report.put("probe_signature_source", "runtime-signature-failed:" + sanitize(e));
+                }
+            }
+        }
+        return resolveSignatureBytes(apkPath, report);
+    }
+
+    private static byte[] resolveSignatureBytes(String apkPath, Map<String, String> report) {
         File apkFile = new File(apkPath);
         if (!apkFile.isFile()) {
             report.put("probe_signature_source", "fallback-default");

@@ -93,8 +93,11 @@ POST /api/checksum
 
 - `127.0.0.1:19190`
 - 模块位置：`src/services/checksum`
+- 初始化命令：`yarn checksum:init /absolute/path/to/patched_signed.apk`
 - 启动命令：`yarn checksum:start`
 - 测试命令：`yarn checksum:test`
+
+这个正式服务现在默认依赖 `src/services/checksum/runtime/` 下已经初始化好的运行时文件，不再要求每次启动时重新读取 APK。
 
 正式服务接入文档：
 

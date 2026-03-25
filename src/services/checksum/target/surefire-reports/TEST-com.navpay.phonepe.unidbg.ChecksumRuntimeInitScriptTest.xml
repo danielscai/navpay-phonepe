@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" version="3.0.2" name="com.navpay.phonepe.unidbg.ChecksumFixtureLoaderTest" time="0.034" tests="2" errors="0" skipped="0" failures="0">
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" version="3.0.2" name="com.navpay.phonepe.unidbg.ChecksumRuntimeInitScriptTest" time="0.013" tests="1" errors="0" skipped="0" failures="0">
   <properties>
     <property name="socksProxyHost" value="127.0.0.1"/>
     <property name="http.proxyHost" value="127.0.0.1"/>
@@ -65,6 +65,5 @@
     <property name="java.class.version" value="69.0"/>
     <property name="http.proxyPort" value="7897"/>
   </properties>
-  <testcase name="resolvesPreparedRuntimeSystemPropertyBeforeRepoDefault" classname="com.navpay.phonepe.unidbg.ChecksumFixtureLoaderTest" time="0.022"/>
-  <testcase name="failsFastWhenPreparedRuntimeOverridePointsToMissingDirectory" classname="com.navpay.phonepe.unidbg.ChecksumFixtureLoaderTest" time="0.001"/>
+  <testcase name="initScriptFailsFastWhenApkIsMissing" classname="com.navpay.phonepe.unidbg.ChecksumRuntimeInitScriptTest" time="0.012"/>
 </testsuite>

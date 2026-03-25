@@ -25,22 +25,23 @@ public final class ChecksumHttpService {
 
     private static final int DEFAULT_PORT = 19190;
 
-    private final String apkPath;
+    private final String runtimeRoot;
     private final String libPath;
     private final String loadOrder;
     private final boolean loadLibcxx;
 
-    private ChecksumHttpService(String apkPath, String libPath, String loadOrder, boolean loadLibcxx) {
-        this.apkPath = apkPath;
+    private ChecksumHttpService(String runtimeRoot, String libPath, String loadOrder, boolean loadLibcxx) {
+        this.runtimeRoot = runtimeRoot;
         this.libPath = libPath;
         this.loadOrder = loadOrder;
         this.loadLibcxx = loadLibcxx;
     }
 
     public static void main(String[] args) throws Exception {
-        Path repoRoot = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize();
-        String apkPath = readConfig("probe.target.apk", "PROBE_TARGET_APK",
-                repoRoot.resolve("cache/profiles/full/build/patched_signed.apk").toString());
+        Path repoRoot = ChecksumRuntimePaths.resolveRepoRoot(Path.of(System.getProperty("user.dir")));
+        Path runtimeRoot = Path.of(readConfig("probe.runtime.root", "PROBE_RUNTIME_ROOT",
+                ChecksumRuntimePaths.resolveRuntimeRoot(repoRoot).toString())).toAbsolutePath().normalize();
+        ChecksumRuntimePaths.validatePreparedRuntime(runtimeRoot);
         int port = Integer.parseInt(readConfig("checksum.http.port", "CHECKSUM_HTTP_PORT", String.valueOf(DEFAULT_PORT)));
         if (System.getProperty("probe.device.id") == null && System.getenv("PROBE_DEVICE_ID") == null) {
             String detected = UnidbgChecksumProbe.detectDeviceIdFromAdb();
@@ -48,10 +49,10 @@ public final class ChecksumHttpService {
                 System.setProperty("probe.device.id", detected);
             }
         }
-        String libPath = UnidbgChecksumProbe.extractLibraryOnce(apkPath, "libphonepe-cryptography-support-lib.so");
+        String libPath = ChecksumRuntimePaths.runtimeLib(runtimeRoot, "libphonepe-cryptography-support-lib.so").toString();
         String loadOrder = readConfig("probe.load.order", "PROBE_LOAD_ORDER", "e755b7-first");
         boolean loadLibcxx = isTruthy(readConfig("probe.load.libcxx", "PROBE_LOAD_LIBCXX", "false"));
-        ChecksumHttpService service = new ChecksumHttpService(apkPath, libPath, loadOrder, loadLibcxx);
+        ChecksumHttpService service = new ChecksumHttpService(runtimeRoot.toString(), libPath, loadOrder, loadLibcxx);
         service.start(port);
     }
 
@@ -73,7 +74,7 @@ public final class ChecksumHttpService {
         System.out.println("checksum_http_service=LISTENING");
         System.out.println("checksum_http_port=" + port);
         System.out.println("checksum_http_mode=emulate");
-        System.out.println("checksum_http_apk=" + apkPath);
+        System.out.println("checksum_http_runtime=" + runtimeRoot);
         System.out.println("checksum_http_library=" + libPath);
     }
 
@@ -97,7 +98,7 @@ public final class ChecksumHttpService {
         String uuid = request.getOrDefault("uuid", "8e8f7e5c-3f14-4cb3-bf70-8ec3dbf5a001");
         String body = request.getOrDefault("body", "");
         System.setProperty("probe.ch.mode", "emulate");
-        System.setProperty("probe.target.apk", apkPath);
+        System.setProperty("probe.runtime.root", runtimeRoot);
         Map<String, String> report = new UnidbgChecksumProbe().execute(libPath, path, body, uuid, loadOrder, loadLibcxx);
         String checksum = report.getOrDefault("checksum", "");
         if (checksum.isEmpty()) {
