@@ -41,10 +41,10 @@ cd src/apk/phonepehelper
 ## 注入与测试
 
 ```bash
-python3 src/pipeline/orch/orchestrator.py test --profile phonepehelper-only --smoke --serial emulator-5554
+yarn test
 ```
 
-`scripts/merge.sh` 现在只消费 `--artifact-dir`，由 orchestrator 在构建阶段提前准备产物。
+按仓库既定流程，`yarn test` 会执行编译、合并、打包、安装与拉起验证；不删除原 APK 包。
 
 ## 验证
 
@@ -55,11 +55,20 @@ adb logcat -s PPHelper
 预期日志：
 - `PhonePeHelper.init ok`
 - `Lifecycle logger registered`
+- `token snapshot: 1fa=...`
+- `request-meta built: ...`
+- `monitor tick: ...`
 - `PhonePeHelper initialized`
 - Activity 生命周期日志（created/started/resumed...）
+
+## Snapshot Upload
+
+- 上传地址：`http://10.0.2.2:3000/api/intercept/phonepe/snapshot`
+- 上传内容：`{ androidId, payload }`
+- `payload` 由 `PhonePeHelper.buildSnapshotForNavpay()` 构建，包含请求元数据和本地采集快照
 
 ## 推荐入口
 
 ```bash
-yarn flow:test:phonepehelper
+yarn test
 ```
