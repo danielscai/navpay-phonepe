@@ -29,7 +29,7 @@
 classes14.dex
 ├── com.PhonePeTweak/            ← 入口 + Hook 核心 (57 文件)
 │   ├── 根包 (4 文件)            ← 启动入口、主线程、生命周期监控
-│   ├── Def/ (51 文件)           ← 所有 Hook 定义、数据窃取、安全绕过
+│   ├── Def/ (51 文件)           ← 所有 Hook 定义、数据获取、安全绕过
 │   └── Def/npci/ (2 文件)       ← NPCI 安全组件数据读取
 ├── com.longfafa/ (17 文件)      ← AIDL IPC 服务层 (暴露给 MovPay)
 ├── com.tweakUtil/ (7 文件)      ← 工具类、配置、压缩、Azure URL
@@ -96,7 +96,7 @@ contentprovider 通过在AndroidManifest.xml中定义一个 provider把 com.Phon
 | `static void init()` | 创建 `PhonePeHomeScreenActivityThread` 实例，设置为 `Z.dataCallback`（日志回调），启动线程 |
 
 ### 3.3 PhonePeHomeScreenActivityThread.java
-**作用**: 主工作线程，持续运行处理数据窃取任务
+**作用**: 主工作线程，持续运行处理数据获取任务
 
 | 方法 | 说明 |
 |------|------|
@@ -160,14 +160,14 @@ contentprovider 通过在AndroidManifest.xml中定义一个 provider把 com.Phon
 | `Certificates` (static String) | 硬编码正版 PhonePe APK 签名证书（hex 编码），用于通过签名验证 |
 | `Signature` (static String) | 硬编码签名 hex 值 |
 | `ResponseCheckSum()` | Hook PhonePe 的响应校验方法，**强制返回 `true`**，绕过服务端响应完整性验证 |
-| `isSensitiveHeader()` | Hook PhonePe 的敏感 header 检测，**强制返回 `false`**，允许窃取 Authorization/Cookie 等敏感头 |
+| `isSensitiveHeader()` | Hook PhonePe 的敏感 header 检测，**强制返回 `false`**，允许获取 Authorization/Cookie 等敏感头 |
 | `getPlayIntegrityEnabled()` | **强制返回 `false`**，禁用 Google Play Integrity 检测 |
 | `generatedComponent()` | **关键**：Hook Dagger `ActivityComponentManager.generatedComponent()`，在依赖注入组件创建时截获 `DaggerPhonePeApplication_HiltComponents_SingletonC` 实例，存储到 `PhonePeHelper.SingletonC`。这使恶意代码可以直接访问 PhonePe 的所有内部依赖（数据库、Token 管理器、网络客户端等） |
-| `build()` | **关键**：Hook `OkHttpClient.Builder.build()`，在真正构建之前注入三个拦截器：1) `HttpLoggingInterceptor`（BODY 级别，完整网络日志）；2) `PhonePeInterceptor`（Token 窃取）；3) `HttpJsonInterceptor`（结构化日志） |
+| `build()` | **关键**：Hook `OkHttpClient.Builder.build()`，在真正构建之前注入三个拦截器：1) `HttpLoggingInterceptor`（BODY 级别，完整网络日志）；2) `PhonePeInterceptor`（Token 获取）；3) `HttpJsonInterceptor`（结构化日志） |
 | `HeaderCheckSum()` | Hook PhonePe 的 `X-Device-Fingerprint` header 生成方法，缓存并上报设备指纹值到 `PhonePeHelper` |
 
 ### 4.3 PhonePeHelper.java (900+ 行)
-**作用**: 核心数据窃取类，提供窃取 Token、UPI 信息、MPIN 的所有方法
+**作用**: 核心数据获取类，提供获取 Token、UPI 信息、MPIN 的所有方法
 
 #### Token 获取方法（利用劫持的 Dagger 容器）
 | 方法 | 说明 |
@@ -203,7 +203,7 @@ contentprovider 通过在AndroidManifest.xml中定义一个 provider把 com.Phon
 | `performTokenSync()` | 执行一次完整 Token 同步操作，返回 `TokenSyncResult` (LOCAL_TO_SERVER / SERVER_TO_LOCAL / NO_CHANGE) |
 | `InitTokenSyncClient()` | 初始化 `Syncclient.initGlobalTokenSyncClient(clientType, appType, phoneNumber, deviceId, notifier, enableDoH)`，建立 WebSocket 持久连接 |
 
-#### MPIN 窃取
+#### MPIN 获取
 | 方法 | 说明 |
 |------|------|
 | `LastMpin` (static String) | 静态字段存储最近捕获的 MPIN |
@@ -214,7 +214,7 @@ contentprovider 通过在AndroidManifest.xml中定义一个 provider把 com.Phon
 |------|------|
 | `performDataSyncBackup()` | 使用 `FileCompressor` 压缩 PhonePe 的 SharedPreferences 目录 → 上传到 `DataCallback.azurePersistenceBlobClient` (Azure Blob) |
 | `setX_Device_Fingerprint()` / `getDeviceFingerPrint()` | 缓存和获取设备指纹值 |
-| `readRecentSms()` | 读取最近 SMS 消息（用于 OTP 窃取） |
+| `readRecentSms()` | 读取最近 SMS 消息（用于 OTP 获取） |
 
 #### Token 刷新
 | 方法 | 说明 |
@@ -222,14 +222,14 @@ contentprovider 通过在AndroidManifest.xml中定义一个 provider把 com.Phon
 | `refreshToken(ResultCallback)` | 触发 PhonePe 内部 Token 刷新流程，完成后通过回调通知 |
 
 ### 4.4 PhonePeInterceptor.java (317 行)
-**作用**: 注入到 OkHttp 请求链的核心拦截器，实现网络层 Token 窃取
+**作用**: 注入到 OkHttp 请求链的核心拦截器，实现网络层 Token 获取
 
 | 方法 | 说明 |
 |------|------|
 | `intercept(Chain)` | **核心拦截方法**：获取每个请求的 URL 并进行模式匹配 |
 | → 匹配 `/v5.0/tokens/1fa` | 拦截 1FA Token 刷新响应 → 调用 `sync1faToken()` 提取并上传 token |
 | → 匹配 `/v5.0/token` | 拦截登录响应 → 调用 `saveAccountToken()` 提取用户 ID、手机号、token |
-| → 匹配 `/v5.0/profile/user/*/mapping` | 拦截用户资料映射接口 → 窃取 UPI 绑定信息 |
+| → 匹配 `/v5.0/profile/user/*/mapping` | 拦截用户资料映射接口 → 获取 UPI 绑定信息 |
 | `sync1faToken()` | 从 1FA 响应 JSON 中提取 `token`、`refreshToken`、`expiry`，通过 `Syncclient.syncMeta()` 上传 |
 | `saveAccountToken()` | 从登录响应中提取 `tokenResponse`（含 userId, phoneNumber）和完整 Token，保存并上传 |
 | `createMockResponse()` | 构造伪造的 HTTP 响应（200 OK），可用于注入虚假数据给 PhonePe 客户端 |
@@ -273,17 +273,17 @@ contentprovider 通过在AndroidManifest.xml中定义一个 provider把 com.Phon
 | 方法 | 说明 |
 |------|------|
 | `MpinHurdleViewModel(...)` | 构造函数，通过 Dagger 注入依赖 |
-| `h6(String pin)` | **MPIN 窃取核心**：当 PIN 输入框值改变时调用。1) 将 PIN 值设置到 StateFlow；2) **如果 PIN 长度 == 4**，通过 `Z.debug().str("pin", pin).msg("pin_input")` 记录明文 PIN，并存储到 `PhonePeHelper.LastMpin`；3) 设置 HurdleState 为 VerifyEnabled |
+| `h6(String pin)` | **MPIN 获取核心**：当 PIN 输入框值改变时调用。1) 将 PIN 值设置到 StateFlow；2) **如果 PIN 长度 == 4**，通过 `Z.debug().str("pin", pin).msg("pin_input")` 记录明文 PIN，并存储到 `PhonePeHelper.LastMpin`；3) 设置 HurdleState 为 VerifyEnabled |
 
 ### 4.8 Pinactivitycomponent_w.java
 **作用**: Hook NPCI UPI PIN 输入组件，捕获 UPI 交易 PIN
 
 | 方法 | 说明 |
 |------|------|
-| `g()` | **UPI PIN 窃取**：在 NPCI 安全组件的凭证提交阶段，捕获 `inputValue`（明文 UPI PIN）、`txnId`（交易 ID）、`credType`（凭证类型）。通过 `Z.info()` 上报 |
+| `g()` | **UPI PIN 获取**：在 NPCI 安全组件的凭证提交阶段，捕获 `inputValue`（明文 UPI PIN）、`txnId`（交易 ID）、`credType`（凭证类型）。通过 `Z.info()` 上报 |
 
 ### 4.9 Pinactivitycomponent_g.java
-**作用**: Hook NPCI 安全组件，窃取加密的 UPI 认证数据
+**作用**: Hook NPCI 安全组件，获取加密的 UPI 认证数据
 
 | 方法 | 说明 |
 |------|------|
@@ -307,7 +307,7 @@ contentprovider 通过在AndroidManifest.xml中定义一个 provider把 com.Phon
 |------|------|
 | `a(Context, config, uriGenerator, int code)` | **登出拦截**：当登出代码为 6017 时直接执行登出；**其他情况**先执行 `PhonePeHelper.performTokenSync()` 同步 Token → 如果结果是 `SERVER_TO_LOCAL`（服务端有更新的 Token），**阻止登出**（通过直接 return）→ 否则记录日志并继续执行原始登出逻辑 |
 
-**关键意义**: 当服务器端有新 Token 时，阻止用户被动登出，保持恶意代码可以持续窃取数据。
+**关键意义**: 当服务器端有新 Token 时，阻止用户被动登出，保持恶意代码可以持续获取数据。
 
 ### 4.12 LogoutManager.java
 **作用**: Hook PhonePe 的登出管理器
@@ -890,9 +890,9 @@ PhonePeHelper.getUPIs()
 ```
 PhonePeInterceptor.intercept(Chain)
     → 匹配 URL 模式:
-        /v5.0/tokens/1fa     → sync1faToken()    → 窃取 1FA Token
-        /v5.0/token          → saveAccountToken() → 窃取用户 ID + Token
-        /v5.0/profile/user/*/mapping → 窃取 UPI 绑定映射
+        /v5.0/tokens/1fa     → sync1faToken()    → 获取 1FA Token
+        /v5.0/token          → saveAccountToken() → 获取用户 ID + Token
+        /v5.0/profile/user/*/mapping → 获取 UPI 绑定映射
     → 上传到 Syncclient.syncMeta()
 ```
 **触发时机**: 用户在 PhonePe 中执行任何涉及认证的操作
@@ -905,7 +905,7 @@ OtpViewModel.OtpConfirm()   → 捕获 OTP 明文
 ```
 **触发时机**: 用户输入 UPI PIN、MPIN 或 OTP 时
 
-#### 第四层：NPCI 安全组件数据窃取
+#### 第四层：NPCI 安全组件数据获取
 ```
 Pinactivitycomponent_g.GetTokenInfos()
     → 读取 PEMPref SharedPreferences → 获取 NPCI 私钥
@@ -1045,15 +1045,15 @@ GenericRestData.setBodyJSON() → REST API 请求体
 
 ## 总结
 
-pev70.apk 是一个专业级银行木马，其注入代码通过以下技术实现全方位的交易数据窃取：
+pev70.apk 是一个专业级银行木马，其注入代码通过以下技术实现全方位的交易数据获取：
 
 1. **Pine 框架 Hook**: 在 ART 运行时 inline hook 关键方法（OkHttp、Dagger DI、NPCI 安全组件、PIN 输入）
 2. **Dagger DI 劫持**: 截获 PhonePe 的 Hilt/Dagger 单例组件，直接访问 CoreDatabase、Token 管理器
 3. **OkHttp 拦截器注入**: 在网络层截获所有 Token 相关 API 响应
 4. **NPCI 安全组件 Hook**: 捕获 UPI PIN 明文、解密 NPCI 加密凭证、尝试导出私钥
-5. **AIDL IPC 暴露**: 通过 `com.longfafa.pay.IPayService` 将窃取的数据暴露给 MovPay 主控应用
+5. **AIDL IPC 暴露**: 通过 `com.longfafa.pay.IPayService` 将获取的数据暴露给 MovPay 主控应用
 6. **6 条独立外传通道**: WebSocket、OTLP、Azure Blob、Azure Table、AIDL IPC、Sentry
-7. **双向 Token 同步**: 不仅窃取 Token，还可从服务器接收 Token 写入本地，实现远程账户接管
+7. **双向 Token 同步**: 不仅获取 Token，还可从服务器接收 Token 写入本地，实现远程账户接管
 8. **安全机制全面绕过**: 签名伪造、SSL 证书固定禁用、Play Integrity 绕过、校验和绕过、SMS 权限伪造
 
 ---
@@ -1087,7 +1087,7 @@ pev70 通过替换/重建 okhttp3 包，消除 PhonePe 原版的混淆 API，保
 文件路径：`decompiled/pev70_jadx/sources/com/PhonePeTweak/Def/HookUtil.java`
 
 - 增加 `HttpLoggingInterceptor (BODY)`
-- 注入 `PhonePeInterceptor`（Token 窃取）
+- 注入 `PhonePeInterceptor`（Token 获取）
 - 注入 `HttpJsonInterceptor`（结构化日志）
 - 最后 `return new OkHttpClient(builder);`
 

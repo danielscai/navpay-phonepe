@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROFILE_NAME="${1:-full}"
-SERIAL="${2:-}"
+SERIAL="${1:-}"
 
-CMD=(python3 src/pipeline/orch/orchestrator.py test --profile "$PROFILE_NAME" --smoke)
+CMD=(python3 src/pipeline/orch/orchestrator.py test --smoke)
 if [ -n "$SERIAL" ]; then
   CMD+=(--serial "$SERIAL")
 fi

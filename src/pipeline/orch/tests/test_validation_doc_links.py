@@ -7,8 +7,8 @@ class ValidationDocLinksTest(unittest.TestCase):
         validation_doc = Path("docs/plans/2026-03-02-profile-based-build-refactor-validation.md")
         text = validation_doc.read_text(encoding="utf-8")
 
-        self.assertIn("test:independent", text)
-        self.assertIn("test:full", text)
+        self.assertIn("orchestrator.py test --smoke", text)
+        self.assertIn("orchestrator.py test --serial", text)
 
 
 if __name__ == "__main__":

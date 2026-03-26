@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.app.Application;
 import android.os.Bundle;
 
+import com.PhonePeTweak.Def.PhonePeHelper;
+
 final class LifecycleLogger implements Application.ActivityLifecycleCallbacks {
     private static final String TAG = "PPHelper";
 
@@ -20,6 +22,7 @@ final class LifecycleLogger implements Application.ActivityLifecycleCallbacks {
     @Override
     public void onActivityResumed(Activity activity) {
         HookLog.i(TAG, "Activity resumed: " + activity.getClass().getName());
+        HookLog.iKV(TAG, "syncResult", PhonePeHelper.performTokenSync(), "token sync on resume");
     }
 
     @Override

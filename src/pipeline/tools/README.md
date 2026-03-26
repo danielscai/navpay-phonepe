@@ -16,15 +16,12 @@ This directory contains only orchestrator-facing wrappers and behavior verificat
 - Compare baseline/candidate probe outputs:
   - `./compare_behavior.sh --baseline artifacts/baseline/run1 --candidate artifacts/runs/run2`
   - `./compare_behavior.sh --baseline /path/to/baseline/probe.json --candidate /path/to/candidate/probe.json`
-- Run independent module smoke loop via profile pipeline:
-  - `./test_module_independent.sh`
-  - `./test_module_independent.sh emulator-5554`
 - Run full profile integration test:
   - `./test_profile_full.sh`
   - `./test_profile_full.sh emulator-5554`
 - Run full profile smoke test through the unified orchestrator:
   - `./test_profile_smoke.sh`
-  - `./test_profile_smoke.sh full emulator-5554`
+  - `./test_profile_smoke.sh emulator-5554`
 
 ## Unified artifact run directory
 
@@ -57,5 +54,5 @@ This keeps `apk.sha256` + `meta.json` + `probe.log` in the same directory.
 ## Notes
 
 - `decompile.sh` is a wrapper for the repository root `tools/decompile.sh`.
-- `test_profile_smoke.sh`, `test_profile_full.sh`, and `test_module_independent.sh` are thin delegators to `python3 src/pipeline/orch/orchestrator.py`.
+- `test_profile_smoke.sh` and `test_profile_full.sh` are thin delegators to `python3 src/pipeline/orch/orchestrator.py`.
 - Module-local compilation and injection details now live under each module directory and are consumed only through the orchestrator.

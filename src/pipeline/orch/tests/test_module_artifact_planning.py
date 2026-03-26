@@ -158,7 +158,7 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
             cache_manager,
             "merge",
         ) as merge_mock:
-            result = cache_manager.profile_merge(manifest, "phonepehelper-only")
+            result = cache_manager.profile_merge(manifest, "full")
 
         self.assertEqual(result, workspace)
         ensure_mock.assert_called_once_with(
@@ -197,7 +197,7 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
             cache_manager,
             "merge",
         ) as merge_mock:
-            result = cache_manager.profile_merge(manifest, "https-only")
+            result = cache_manager.profile_merge(manifest, "full")
 
         self.assertEqual(result, workspace)
         ensure_mock.assert_called_once_with(
@@ -239,10 +239,10 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
             cache_manager,
             "merge",
         ) as merge_mock:
-            result = cache_manager.profile_merge(manifest, "sigbypass-only")
+            result = cache_manager.profile_merge(manifest, "full")
 
         self.assertEqual(result, workspace)
-        pre_cache_mock.assert_called_once_with(manifest, "sigbypass-only")
+        pre_cache_mock.assert_called_once_with(manifest, "full")
         self.assertEqual(merge_mock.call_args.args[0], workspace)
 
     def test_module_merge_passes_artifact_dir_for_supported_module(self) -> None:

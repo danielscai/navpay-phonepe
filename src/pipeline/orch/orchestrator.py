@@ -28,6 +28,7 @@ EMULATOR_CONFIG_PATH = SCRIPT_DIR / "emulators.json"
 DEFAULT_PACKAGE = "com.phonepe.app"
 DEFAULT_SERIAL = "emulator-5554"
 DEFAULT_PROFILE = "full"
+SUPPORTED_TOP_LEVEL_PROFILES = (DEFAULT_PROFILE,)
 SIGBYPASS_BUILD_DIR = "cache/phonepe_sigbypass_build"
 HTTPS_BUILD_DIR = "cache/phonepe_https_interceptor_build"
 PHONEPEHELPER_BUILD_DIR = "cache/phonepe_phonepehelper_build"
@@ -1237,7 +1238,7 @@ def unified_test(
         return output
 
     def ensure_process_stopped(max_tries: int = 5):
-        run([adb, "-s", device, "shell", "am", "force-stop", package], concise=True)
+        run([adb, "-s", device, "shell", "am", "force-stop", package], check=False, concise=True)
         for _ in range(max_tries):
             try:
                 out = subprocess.check_output([adb, "-s", device, "shell", "pidof", package], text=True).strip()
@@ -1246,7 +1247,7 @@ def unified_test(
             if not out:
                 return
             time.sleep(1)
-            run([adb, "-s", device, "shell", "am", "force-stop", package], concise=True)
+            run([adb, "-s", device, "shell", "am", "force-stop", package], check=False, concise=True)
         raise RuntimeError(f"Failed to stop app before launch/install: {package}")
 
     def extract_app_crash_lines(crash_text: str, android_rt_text: str):
@@ -1791,6 +1792,15 @@ def resolve_profile_modules(manifest, profile_name: str):
     return modules
 
 
+def ensure_supported_profile(profile_name: str):
+    if profile_name not in SUPPORTED_TOP_LEVEL_PROFILES:
+        allowed = ", ".join(SUPPORTED_TOP_LEVEL_PROFILES)
+        raise RuntimeError(
+            f"Unsupported profile for top-level workflow: {profile_name}. "
+            f"Allowed: {allowed}"
+        )
+
+
 def profile_plan_build(manifest, profile_name: str):
     return resolve_profile_modules(manifest, profile_name)
 
@@ -2055,6 +2065,7 @@ def run_profile_action(
     fresh: bool,
     install_mode: str,
 ):
+    ensure_supported_profile(profile_name)
     if smoke and action != "test":
         raise RuntimeError("--smoke is only supported for 'test'")
     if fresh and action != "apk":
@@ -2114,7 +2125,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     def add_profile_args(cmd_parser, *, allow_serial: bool = True, allow_smoke: bool = False, allow_fresh: bool = False):
-        cmd_parser.add_argument("--profile", default=DEFAULT_PROFILE)
+        cmd_parser.add_argument("--profile", choices=SUPPORTED_TOP_LEVEL_PROFILES, default=DEFAULT_PROFILE)
         if allow_serial:
             cmd_parser.add_argument("--serial")
         if allow_smoke:

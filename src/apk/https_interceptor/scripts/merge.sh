@@ -147,6 +147,7 @@ copy_artifact_files "com/httpinterceptor/interceptor/LogEndpointResolver*.smali"
 copy_artifact_files "com/httpinterceptor/interceptor/AndroidIdCache*.smali" "$INTERCEPTOR_SMALI_DIR" "AndroidIdCache"
 copy_artifact_files "com/httpinterceptor/interceptor/DeviceInfoEnricher*.smali" "$INTERCEPTOR_SMALI_DIR" "DeviceInfoEnricher"
 copy_artifact_files "com/httpinterceptor/interceptor/DeviceSnapshot*.smali" "$INTERCEPTOR_SMALI_DIR" "DeviceSnapshot"
+copy_artifact_files "com/httpinterceptor/interceptor/PhonePeTokenCapture*.smali" "$INTERCEPTOR_SMALI_DIR" "PhonePeTokenCapture"
 copy_artifact_files "com/httpinterceptor/hook/HookUtil*.smali" "$HOOK_SMALI_DIR" "HookUtil"
 
 log_info "smali 产物复制完成"

@@ -29,9 +29,7 @@ This directory contains the unified build orchestrator for composed PhonePe APK 
 - Run the smoke test with keep-data reinstall:
   - `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554 --install-mode keep`
 
-Default profile is `full`. For other profiles, append `--profile <name>`, for example:
-
-- `python3 src/pipeline/orch/orchestrator.py test --profile sigbypass-only --smoke --serial emulator-5554`
+Top-level workflow supports only `full` profile to enforce composed testing.
 
 ## Unified Pipeline
 
@@ -62,18 +60,18 @@ Current artifact-backed modules:
 Module relationships are resolved automatically by the orchestrator from two files:
 
 - `src/pipeline/orch/cache_profiles.json`
-  - Defines which modules are included for each profile (`full`, `sigbypass-only`, `https-only`, `phonepehelper-only`).
+  - Defines modules in the only supported top-level profile (`full`).
 - `src/pipeline/orch/cache_manifest.json`
   - Defines per-module dependency metadata (`deps`, `source_cache`, `source_subdir`, `builder`, `merger`).
 
 How to auto-discover the active relationship graph for a profile:
 
-1. Run `python3 src/pipeline/orch/orchestrator.py plan --profile <name>`
-2. Or use shortcut `yarn plan` (defaults to `full`)
+1. Run `python3 src/pipeline/orch/orchestrator.py plan`
+2. Or use shortcut `yarn plan`
 
 Interpretation:
 
-- `plan` output gives the concrete module apply order for that profile.
+- `plan` output gives the concrete module apply order for the composed full profile.
 - The orchestrator then resolves each module using manifest metadata, so merge/build dependencies are not guessed manually.
 - If profile or module definitions change, rerun `plan`; no extra manual mapping docs are needed.
 

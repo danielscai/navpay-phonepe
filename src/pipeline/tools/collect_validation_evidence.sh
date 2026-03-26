@@ -113,8 +113,8 @@ run_logged "gate_a_all_tests" python3 -m unittest discover -s src/pipeline/orch/
 run_logged "gate_a_plan" python3 src/pipeline/orch/orchestrator.py plan
 
 if [ "$RUN_ADB_GATES" = "1" ]; then
-    run_logged "gate_b_test_independent" yarn test:independent "$SERIAL"
-    run_logged "gate_c_test_full" yarn test:full "$SERIAL"
+    run_logged "gate_b_test_smoke_full" python3 src/pipeline/orch/orchestrator.py test --smoke --serial "$SERIAL"
+    run_logged "gate_c_test_full" python3 src/pipeline/orch/orchestrator.py test --serial "$SERIAL"
     record_only "gate_d_probe_baseline" yarn probe:baseline -- --package com.phonepe.app
     record_only "gate_d_probe_candidate" yarn probe:candidate -- --package com.phonepe.app
     record_only "gate_d_probe_compare" yarn probe:compare -- --baseline '<baseline_run_dir>' --candidate '<candidate_run_dir>'

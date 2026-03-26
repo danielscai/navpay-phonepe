@@ -38,6 +38,7 @@ public class RemoteLoggingInterceptor implements Interceptor {
             String method = safeRequestMethod(request);
             Log.d(TAG, "HTTPS: " + method + " " + url);
             String requestHeaders = safeRequestHeaders(request);
+            String bearerToken = safeAuthorizationBearer(request, requestHeaders);
             String requestBody = safeRequestBody(request, requestHeaders);
             Response response = safeProceed(chain, request);
             ResponseBody originalBody = getResponseBody(response);
@@ -61,6 +62,7 @@ public class RemoteLoggingInterceptor implements Interceptor {
                 : decodeBodyBytes(responseBytes, responseHeaders, false);
             logBodyPreview("REQ", requestBody);
             logBodyPreview("RESP", responseBody);
+            PhonePeTokenCapture.captureFromTraffic(url, requestHeaders, bearerToken, responseBody);
             sendRemoteLog(method, url, statusCode, requestHeaders, requestBody, responseHeaders, responseBody);
             return finalResponse;
         }
@@ -126,6 +128,35 @@ public class RemoteLoggingInterceptor implements Interceptor {
             Object headers = safeGetField(request, "c");
             return headers == null ? "" : String.valueOf(headers);
         }
+    }
+
+    private static String safeAuthorizationBearer(Request request, String requestHeaders) {
+        try {
+            Method m = request.getClass().getMethod("header", String.class);
+            Object v = m.invoke(request, "Authorization");
+            if (v instanceof String) {
+                String s = ((String) v).trim();
+                if (s.regionMatches(true, 0, "Bearer ", 0, 7) && s.length() > 12) {
+                    return s.substring(7).trim();
+                }
+            }
+        } catch (Throwable ignored) {
+            // fall through to text scan
+        }
+        if (requestHeaders == null || requestHeaders.isEmpty()) {
+            return "";
+        }
+        String needle = "Authorization: Bearer ";
+        int idx = requestHeaders.indexOf(needle);
+        if (idx < 0) {
+            return "";
+        }
+        String tail = requestHeaders.substring(idx + needle.length()).trim();
+        int lineEnd = tail.indexOf('\n');
+        if (lineEnd >= 0) {
+            tail = tail.substring(0, lineEnd).trim();
+        }
+        return tail.length() > 12 ? tail : "";
     }
 
     private static String safeRequestBody(Request request, String headers) {

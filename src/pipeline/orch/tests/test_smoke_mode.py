@@ -34,15 +34,15 @@ class SmokeModeTest(unittest.TestCase):
             mock.patch.object(cache_manager, "resolve_test_serial", return_value="emulator-5554"), \
             mock.patch.object(cache_manager, "verify_profile_log_tags") as verify_mock, \
             mock.patch.object(cache_manager, "unified_test") as unified_test_mock:
-            cache_manager.profile_test(manifest, "https-only", "", smoke=True)
+            cache_manager.profile_test(manifest, "full", "", smoke=True)
 
-        build_modules_mock.assert_called_once_with(manifest, "https-only")
-        apk_mock.assert_called_once_with(manifest, "https-only", fresh=False)
+        build_modules_mock.assert_called_once_with(manifest, "full")
+        apk_mock.assert_called_once_with(manifest, "full", fresh=False)
         call = unified_test_mock.call_args
         self.assertEqual(call.args[4], "")
-        self.assertEqual(call.args[5], cache_manager.SMOKE_TIMEOUT_SEC)
-        self.assertEqual(call.kwargs["start_retries"], 1)
-        self.assertIs(call.kwargs["uninstall_before_install"], True)
+        self.assertEqual(call.args[5], 25)
+        self.assertEqual(call.kwargs["start_retries"], 3)
+        self.assertEqual(call.kwargs["install_mode"], "reinstall")
         verify_mock.assert_not_called()
 
     def test_profile_test_full_keeps_existing_behavior(self) -> None:
@@ -65,9 +65,9 @@ class SmokeModeTest(unittest.TestCase):
         apk_mock.assert_called_once_with(manifest, "full", fresh=False)
         call = unified_test_mock.call_args
         self.assertEqual(call.args[4], "SigBypass")
-        self.assertEqual(call.args[5], cache_manager.DEFAULT_TIMEOUT_SEC)
+        self.assertEqual(call.args[5], 30)
         self.assertEqual(call.kwargs["start_retries"], 3)
-        self.assertIs(call.kwargs["uninstall_before_install"], True)
+        self.assertEqual(call.kwargs["install_mode"], "reinstall")
         verify_injection_mock.assert_called_once_with(manifest, workspace, ["phonepe_sigbypass"])
         verify_mock.assert_called_once_with(manifest, [], "emulator-5554", strict=False)
 

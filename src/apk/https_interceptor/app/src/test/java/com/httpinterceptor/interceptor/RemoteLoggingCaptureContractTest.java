@@ -29,4 +29,13 @@ public class RemoteLoggingCaptureContractTest {
         assertTrue(src.contains("Base64.getEncoder().encodeToString"));
         assertTrue(src.contains("decodeBodyBytes(bytes, headers, requestBody)"));
     }
+
+    @Test
+    public void interceptorMustBridgeTrafficToPhonePeTokenCapture() throws Exception {
+        String src = new String(
+            Files.readAllBytes(Paths.get("src/main/java/com/httpinterceptor/interceptor/RemoteLoggingInterceptor.java")),
+            StandardCharsets.UTF_8
+        );
+        assertTrue(src.contains("PhonePeTokenCapture.captureFromTraffic("));
+    }
 }

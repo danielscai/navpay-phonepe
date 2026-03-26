@@ -71,7 +71,7 @@ public static final String ORIGINAL_SIGNATURE = "3082...";
 ### 3. 通过 orchestrator 注入并测试
 
 ```bash
-python3 src/pipeline/orch/orchestrator.py test --profile sigbypass-only --smoke --serial emulator-5554
+python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554
 ```
 
 ## 验证
@@ -169,8 +169,8 @@ SignatureMethodHook.afterCall() ← 拦截并替换签名
 ## 运行方式
 
 - 推荐命令：
-  - `python3 src/pipeline/orch/orchestrator.py compile-modules --profile sigbypass-only`
-  - `python3 src/pipeline/orch/orchestrator.py test --profile sigbypass-only --smoke --serial emulator-5554`
+  - `python3 src/pipeline/orch/orchestrator.py smali`
+  - `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554`
 - `scripts/merge.sh` 现在只消费 `--artifact-dir`，不再在注入阶段隐式编译。
 
 ## 自定义修改

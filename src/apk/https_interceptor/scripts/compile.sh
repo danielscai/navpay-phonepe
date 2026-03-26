@@ -44,6 +44,7 @@ KOTLIN_STDLIB_VERSION="1.8.22"
 
 JAVA_SOURCES=(
     "$SRC_DIR/com/httpinterceptor/interceptor/RemoteLoggingInterceptor.java"
+    "$SRC_DIR/com/httpinterceptor/interceptor/PhonePeTokenCapture.java"
     "$SRC_DIR/com/httpinterceptor/interceptor/LogSender.java"
     "$SRC_DIR/com/httpinterceptor/interceptor/LogEndpointResolver.java"
     "$SRC_DIR/com/httpinterceptor/interceptor/AndroidIdCache.java"

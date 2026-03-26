@@ -10,8 +10,8 @@
 
 ## 快速路径与发布路径
 
-- 快速独立模块冒烟：`yarn test:independent`
-- 全链路发布集成：`yarn test:full`
+- 组合路径冒烟：`python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554`
+- 全链路发布集成：`python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554`
 
 ## Gate A: Unit Gate（无需 adb）
 
@@ -34,30 +34,30 @@ python3 src/cache-manager/cache_manager.py profile full plan
 - 两条 `unittest` 命令输出日志。
 - `profile full plan` 输出内容快照。
 
-## Gate B: Module Integration Gate（需要 adb/模拟器）
+## Gate B: Smoke Integration Gate（需要 adb/模拟器）
 
 执行：
 
 ```bash
-yarn test:independent
+python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554
 ```
 
 通过标准：
 
-- 三个模块独立运行均出现 `TEST RESULT: SUCCESS`。
+- 组合模块冒烟路径出现 `TEST RESULT: SUCCESS`。
 - 无 `logcat -b crash` 崩溃证据。
 
 证据清单：
 
-- 三个命令完整终端输出。
-- 每次运行对应的 logcat/crash 片段或路径。
+- 冒烟命令终端输出。
+- 对应的 logcat/crash 片段或路径。
 
 ## Gate C: Full Stack Integration Gate（需要 adb/模拟器）
 
 执行：
 
 ```bash
-yarn test:full
+python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554
 ```
 
 通过标准：

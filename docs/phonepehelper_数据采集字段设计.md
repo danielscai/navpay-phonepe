@@ -34,7 +34,7 @@
 | `sent_auth` | 最近一次“已发布”Auth 快照 | `publishTokenUpdateIfNeeded()` | 内部对比读取 | 用于变化检测 |
 | `sent_accounts` | 最近一次“已发布”Accounts 快照 | `publishTokenUpdateIfNeeded()` | 内部对比读取 | 用于变化检测 |
 | `last_mpin` | 最近一次 MPIN 文本 | `PublishMPIN(String)` | `getLastMpin()` | 日志只打印长度，不直接打印明文 |
-| `upi_cache` | UPI 列表 JSON 缓存 | 当前实现读取为主 | `getUPIs()` | 若为空，返回结构化 fallback |
+| `upi_cache` | UPI 列表 JSON 缓存 | `refreshUPICacheFromTokens()` 写入 | `getUPIs()` | 优先读取缓存；空/无效时实时提取并回写；最终才 fallback |
 
 补充：内存态字段 `LastMpin` 为 MPIN 最近值镜像，便于无参 `PublishMPIN()` 调用。
 
@@ -93,12 +93,22 @@
 
 | 字段名 | 含义 | 说明 |
 |---|---|---|
-| `account` | 账户标识（当前实现用手机号） | fallback 结构字段 |
-| `accountNum` | 账号/卡号 | 当前 fallback 为空字符串 |
+| `account` | 账户标识（账户名/别名等） | 优先从 token 快照提取；无数据时 fallback 为手机号 |
+| `accountNum` | 账号/卡号 | 优先提取 `accountNum/accountNumber/maskedAccountNumber` 等 |
 | `appType` | 应用类型（`phonepe`） | |
-| `upis` | VPA 列表 | 当前 fallback 为空数组 |
-| `source` | 数据来源标记 | 当前 fallback 固定 `local_stub` |
-| `status` | 数据状态 | 当前 fallback 固定 `no_account_data` |
+| `upis` | VPA 列表 | 优先提取 `upi/upiId/vpa/virtualPaymentAddress/upis/vpas` 并去重 |
+| `source` | 数据来源标记 | 仅 fallback 时固定 `local_stub` |
+| `status` | 数据状态 | 仅 fallback 时固定 `no_account_data` |
+
+当前行为（2026-03-26）：
+- `getUPIs()` 先读 `upi_cache`，若缓存有可用真实数据直接返回。
+- 缓存为空或不可用时，优先按 `pev70` 路径反射调用 `AppSingletonModule.X(context).l()` 获取 `CoreDatabase`，再走 `B().l()` 读取账户并提取 `getAccountNo()/getVpas()`。
+- 若 `CoreDatabase` 路径不可用，再递归扫描 `tokens.accounts/auth/sso/1fa` 作为次级兜底来源。
+- 仅当以上两步都拿不到真实 UPI 时，返回结构化 fallback（`local_stub/no_account_data`）。
+
+验收标准：
+- 只要能从 token 快照提取到真实 UPI，返回结果不得是 `local_stub/no_account_data`。
+- 仅在真实数据确实不可得时，才允许 fallback。
 
 ---
 
