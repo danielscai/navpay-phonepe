@@ -86,6 +86,21 @@
 - 与真实 Android app 进程生成结果完全同值
 - 与 PhonePe 线上环境逐位一致
 
+## 为什么不建议纯 Node.js 重写核心 nmcs 计算
+
+当前 checksum 核心并不是普通的“Node crypto 组合算法”，而是依赖 `unidbg + Android JNI + ARM64 native so` 的执行链路。
+
+不建议纯 Node.js 重写的主要原因：
+
+1. `nmcs` 的真实实现位于 `libphonepe-cryptography-support-lib.so`，需要按 Android native 语义执行，不是公开 JS 算法。
+2. 现有实现依赖 `unidbg` 提供 Dalvik/JNI 环境与 native 函数绑定，Node.js 本身不具备等价运行时。
+3. 当前成功依赖大量 Java 侧 stub/fallback（`Context`/`PackageManager`/`Signature`/`CH` 等）；这些语义在 Node 中需要重新实现一套 Android 行为模拟，成本高且脆弱。
+4. `CH` helper 不只是 SHA/Base64，还包含设备 ID、时间字节、AES-GCM/AES-ECB 等调用约束，重写后极易出现细节偏差导致结果失真。
+5. 运行稳定性依赖当前单线程执行模型（unidbg/unicorn 并发稳定性有限）；Node 重写不能自然消除该约束。
+6. 该能力与 APK 版本和 native 依赖强耦合，后续升级仍需围绕 so/JNI 逆向与适配，而不是语言层简单替换。
+
+结论：可用 Node.js 承载 HTTP/API 与编排层，但核心 `nmcs` 计算应继续由 Java + unidbg 执行。
+
 ## Operational Notes
 
 - 默认端口：`19190`

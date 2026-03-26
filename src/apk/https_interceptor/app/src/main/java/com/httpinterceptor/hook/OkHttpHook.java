@@ -51,8 +51,8 @@ public class OkHttpHook {
 
         Log.d(TAG, "Injecting interceptors into OkHttpClient");
 
-        // 注入远程日志拦截器
-        builder.addInterceptor(new RemoteLoggingInterceptor());
+        // 注入远程日志拦截器（网络层，采集最终上行参数）
+        builder.addNetworkInterceptor(new RemoteLoggingInterceptor());
 
         // 可选：禁用 SSL 证书验证（仅用于测试）
         // CertificatePinnerBypass.configureTrustAll(builder);

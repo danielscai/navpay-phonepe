@@ -21,8 +21,8 @@ public final class HookUtil {
 
     public static OkHttpClient build(OkHttpClient.Builder builder) {
         try {
-            builder.addInterceptor(new RemoteLoggingInterceptor());
-            Log.d(TAG, "Injected RemoteLoggingInterceptor via HookUtil.build()");
+            builder.addNetworkInterceptor(new RemoteLoggingInterceptor());
+            Log.d(TAG, "Injected RemoteLoggingInterceptor as network interceptor via HookUtil.build()");
         } catch (Throwable t) {
             Log.e(TAG, "Failed to inject interceptor", t);
         }

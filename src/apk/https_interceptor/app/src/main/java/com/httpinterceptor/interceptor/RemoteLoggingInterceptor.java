@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.zip.GZIPInputStream;
@@ -27,6 +28,7 @@ public class RemoteLoggingInterceptor implements Interceptor {
 
     private static final String TAG = "HttpInterceptor";
     private static final int MAX_BODY_BYTES = 1024 * 64;
+    private static final String REQUEST_GZIP_BASE64_PREFIX = "__REQ_GZIP_BASE64__:";
 
     @Override
     public Response intercept(Chain chain) throws IOException {
@@ -56,7 +58,7 @@ public class RemoteLoggingInterceptor implements Interceptor {
             int statusCode = safeResponseCode(finalResponse);
             String responseHeaders = safeResponseHeaders(finalResponse);
             String responseBody = responseBytes == null ? safeResponseBody(finalResponse, responseHeaders)
-                : decodeBodyBytes(responseBytes, responseHeaders);
+                : decodeBodyBytes(responseBytes, responseHeaders, false);
             logBodyPreview("REQ", requestBody);
             logBodyPreview("RESP", responseBody);
             sendRemoteLog(method, url, statusCode, requestHeaders, requestBody, responseHeaders, responseBody);
@@ -149,7 +151,7 @@ public class RemoteLoggingInterceptor implements Interceptor {
             if (buffer.size() == 0) {
                 Log.d(TAG, "REQ body buffer empty, class=" + bodyObj.getClass().getName());
             }
-            return decodeBody(buffer, headers);
+            return decodeBody(buffer, headers, true);
         } catch (Throwable t) {
             String msg = t.getClass().getSimpleName();
             Log.w(TAG, "REQ body read failed: " + msg);
@@ -222,7 +224,7 @@ public class RemoteLoggingInterceptor implements Interceptor {
             peek.request((long) MAX_BODY_BYTES);
             Buffer buffer = new Buffer();
             buffer.writeAll(peek.buffer().clone());
-            return decodeBody(buffer, headers);
+            return decodeBody(buffer, headers, false);
         } catch (Throwable t) {
             return "";
         }
@@ -242,7 +244,7 @@ public class RemoteLoggingInterceptor implements Interceptor {
         return null;
     }
 
-    private static String decodeBody(Buffer buffer, String headers) {
+    private static String decodeBody(Buffer buffer, String headers, boolean requestBody) {
         if (buffer == null || buffer.size() == 0) {
             return "";
         }
@@ -254,15 +256,18 @@ public class RemoteLoggingInterceptor implements Interceptor {
         } catch (IOException e) {
             return "";
         }
-        return decodeBodyBytes(bytes, headers);
+        return decodeBodyBytes(bytes, headers, requestBody);
     }
 
-    private static String decodeBodyBytes(byte[] bytes, String headers) {
+    private static String decodeBodyBytes(byte[] bytes, String headers, boolean requestBody) {
         if (bytes == null || bytes.length == 0) {
             return "";
         }
         byte[] limited = bytes.length > MAX_BODY_BYTES ? Arrays.copyOf(bytes, MAX_BODY_BYTES) : bytes;
         if (isGzip(headers) && isGzipBytes(limited)) {
+            if (requestBody) {
+                return REQUEST_GZIP_BASE64_PREFIX + Base64.getEncoder().encodeToString(limited);
+            }
             String gz = tryGunzip(limited);
             if (gz != null) {
                 return gz;
@@ -420,7 +425,7 @@ public class RemoteLoggingInterceptor implements Interceptor {
             long toRead = Math.min(size, MAX_BODY_BYTES);
             Object bytesObj = readBytes.invoke(buffer, toRead);
             if (bytesObj instanceof byte[]) {
-                return decodeBodyBytes((byte[]) bytesObj, headers);
+                return decodeBodyBytes((byte[]) bytesObj, headers, true);
             }
         } catch (Throwable t) {
             Log.w(TAG, "REQ body reflect failed: " + t.getClass().getSimpleName());
