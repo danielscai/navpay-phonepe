@@ -539,15 +539,17 @@ public final class PhonePeHelper {
         LinkedHashMap<String, JSONObject> entries = new LinkedHashMap<>();
         Object coreDatabase = resolveCoreDatabase();
         if (coreDatabase == null) {
+            Log.i(TAG, "collectUPIsFromCoreDatabase: core database unavailable");
             return new JSONArray();
         }
         try {
-            Object accountDao = invokeMethodNoThrow(coreDatabase, "B");
-            Object accountsObj = invokeMethodNoThrow(accountDao, "l");
-            if (!(accountsObj instanceof List)) {
+            Object accountDao = invokeMethodNoThrow(coreDatabase, "E");
+            Object accountsObj = queryAccountsFromDao(accountDao);
+            if (!(accountsObj instanceof Collection)) {
+                Log.i(TAG, "collectUPIsFromCoreDatabase: account dao query returned non-collection");
                 return new JSONArray();
             }
-            List<?> accounts = (List<?>) accountsObj;
+            Collection<?> accounts = (Collection<?>) accountsObj;
             for (Object accountObj : accounts) {
                 JSONObject entry = buildUPIEntryFromAccountObject(accountObj);
                 if (entry != null) {
@@ -558,6 +560,26 @@ public final class PhonePeHelper {
             Log.w(TAG, "collectUPIsFromCoreDatabase failed", t);
         }
         return entriesToArray(entries);
+    }
+
+    private static Object queryAccountsFromDao(Object accountDao) {
+        if (accountDao == null) {
+            return null;
+        }
+        Object accountTypes = readStaticField("com.phonepe.vault.core.dao.AccountDao", "a");
+        Object result = invokeMethodNoThrow(accountDao, "r", accountTypes);
+        if (result instanceof Collection) {
+            return result;
+        }
+        result = invokeMethodNoThrow(accountDao, "n", accountTypes);
+        if (result instanceof Collection) {
+            return result;
+        }
+        result = invokeMethodNoThrow(accountDao, "h", accountTypes);
+        if (result instanceof Collection) {
+            return result;
+        }
+        return null;
     }
 
     private static JSONObject buildUPIEntryFromAccountObject(Object accountObj) {
@@ -1006,6 +1028,10 @@ public final class PhonePeHelper {
         if (appContext == null) {
             return null;
         }
+        Object cached = readStaticField("com.phonepe.vault.core.CoreDatabase", "u");
+        if (cached != null) {
+            return cached;
+        }
         for (String className : APP_SINGLETON_MODULE_CLASSES) {
             try {
                 Class<?> cls = Class.forName(className);
@@ -1058,17 +1084,42 @@ public final class PhonePeHelper {
         return null;
     }
 
-    private static Object invokeMethodNoThrow(Object target, String methodName) {
+    private static Object invokeMethodNoThrow(Object target, String methodName, Object... args) {
         if (target == null || TextUtils.isEmpty(methodName)) {
             return null;
         }
         try {
-            Method m = target.getClass().getMethod(methodName);
-            m.setAccessible(true);
-            return m.invoke(target);
+            Method[] methods = target.getClass().getMethods();
+            for (Method m : methods) {
+                if (!methodName.equals(m.getName())) {
+                    continue;
+                }
+                Class<?>[] params = m.getParameterTypes();
+                int argLen = args == null ? 0 : args.length;
+                if (params.length != argLen) {
+                    continue;
+                }
+                boolean match = true;
+                for (int i = 0; i < params.length; i++) {
+                    Object arg = args[i];
+                    if (arg == null) {
+                        continue;
+                    }
+                    if (!params[i].isAssignableFrom(arg.getClass())) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (!match) {
+                    continue;
+                }
+                m.setAccessible(true);
+                return m.invoke(target, args);
+            }
         } catch (Throwable ignored) {
             return null;
         }
+        return null;
     }
 
     private static String readStringByMethods(Object target, String... methodNames) {
@@ -1086,6 +1137,20 @@ public final class PhonePeHelper {
             }
         }
         return "";
+    }
+
+    private static Object readStaticField(String className, String fieldName) {
+        if (TextUtils.isEmpty(className) || TextUtils.isEmpty(fieldName)) {
+            return null;
+        }
+        try {
+            Class<?> cls = Class.forName(className);
+            java.lang.reflect.Field field = cls.getDeclaredField(fieldName);
+            field.setAccessible(true);
+            return field.get(null);
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private static boolean writeJson(String key, JSONObject json) {

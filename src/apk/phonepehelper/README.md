@@ -63,7 +63,10 @@ adb logcat -s PPHelper
 
 ## Snapshot Upload
 
-- 上传地址：`http://10.0.2.2:3000/api/intercept/phonepe/snapshot`
+- 上传地址（自动选择）：
+  - 模拟器优先：`http://10.0.2.2:3000/api/intercept/phonepe/snapshot`
+  - 真机优先：`http://127.0.0.1:3000/api/intercept/phonepe/snapshot`（配合 `adb reverse tcp:3000 tcp:3000`）
+- 可通过 JVM 属性覆盖地址：`-Dnavpay.snapshot.endpoint=<url>`
 - 上传内容：`{ androidId, payload }`
 - `payload` 由 `PhonePeHelper.buildSnapshotForNavpay()` 构建，包含请求元数据和本地采集快照
 

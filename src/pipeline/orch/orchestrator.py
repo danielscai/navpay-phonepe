@@ -26,7 +26,7 @@ MANIFEST_PATH = SCRIPT_DIR / "cache_manifest.json"
 EMULATOR_CONFIG_PATH = SCRIPT_DIR / "emulators.json"
 
 DEFAULT_PACKAGE = "com.phonepe.app"
-DEFAULT_SERIAL = "emulator-5554"
+DEFAULT_SERIAL = "GSLDU18106001520"
 DEFAULT_PROFILE = "full"
 SUPPORTED_TOP_LEVEL_PROFILES = (DEFAULT_PROFILE,)
 SIGBYPASS_BUILD_DIR = "cache/phonepe_sigbypass_build"
@@ -452,13 +452,13 @@ def resolve_test_serial(spec, serial: str):
             return serial
         return serial
 
-    cfg = find_emulator_by_module(emulators, spec["name"])
-    if cfg:
-        return ensure_emulator_running(cfg, adb)
-
     if DEFAULT_SERIAL:
         if DEFAULT_SERIAL in list_connected_devices(adb):
             return DEFAULT_SERIAL
+
+    cfg = find_emulator_by_module(emulators, spec["name"])
+    if cfg:
+        return ensure_emulator_running(cfg, adb)
 
     devices = list_connected_devices(adb)
     if devices:
