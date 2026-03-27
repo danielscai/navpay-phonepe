@@ -19,7 +19,8 @@
 - 对外暴露稳定的 HTTP 接口
 - 对内封装 native 调用细节
 - 默认使用 `CH emulate` 模式
-- 返回结构成功的 checksum
+- 优先读取 runtime 目录中的原始 app runtime 快照
+- 以真实 replay 返回 `HTTP 200` 作为最终验收标准
 
 默认监听地址：
 
@@ -100,6 +101,11 @@ curl -sS http://127.0.0.1:19190/checksum \
 - `decodedPreview`
 - `generatedAt`
 
+兼容性说明：
+
+- `body` 字段会按标准 JSON 反转义处理（包含 `\uXXXX`、`\/`、`\n`、`\t` 等）
+- replay 真实日志时请直接透传 JSON 字符串，不要提前手工改写转义字符
+
 ### 3. 结构校验
 
 ```bash
@@ -137,6 +143,13 @@ UPDATE_REAL_FIXTURE=1 bash scripts/validate_real_fixture.sh
 
 推荐把它当作 checksum 服务的真实数据回归，而不是一次性的手工检查。
 
+建议在每次修改解析逻辑后额外执行：
+
+```bash
+cd /Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum
+mvn -Dtest=ChecksumHttpServiceJsonParsingTest,ChecksumHttpServiceRealFixtureTest test
+```
+
 ## 其他模块怎么调用
 
 最简单的调用方式是直接发 HTTP 请求。
@@ -173,23 +186,69 @@ checksum="$(curl -sS http://127.0.0.1:19190/checksum \
 
 ## 成功判据
 
-当前正式服务使用“结构成功”标准，而不是“与真实 app 进程完全同值”。
+`/checksum` 的本地结构校验仍然有价值，但它不是最终验收标准。
 
-建议其他模块这样判断：
+调用方本地可先检查：
 
 - `ok == true`
 - `data.structureOk == true`
 - 再取 `data.checksum`
 
-如果只拿 `checksum` 而不检查 `structureOk`，调用方很难分辨异常输出和正常输出。
+但最终是否通过，仍以 replay 到目标服务器后的 `HTTP 200` 为准。
+
+## 端到端验收标准（Replay）
+
+对于 `intercept_logs` 重放场景，最终验收标准统一为：
+
+- 使用某个 checksum 服务端口（如 `19090` 或 `19190`）生成 checksum
+- 将该 checksum 注入重放请求头后发往目标服务器
+- 以目标服务器返回 `HTTP 200` 作为通过标准
+
+注意：
+
+- 不要求 `19090` 与 `19190` 输出的 checksum 字符串完全一致
+- 是否通过以“目标服务器是否返回 200”为唯一判定依据
+- 当前 V4 replay 输入按 `path` 传 `request.url().encodedPath()` 语义处理，不带 query
+- 2026-03-27 实测样本：`/apis/tstore/v2/units/changes?...`
+  - 传 `pathname` 给 `19090`，重放返回 `HTTP 200`
+  - 传 `pathname` 给 `19190`，重放返回 `HTTP 200`
+  - 传 `pathname + query` 给 `19090`，重放返回 `HTTP 400`
+  - 因此当前正式接入应继续使用不带 query 的 `path`
 
 ## 推荐实践
 
 - 把 `src/services/checksum/runtime/manifest.json` 当成当前 runtime 的来源记录
+- runtime 初始化时要区分两类 APK：
+  - `sourceApk`：供 DalvikVM 载入的 merged/repacked 可运行 APK
+  - `signatureSourceApk`：供 `signature.bin` 提取的原始 PhonePe APK
+- `signatureSourceApk` 不能指向 debug/repacked APK，否则会把调试证书喂给 `Signature->toByteArray()` stub
+- 若已从原始 app 获取 `/debug/runtime`，把关键字段落到 `src/services/checksum/runtime/runtime_snapshot.json`
+- `runtime_snapshot.json` 至少应包含：
+  - `deviceId`
+  - `serverTimeOffsetMs`
+  - `adjustedTimeMs`（仅作观测；运行时应优先按 `currentTimeMillis + serverTimeOffsetMs` 计算）
 - 所有调用方统一访问 `127.0.0.1:19190`
 - 显式传入 `uuid`，便于问题复现
 - 先调 `/health`，再调 `/checksum`
 - 把 `structureOk` 当成调用成功条件之一
+
+## 当前实现状态（2026-03-27）
+
+`19190` 已补齐并验证的原始语义：
+
+- 标准 JSON 反转义
+- `NativeLibraryLoader.h2()` 初始化
+- business `deviceId` 读取
+- `serverTimeOffsetMs` 时间语义
+- DalvikVM 优先载入 runtime manifest 指向的真实 APK
+- `EncryptionUtils.jnmcs(context, ...)` 包装链
+- 原始 PhonePe APK 证书字节作为 `signature.bin`
+
+本轮最终修复的根因：
+
+- `19190` 之前把 `signature.bin` 错误地取自 merged debug APK，指纹是 `c57335...`
+- 真实运行时需要的是原始 PhonePe APK 的签名身份，指纹是 `5335bc...`
+- 将 runtime 初始化改为“VM APK 和 signature source APK 分离”后，`19190` 已通过真实 V4 replay 验收
 
 ## 相关文档
 

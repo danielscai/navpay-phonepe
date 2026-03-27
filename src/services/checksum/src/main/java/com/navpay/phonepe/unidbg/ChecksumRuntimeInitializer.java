@@ -14,16 +14,20 @@ public final class ChecksumRuntimeInitializer {
 
     public static void main(String[] args) throws Exception {
         if (args.length < 3 || !"init".equals(args[0])) {
-            System.err.println("Usage: ChecksumRuntimeInitializer init <apk-path> <runtime-dir>");
+            System.err.println("Usage: ChecksumRuntimeInitializer init <vm-apk-path> <runtime-dir> [signature-apk-path]");
             System.exit(2);
         }
 
         Path apkPath = Path.of(args[1]).toAbsolutePath().normalize();
         Path runtimeRoot = Path.of(args[2]).toAbsolutePath().normalize();
-        byte[] signature = extractSignature(apkPath);
+        Path signatureApkPath = args.length >= 4
+                ? Path.of(args[3]).toAbsolutePath().normalize()
+                : apkPath;
+        byte[] signature = extractSignature(signatureApkPath);
         writeRuntimeArtifacts(
                 runtimeRoot,
                 apkPath,
+                signatureApkPath,
                 sha256(apkPath),
                 signature,
                 new String[]{
@@ -47,20 +51,22 @@ public final class ChecksumRuntimeInitializer {
         return sb.toString();
     }
 
-    static void writeRuntimeArtifacts(Path runtimeRoot, Path apkPath, String apkSha256, byte[] signature,
+    static void writeRuntimeArtifacts(Path runtimeRoot, Path apkPath, Path signatureApkPath, String apkSha256, byte[] signature,
                                       String[] libraries) throws IOException {
         Files.createDirectories(runtimeRoot);
         Files.createDirectories(runtimeRoot.resolve("lib/arm64-v8a"));
         Files.write(ChecksumRuntimePaths.runtimeSignature(runtimeRoot), signature);
         Files.writeString(ChecksumRuntimePaths.runtimeManifest(runtimeRoot),
-                buildManifest(apkPath, apkSha256, signature.length, libraries),
+                buildManifest(apkPath, signatureApkPath, apkSha256, signature.length, libraries),
                 StandardCharsets.UTF_8);
     }
 
-    private static String buildManifest(Path apkPath, String apkSha256, int signatureLength, String[] libraries) {
+    private static String buildManifest(Path apkPath, Path signatureApkPath, String apkSha256, int signatureLength,
+                                        String[] libraries) {
         StringBuilder sb = new StringBuilder();
         sb.append("{\n");
         sb.append("  \"sourceApk\":\"").append(escapeJson(apkPath.toString())).append("\",\n");
+        sb.append("  \"signatureSourceApk\":\"").append(escapeJson(signatureApkPath.toString())).append("\",\n");
         sb.append("  \"apkSha256\":\"").append(escapeJson(apkSha256)).append("\",\n");
         sb.append("  \"generatedAt\":\"").append(Instant.now().toString()).append("\",\n");
         sb.append("  \"signatureLength\":").append(signatureLength).append(",\n");

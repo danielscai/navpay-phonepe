@@ -27,7 +27,14 @@
 
 ### `ApkSignatureExtractor`
 
-负责从 `patched_signed.apk`（或等效签名 APK）中提取真实包签名证书字节，避免 `Signature->toByteArray()` 继续返回假数据。
+负责从原始 PhonePe APK 提取包签名证书字节。
+
+这里必须区分两类 APK：
+
+- VM 载入 APK：merged/repacked 后可供 DalvikVM 使用
+- 签名源 APK：原始 PhonePe APK，用来还原 `PackageInfo.signatures[0].toByteArray()`
+
+如果错误地从 debug/repacked APK 提取签名，`19190` 会生成结构正常但业务不被服务器接受的 checksum。
 
 ### `runtime/`
 
@@ -69,22 +76,29 @@
 修复后的关键点：
 
 1. 默认改成 `CH emulate`
-2. 包签名改成真实 APK 证书字节，并固化到 `runtime/signature.bin`
-3. 设备 ID 优先从 `adb settings get secure android_id` 注入
+2. 包签名改成原始 PhonePe APK 证书字节，并固化到 `runtime/signature.bin`
+3. 设备 ID 和时间优先从 runtime snapshot 注入
 4. HTTP 服务层只做封装，不改 checksum 核心生成逻辑
+5. runtime 初始化显式区分 `sourceApk` 和 `signatureSourceApk`
 
 ## Current Guarantee
 
-这个正式服务当前保证的是“结构成功”：
+这个正式服务当前在本地会校验“结构成功”：
 
 - checksum 是合法 Base64
 - 长度落入成功样本区间
 - Base64 解码后是 ASCII 风格 token
 
-它当前不保证：
+它不保证：
 
-- 与真实 Android app 进程生成结果完全同值
-- 与 PhonePe 线上环境逐位一致
+- 与 `19090` checksum 字符串完全同值
+- 与真实 App 逐位一致
+
+它当前真正保证的正式验收标准是：
+
+- 用 `19190` 生成 checksum
+- 注入真实 replay 请求
+- 目标服务器返回 `HTTP 200`
 
 ## 为什么不建议纯 Node.js 重写核心 nmcs 计算
 
@@ -105,6 +119,7 @@
 
 - 默认端口：`19190`
 - 初始化时默认目标 APK：`cache/phonepe/merged/com.phonepe.app_merged_signed.apk`
+- 初始化时默认签名源 APK：`samples/PhonePe APK v24.08.23.apk`
 - 默认运行时目录：`src/services/checksum/runtime`
 - `yarn checksum:test` 会在服务未启动时自动拉起服务，再做健康检查和结构校验
 - 后续默认运行模式会优先从 `src/services/checksum/runtime/` 读取已准备好的依赖文件

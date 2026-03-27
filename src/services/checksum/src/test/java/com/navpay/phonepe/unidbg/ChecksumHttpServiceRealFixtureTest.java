@@ -55,6 +55,71 @@ final class ChecksumHttpServiceRealFixtureTest {
         assertEquals(expected.hyphenCount(), hyphenCount);
     }
 
+    @Test
+    void realFixtureThroughHttpParserKeepsStructureStable() throws Exception {
+        ChecksumFixtureLoader.RealFixture fixture = ChecksumFixtureLoader.load();
+        Path runtimeRoot = resolveRuntimeRootForTest();
+        Object service = newService(runtimeRoot);
+
+        Method parseJsonBody = ChecksumHttpService.class.getDeclaredMethod("parseJsonBody", String.class);
+        parseJsonBody.setAccessible(true);
+        String requestJson = "{\"path\":\"" + escapeJson(fixture.path()) + "\","
+                + "\"body\":\"" + escapeJson(fixture.body()) + "\","
+                + "\"uuid\":\"" + FIXED_UUID + "\"}";
+
+        @SuppressWarnings("unchecked")
+        Map<String, String> request = (Map<String, String>) parseJsonBody.invoke(null, requestJson);
+
+        Method handleChecksum = ChecksumHttpService.class.getDeclaredMethod("handleChecksum", Map.class);
+        handleChecksum.setAccessible(true);
+        String response = (String) handleChecksum.invoke(service, request);
+
+        assertNotNull(response);
+        assertTrue(response.contains("\"ok\":true"));
+        assertTrue(response.contains("\"structureOk\":true"));
+    }
+
+    @Test
+    void realFixtureInvokesNativeLoaderInitialization() throws Exception {
+        ChecksumFixtureLoader.RealFixture fixture = ChecksumFixtureLoader.load();
+        Path runtimeRoot = resolveRuntimeRootForTest();
+
+        System.setProperty("probe.ch.mode", "emulate");
+        System.setProperty("probe.runtime.root", runtimeRoot.toString());
+
+        Map<String, String> report = new UnidbgChecksumProbe().execute(
+                ChecksumRuntimePaths.runtimeLib(runtimeRoot, "libphonepe-cryptography-support-lib.so").toString(),
+                fixture.path(),
+                fixture.body(),
+                FIXED_UUID,
+                "e755b7-first",
+                false
+        );
+
+        assertEquals("PASS", report.get("native_loader_h2"));
+    }
+
+    @Test
+    void realFixtureUsesOriginalJnmcsWrapperPath() throws Exception {
+        ChecksumFixtureLoader.RealFixture fixture = ChecksumFixtureLoader.load();
+        Path runtimeRoot = resolveRuntimeRootForTest();
+
+        System.setProperty("probe.ch.mode", "emulate");
+        System.setProperty("probe.runtime.root", runtimeRoot.toString());
+
+        Map<String, String> report = new UnidbgChecksumProbe().execute(
+                ChecksumRuntimePaths.runtimeLib(runtimeRoot, "libphonepe-cryptography-support-lib.so").toString(),
+                fixture.path(),
+                fixture.body(),
+                FIXED_UUID,
+                "e755b7-first",
+                false
+        );
+
+        assertEquals("PASS", report.get("com.phonepe.networkclient.rest.EncryptionUtils.call_jnmcs"));
+        assertEquals("com/phonepe/networkclient/rest/EncryptionUtils#jnmcs", report.get("checksum_source"));
+    }
+
     private static Path resolveRuntimeRootForTest() throws Exception {
         try {
             Path runtimeRoot = ChecksumFixtureLoader.resolvePreparedRuntimeRoot();
@@ -82,5 +147,14 @@ final class ChecksumHttpServiceRealFixtureTest {
                 ChecksumRuntimePaths.runtimeLib(runtimeRoot, "libphonepe-cryptography-support-lib.so").toString(),
                 "e755b7-first",
                 false);
+    }
+
+    private static String escapeJson(String value) {
+        return value
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t");
     }
 }

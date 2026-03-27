@@ -17,17 +17,6 @@ LOAD_LIBCXX="${6:-${PROBE_LOAD_LIBCXX:-0}}"
 mkdir -p "${WORK_DIR}/libs"
 mkdir -p "${WORK_DIR}/lib/arm64-v8a"
 
-if [[ -z "${PROBE_DEVICE_ID:-}" ]] && command -v adb >/dev/null 2>&1; then
-  ADB_SERIAL_CANDIDATE="${PROBE_ADB_SERIAL:-}"
-  if [[ -z "${ADB_SERIAL_CANDIDATE}" ]]; then
-    ADB_SERIAL_CANDIDATE="$(adb devices | awk 'NR>1 && $2=="device" {print $1; exit}')"
-  fi
-  if [[ -n "${ADB_SERIAL_CANDIDATE}" ]]; then
-    PROBE_DEVICE_ID="$(adb -s "${ADB_SERIAL_CANDIDATE}" shell settings get secure android_id 2>/dev/null | tr -d '\r' || true)"
-    export PROBE_DEVICE_ID
-  fi
-fi
-
 rm -f "${WORK_DIR}/lib/arm64-v8a/${LIB_BASENAME}" \
       "${WORK_DIR}/lib/arm64-v8a/liba41935.so" \
       "${WORK_DIR}/lib/arm64-v8a/libc++_shared.so"

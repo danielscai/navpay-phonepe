@@ -36,6 +36,10 @@ final class ChecksumRuntimePaths {
         return runtimeRoot.resolve("signature.bin");
     }
 
+    static Path runtimeSnapshot(Path runtimeRoot) {
+        return runtimeRoot.resolve("runtime_snapshot.json");
+    }
+
     static Path runtimeLib(Path runtimeRoot, String libName) {
         return runtimeRoot.resolve(LIB_DIR_RELATIVE_PATH).resolve(libName);
     }

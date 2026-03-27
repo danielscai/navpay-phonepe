@@ -43,12 +43,6 @@ public final class ChecksumHttpService {
                 ChecksumRuntimePaths.resolveRuntimeRoot(repoRoot).toString())).toAbsolutePath().normalize();
         ChecksumRuntimePaths.validatePreparedRuntime(runtimeRoot);
         int port = Integer.parseInt(readConfig("checksum.http.port", "CHECKSUM_HTTP_PORT", String.valueOf(DEFAULT_PORT)));
-        if (System.getProperty("probe.device.id") == null && System.getenv("PROBE_DEVICE_ID") == null) {
-            String detected = UnidbgChecksumProbe.detectDeviceIdFromAdb();
-            if (detected != null && !detected.isEmpty()) {
-                System.setProperty("probe.device.id", detected);
-            }
-        }
         String libPath = ChecksumRuntimePaths.runtimeLib(runtimeRoot, "libphonepe-cryptography-support-lib.so").toString();
         String loadOrder = readConfig("probe.load.order", "PROBE_LOAD_ORDER", "e755b7-first");
         boolean loadLibcxx = isTruthy(readConfig("probe.load.libcxx", "PROBE_LOAD_LIBCXX", "false"));
@@ -186,7 +180,61 @@ public final class ChecksumHttpService {
     }
 
     private static String unescapeJson(String value) {
-        return value.replace("\\\"", "\"").replace("\\\\", "\\").replace("\\n", "\n").replace("\\r", "\r");
+        StringBuilder out = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c != '\\') {
+                out.append(c);
+                continue;
+            }
+            if (i + 1 >= value.length()) {
+                out.append('\\');
+                break;
+            }
+            char next = value.charAt(++i);
+            switch (next) {
+                case '"':
+                    out.append('"');
+                    break;
+                case '\\':
+                    out.append('\\');
+                    break;
+                case '/':
+                    out.append('/');
+                    break;
+                case 'b':
+                    out.append('\b');
+                    break;
+                case 'f':
+                    out.append('\f');
+                    break;
+                case 'n':
+                    out.append('\n');
+                    break;
+                case 'r':
+                    out.append('\r');
+                    break;
+                case 't':
+                    out.append('\t');
+                    break;
+                case 'u':
+                    if (i + 4 >= value.length()) {
+                        throw new IllegalArgumentException("invalid unicode escape in request json");
+                    }
+                    String hex = value.substring(i + 1, i + 5);
+                    try {
+                        out.append((char) Integer.parseInt(hex, 16));
+                    } catch (NumberFormatException e) {
+                        throw new IllegalArgumentException("invalid unicode escape in request json");
+                    }
+                    i += 4;
+                    break;
+                default:
+                    out.append(next);
+                    break;
+            }
+        }
+        return out.toString();
     }
 
     private static String sanitize(String value) {

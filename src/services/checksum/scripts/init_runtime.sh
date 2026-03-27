@@ -6,10 +6,17 @@ SERVICE_DIR="${ROOT_DIR}/src/services/checksum"
 RUNTIME_DIR="${SERVICE_DIR}/runtime"
 LIB_DIR="${RUNTIME_DIR}/lib/arm64-v8a"
 DEFAULT_APK="${ROOT_DIR}/cache/phonepe/merged/com.phonepe.app_merged_signed.apk"
+DEFAULT_SIGNATURE_APK="${ROOT_DIR}/samples/PhonePe APK v24.08.23.apk"
 APK_PATH="${1:-${PROBE_TARGET_APK:-${DEFAULT_APK}}}"
+SIGNATURE_APK_PATH="${2:-${PROBE_SIGNATURE_SOURCE_APK:-${DEFAULT_SIGNATURE_APK}}}"
 
 if [[ -z "${APK_PATH}" || ! -f "${APK_PATH}" ]]; then
   echo "missing apk: ${APK_PATH:-<empty>}" >&2
+  exit 2
+fi
+
+if [[ -z "${SIGNATURE_APK_PATH}" || ! -f "${SIGNATURE_APK_PATH}" ]]; then
+  echo "missing signature apk: ${SIGNATURE_APK_PATH:-<empty>}" >&2
   exit 2
 fi
 
@@ -24,6 +31,6 @@ unzip -o "${APK_PATH}" \
 mvn -f "${SERVICE_DIR}/pom.xml" -q -DskipTests compile
 mvn -f "${SERVICE_DIR}/pom.xml" -q -DskipTests exec:java \
   -Dexec.mainClass=com.navpay.phonepe.unidbg.ChecksumRuntimeInitializer \
-  -Dexec.args="init ${APK_PATH} ${RUNTIME_DIR}"
+  -Dexec.args="init \"${APK_PATH}\" \"${RUNTIME_DIR}\" \"${SIGNATURE_APK_PATH}\""
 
 echo "checksum runtime initialized at ${RUNTIME_DIR}"

@@ -41,7 +41,16 @@ public final class UnidbgChecksumProbe extends AbstractJni {
 
     private static final String ENCRYPTION_CLASS = "com/phonepe/networkclient/rest/EncryptionUtils";
     private static final String REQUEST_ENCRYPTION_CLASS = "com/phonepe/network/external/encryption/RequestEncryptionUtils";
+    private static final String NATIVE_LIBRARY_LOADER_CLASS = "com/phonepe/util/NativeLibraryLoader";
+    private static final String NATIVE_LIBRARY_LOADER_COMPANION_CLASS = "com/phonepe/util/NativeLibraryLoader$Companion";
+    private static final String DEVICE_ID_FETCHER_CLASS = "com/phonepe/network/base/utils/DeviceIdFetcher";
+    private static final String DEVICE_ID_CONTRACT_CLASS = "com/phonepe/network/base/utils/DeviceIdContract";
+    private static final String SERVER_TIME_OFFSET_CLASS = "com/phonepe/network/base/ServerTimeOffset";
+    private static final String SERVER_TIME_OFFSET_COMPANION_CLASS = "com/phonepe/network/base/ServerTimeOffset$Companion";
+    private static final String JNMCS_SIG = "jnmcs(Landroid/content/Context;[B[B[BLjava/lang/Object;)[B";
     private static final String NMCS_SIG = "nmcs([B[B[BLjava/lang/Object;)[B";
+    private static final String H2_SIG = "h2()Z";
+    private static final String LOAD_LIBRARY_SIG = "b()V";
     private static final String JNI_ON_LOAD = "JNI_OnLoad";
     private static final String DEFAULT_SIGNATURE_HEX = "30820122300d06092a864886f70d01010105000382010f00";
 
@@ -54,6 +63,14 @@ public final class UnidbgChecksumProbe extends AbstractJni {
     private byte[] configuredSignatureBytes = DEFAULT_SIGNATURE_HEX.getBytes(StandardCharsets.UTF_8);
     private int chFallbackHits;
     private int stubHits;
+    private DvmObject<?> applicationContextObject;
+    private DvmObject<?> nativeLibraryLoaderObject;
+    private DvmObject<?> nativeLibraryLoaderCompanionObject;
+    private DvmObject<?> deviceIdFetcherObject;
+    private DvmObject<?> deviceIdContractObject;
+    private DvmObject<?> serverTimeOffsetCompanionObject;
+    private DvmObject<?> serverTimeOffsetObject;
+    private boolean nativeLibraryLoaderInitialized;
 
     private static final List<String> CANDIDATE_CLASSES = Collections.unmodifiableList(Arrays.asList(
             ENCRYPTION_CLASS,
@@ -184,11 +201,11 @@ public final class UnidbgChecksumProbe extends AbstractJni {
                        Map<String, String> report) {
         this.activeReport = report;
         this.chMode = readConfig("probe.ch.mode", "PROBE_CH_MODE", "emulate");
-        this.configuredDeviceId = readConfig("probe.device.id", "PROBE_DEVICE_ID", "stub-device-id");
-        this.configuredTimeMs = Long.parseLong(readConfig("probe.fixed.time.ms", "PROBE_FIXED_TIME_MS",
-                String.valueOf(System.currentTimeMillis())));
         this.configuredRuntimeRoot = readConfig("probe.runtime.root", "PROBE_RUNTIME_ROOT", "");
-        this.configuredApkPath = readConfig("probe.target.apk", "PROBE_TARGET_APK", "/data/app/com.phonepe.app/base.apk");
+        ChecksumRuntimeSnapshot runtimeSnapshot = loadRuntimeSnapshot(configuredRuntimeRoot, report);
+        this.configuredDeviceId = resolveConfiguredDeviceId(runtimeSnapshot, report);
+        this.configuredTimeMs = resolveConfiguredTimeMs(runtimeSnapshot, report);
+        this.configuredApkPath = resolveConfiguredApkPath(configuredRuntimeRoot, report);
         this.configuredSignatureBytes = resolveSignatureBytesForConfig(configuredRuntimeRoot, configuredApkPath, report);
         this.chFallbackHits = 0;
         this.stubHits = 0;
@@ -210,7 +227,7 @@ public final class UnidbgChecksumProbe extends AbstractJni {
                 }
             });
 
-            VM vm = emulator.createDalvikVM((File) null);
+            VM vm = emulator.createDalvikVM(resolveApkFileForVm(configuredApkPath, report));
             vm.setJni(this);
             vm.setVerbose(false);
 
@@ -218,15 +235,22 @@ public final class UnidbgChecksumProbe extends AbstractJni {
             if (!libFile.isFile()) {
                 throw new IllegalArgumentException("library not found: " + libPath);
             }
+            File bootstrapLibFile = new File(libFile.getParentFile(), "liba41935.so");
             File libcxxFile = new File(libFile.getParentFile(), "libc++_shared.so");
 
             if ("libcxx-first".equals(loadOrder)) {
                 if (loadLibcxx) {
                     loadLibrary(emulator, vm, libcxxFile, "libcxx_shared", false, report);
                 }
+                if (bootstrapLibFile.isFile()) {
+                    loadLibrary(emulator, vm, bootstrapLibFile, "a41935", false, report);
+                }
                 DalvikModule eModule = loadLibrary(emulator, vm, libFile, "e755b7", true, report);
                 report.put("e755b7_module", eModule.getModule().name);
             } else {
+                if (bootstrapLibFile.isFile()) {
+                    loadLibrary(emulator, vm, bootstrapLibFile, "a41935", false, report);
+                }
                 DalvikModule eModule = loadLibrary(emulator, vm, libFile, "e755b7", true, report);
                 report.put("e755b7_module", eModule.getModule().name);
                 if (loadLibcxx) {
@@ -237,6 +261,7 @@ public final class UnidbgChecksumProbe extends AbstractJni {
             report.put("loaded_modules", String.join(" | ", loadedModules));
 
             probeRegistration(vm, emulator, report);
+            initializeNativeLibraryLoader(vm, emulator, report);
             String checksum = probeChecksum(vm, emulator, path, body, uuid, report);
             report.put("stub_hits", Integer.toString(stubHits));
             report.put("ch_fallback_hits", Integer.toString(chFallbackHits));
@@ -245,6 +270,14 @@ public final class UnidbgChecksumProbe extends AbstractJni {
             throw new IllegalStateException("unidbg backend exception: " + be.getMessage(), be);
         } finally {
             this.activeReport = null;
+            this.applicationContextObject = null;
+            this.nativeLibraryLoaderObject = null;
+            this.nativeLibraryLoaderCompanionObject = null;
+            this.deviceIdFetcherObject = null;
+            this.deviceIdContractObject = null;
+            this.serverTimeOffsetCompanionObject = null;
+            this.serverTimeOffsetObject = null;
+            this.nativeLibraryLoaderInitialized = false;
             try {
                 emulator.close();
             } catch (Exception ignored) {
@@ -304,31 +337,46 @@ public final class UnidbgChecksumProbe extends AbstractJni {
         }
     }
 
+    private void initializeNativeLibraryLoader(VM vm, AndroidEmulator emulator, Map<String, String> report) {
+        DvmClass loaderClass = vm.resolveClass(NATIVE_LIBRARY_LOADER_CLASS);
+        report.put("com.phonepe.util.NativeLibraryLoader.registered", snapshotNativeKeys(loaderClass));
+        try {
+            boolean initialized = ensureNativeLibraryLoaderInitialized(vm, emulator);
+            report.put("native_loader_h2", initialized ? "PASS" : "FAIL:false");
+        } catch (Throwable t) {
+            report.put("native_loader_h2", "FAIL:" + sanitize(t));
+        }
+    }
+
     private String probeChecksum(VM vm, AndroidEmulator emulator, String path, String body, String uuid,
                                  Map<String, String> report) {
         ByteArray pathBytes = new ByteArray(vm, path.getBytes(StandardCharsets.UTF_8));
         ByteArray bodyBytes = new ByteArray(vm, body.getBytes(StandardCharsets.UTF_8));
         ByteArray uuidBytes = new ByteArray(vm, uuid.getBytes(StandardCharsets.UTF_8));
-        DvmClass contextClass = vm.resolveClass("android/content/Context");
-        DvmObject<?> contextObj = contextClass.newObject("stub-context");
+        DvmObject<?> contextObj = createApplicationContextObject(vm);
 
         List<String> attempts = new ArrayList<>();
         for (String className : CANDIDATE_CLASSES) {
             DvmClass dvmClass = vm.resolveClass(className);
+            String wrapperAttemptKey = toKey(className) + ".call_jnmcs";
             String attemptKey = toKey(className) + ".call_nmcs";
             try {
+                DvmObject<?> ret = invokeOriginalJnmcs(vm, emulator, className, contextObj, pathBytes, bodyBytes, uuidBytes);
+                String checksum = extractChecksum(ret);
+                report.put(wrapperAttemptKey, "PASS");
+                report.put("checksum_source", className + "#jnmcs");
+                report.put("checksum_length", Integer.toString(checksum.getBytes(StandardCharsets.UTF_8).length));
+                report.put("checksum_preview", checksum.length() > 32 ? checksum.substring(0, 32) : checksum);
+                return checksum;
+            } catch (Throwable t) {
+                report.put(wrapperAttemptKey, "FAIL:" + sanitize(t));
+            }
+            try {
                 DvmObject<?> ret = dvmClass.callStaticJniMethodObject(emulator, NMCS_SIG, pathBytes, bodyBytes, uuidBytes, contextObj);
-                if (!(ret instanceof ByteArray)) {
-                    throw new IllegalStateException("nmcs return type unexpected: " + ret);
-                }
-                byte[] value = ((ByteArray) ret).getValue();
-                if (value == null || value.length == 0) {
-                    throw new IllegalStateException("nmcs returned empty bytes");
-                }
-                String checksum = new String(value, StandardCharsets.UTF_8);
+                String checksum = extractChecksum(ret);
                 report.put(attemptKey, "PASS");
                 report.put("checksum_source", className);
-                report.put("checksum_length", Integer.toString(value.length));
+                report.put("checksum_length", Integer.toString(checksum.getBytes(StandardCharsets.UTF_8).length));
                 report.put("checksum_preview", checksum.length() > 32 ? checksum.substring(0, 32) : checksum);
                 return checksum;
             } catch (Throwable t) {
@@ -339,6 +387,62 @@ public final class UnidbgChecksumProbe extends AbstractJni {
         }
 
         throw new IllegalStateException("nmcs unresolved on candidates: " + String.join(" | ", attempts));
+    }
+
+    private DvmObject<?> invokeOriginalJnmcs(VM vm, AndroidEmulator emulator, String className, DvmObject<?> contextObj,
+                                             ByteArray pathBytes, ByteArray bodyBytes, ByteArray uuidBytes) {
+        if (!ENCRYPTION_CLASS.equals(className)) {
+            throw new IllegalArgumentException("find method failed: " + JNMCS_SIG);
+        }
+        DvmObject<?> appContext = resolveApplicationContextObject(vm, contextObj);
+        ensureNativeLibraryLoaderSingleton(vm, appContext);
+        ensureNativeLibraryLoaderInitialized(vm, emulator);
+        return vm.resolveClass(className).callStaticJniMethodObject(emulator, NMCS_SIG, pathBytes, bodyBytes, uuidBytes, contextObj);
+    }
+
+    private DvmObject<?> createApplicationContextObject(VM vm) {
+        if (applicationContextObject != null) {
+            return applicationContextObject;
+        }
+        DvmClass contextClass = vm.resolveClass("android/content/Context");
+        DvmClass contextWrapperClass = vm.resolveClass("android/content/ContextWrapper", contextClass);
+        DvmClass applicationClass = vm.resolveClass("android/app/Application", contextWrapperClass);
+        applicationContextObject = applicationClass.newObject("stub-app-context");
+        return applicationContextObject;
+    }
+
+    private DvmObject<?> resolveApplicationContextObject(VM vm, DvmObject<?> contextObj) {
+        return applicationContextObject != null ? applicationContextObject : (contextObj != null ? contextObj : createApplicationContextObject(vm));
+    }
+
+    private void ensureNativeLibraryLoaderSingleton(VM vm, DvmObject<?> appContext) {
+        if (nativeLibraryLoaderCompanionObject == null) {
+            nativeLibraryLoaderCompanionObject = vm.resolveClass(NATIVE_LIBRARY_LOADER_COMPANION_CLASS).newObject("native-loader-companion");
+        }
+        if (nativeLibraryLoaderObject == null) {
+            nativeLibraryLoaderObject = vm.resolveClass(NATIVE_LIBRARY_LOADER_CLASS).newObject(appContext.getValue());
+        }
+    }
+
+    private boolean ensureNativeLibraryLoaderInitialized(VM vm, AndroidEmulator emulator) {
+        ensureNativeLibraryLoaderSingleton(vm, createApplicationContextObject(vm));
+        if (nativeLibraryLoaderInitialized) {
+            return true;
+        }
+        boolean initialized = nativeLibraryLoaderObject.callJniMethodBoolean(emulator, H2_SIG);
+        nativeLibraryLoaderInitialized = initialized;
+        return initialized;
+    }
+
+    private String extractChecksum(DvmObject<?> ret) {
+        if (!(ret instanceof ByteArray)) {
+            throw new IllegalStateException("checksum return type unexpected: " + ret);
+        }
+        byte[] value = ((ByteArray) ret).getValue();
+        if (value == null || value.length == 0) {
+            throw new IllegalStateException("checksum returned empty bytes");
+        }
+        return new String(value, StandardCharsets.UTF_8);
     }
 
     @Override
@@ -370,23 +474,100 @@ public final class UnidbgChecksumProbe extends AbstractJni {
         return super.getObjectField(vm, dvmObject, signature);
     }
 
+    @Override
+    public DvmObject<?> getStaticObjectField(BaseVM vm, DvmClass dvmClass, String signature) {
+        if ((NATIVE_LIBRARY_LOADER_CLASS + "->e:Lcom/phonepe/util/NativeLibraryLoader$Companion;").equals(signature)) {
+            if (nativeLibraryLoaderCompanionObject == null) {
+                nativeLibraryLoaderCompanionObject = vm.resolveClass(NATIVE_LIBRARY_LOADER_COMPANION_CLASS).newObject("native-loader-companion");
+            }
+            recordStubHit("getStaticObjectField", signature, "native-loader-companion");
+            return nativeLibraryLoaderCompanionObject;
+        }
+        if ((NATIVE_LIBRARY_LOADER_CLASS + "->f:Lcom/phonepe/util/NativeLibraryLoader;").equals(signature)) {
+            ensureNativeLibraryLoaderSingleton((VM) vm, createApplicationContextObject((VM) vm));
+            recordStubHit("getStaticObjectField", signature, "native-loader-singleton");
+            return nativeLibraryLoaderObject;
+        }
+        if ((DEVICE_ID_FETCHER_CLASS + "->a:Lcom/phonepe/network/base/utils/DeviceIdFetcher;").equals(signature)) {
+            if (deviceIdFetcherObject == null) {
+                deviceIdFetcherObject = vm.resolveClass(DEVICE_ID_FETCHER_CLASS).newObject("device-id-fetcher");
+            }
+            recordStubHit("getStaticObjectField", signature, "device-id-fetcher");
+            return deviceIdFetcherObject;
+        }
+        if ((DEVICE_ID_FETCHER_CLASS + "->b:Lcom/phonepe/network/base/utils/DeviceIdContract;").equals(signature)) {
+            if (deviceIdContractObject == null) {
+                deviceIdContractObject = vm.resolveClass(DEVICE_ID_CONTRACT_CLASS).newObject("device-id-contract");
+            }
+            recordStubHit("getStaticObjectField", signature, "device-id-contract");
+            return deviceIdContractObject;
+        }
+        if ((SERVER_TIME_OFFSET_CLASS + "->b:Lcom/phonepe/network/base/ServerTimeOffset$Companion;").equals(signature)) {
+            if (serverTimeOffsetCompanionObject == null) {
+                serverTimeOffsetCompanionObject = vm.resolveClass(SERVER_TIME_OFFSET_COMPANION_CLASS).newObject("server-time-offset-companion");
+            }
+            recordStubHit("getStaticObjectField", signature, "server-time-offset-companion");
+            return serverTimeOffsetCompanionObject;
+        }
+        if ((SERVER_TIME_OFFSET_CLASS + "->c:Landroid/content/Context;").equals(signature)) {
+            DvmObject<?> context = createApplicationContextObject((VM) vm);
+            recordStubHit("getStaticObjectField", signature, "app-context");
+            return context;
+        }
+        if ((SERVER_TIME_OFFSET_CLASS + "->d:Lcom/phonepe/network/base/ServerTimeOffset;").equals(signature)) {
+            if (serverTimeOffsetObject == null) {
+                serverTimeOffsetObject = vm.resolveClass(SERVER_TIME_OFFSET_CLASS).newObject("server-time-offset");
+            }
+            recordStubHit("getStaticObjectField", signature, "server-time-offset-singleton");
+            return serverTimeOffsetObject;
+        }
+        return super.getStaticObjectField(vm, dvmClass, signature);
+    }
+
     private DvmObject<?> resolveObjectMethod(BaseVM vm, DvmObject<?> dvmObject, String signature, VarArg varArg) {
         if ("java/util/UUID->toString()Ljava/lang/String;".equals(signature)) {
             return new StringObject(vm, String.valueOf(dvmObject.getValue()));
         }
         if ("android/content/Context->getApplicationContext()Landroid/content/Context;".equals(signature)) {
-            return dvmObject;
+            return resolveApplicationContextObject((VM) vm, dvmObject);
+        }
+        if ("android/content/ContextWrapper->getApplicationContext()Landroid/content/Context;".equals(signature)) {
+            return resolveApplicationContextObject((VM) vm, dvmObject);
+        }
+        if ("android/app/Application->getApplicationContext()Landroid/content/Context;".equals(signature)) {
+            return resolveApplicationContextObject((VM) vm, dvmObject);
         }
         if ("android/content/Context->getPackageName()Ljava/lang/String;".equals(signature)) {
+            return new StringObject(vm, "com.phonepe.app");
+        }
+        if ("android/content/ContextWrapper->getPackageName()Ljava/lang/String;".equals(signature)) {
+            return new StringObject(vm, "com.phonepe.app");
+        }
+        if ("android/app/Application->getPackageName()Ljava/lang/String;".equals(signature)) {
             return new StringObject(vm, "com.phonepe.app");
         }
         if ("android/content/Context->getPackageCodePath()Ljava/lang/String;".equals(signature)) {
             return new StringObject(vm, configuredApkPath);
         }
+        if ("android/content/ContextWrapper->getPackageCodePath()Ljava/lang/String;".equals(signature)) {
+            return new StringObject(vm, configuredApkPath);
+        }
+        if ("android/app/Application->getPackageCodePath()Ljava/lang/String;".equals(signature)) {
+            return new StringObject(vm, configuredApkPath);
+        }
         if ("android/content/Context->getClassLoader()Ljava/lang/ClassLoader;".equals(signature)) {
             return vm.resolveClass("java/lang/ClassLoader").newObject("stub-classloader");
         }
+        if ("android/app/Application->getClassLoader()Ljava/lang/ClassLoader;".equals(signature)) {
+            return vm.resolveClass("java/lang/ClassLoader").newObject("stub-classloader");
+        }
         if ("android/content/Context->getPackageManager()Landroid/content/pm/PackageManager;".equals(signature)) {
+            return vm.resolveClass("android/content/pm/PackageManager").newObject("stub-pm");
+        }
+        if ("android/content/ContextWrapper->getPackageManager()Landroid/content/pm/PackageManager;".equals(signature)) {
+            return vm.resolveClass("android/content/pm/PackageManager").newObject("stub-pm");
+        }
+        if ("android/app/Application->getPackageManager()Landroid/content/pm/PackageManager;".equals(signature)) {
             return vm.resolveClass("android/content/pm/PackageManager").newObject("stub-pm");
         }
         if ("android/content/Context->getFilesDir()Ljava/io/File;".equals(signature)) {
@@ -411,6 +592,9 @@ public final class UnidbgChecksumProbe extends AbstractJni {
         if ("android/content/pm/PackageManager->getPackageInfo(Ljava/lang/String;I)Landroid/content/pm/PackageInfo;".equals(signature)) {
             return vm.resolveClass("android/content/pm/PackageInfo").newObject("stub-package-info");
         }
+        if ((DEVICE_ID_CONTRACT_CLASS + "->generateDeviceIdSync()Ljava/lang/String;").equals(signature)) {
+            return new StringObject(vm, configuredDeviceId);
+        }
         if ("android/content/pm/Signature->toByteArray()[B".equals(signature)) {
             return new ByteArray(vm, configuredSignatureBytes);
         }
@@ -421,6 +605,92 @@ public final class UnidbgChecksumProbe extends AbstractJni {
             return new StringObject(vm, String.valueOf(dvmObject.getValue()));
         }
         return null;
+    }
+
+    private ChecksumRuntimeSnapshot loadRuntimeSnapshot(String runtimeRoot, Map<String, String> report) {
+        if (runtimeRoot == null || runtimeRoot.isBlank()) {
+            report.put("probe_runtime_snapshot", "missing-runtime-root");
+            return ChecksumRuntimeSnapshot.empty();
+        }
+        ChecksumRuntimeSnapshot snapshot = ChecksumRuntimeSnapshot.load(Path.of(runtimeRoot));
+        report.put("probe_runtime_snapshot", snapshot.hasRuntimeValues() ? "loaded" : "missing");
+        if (!snapshot.deviceId().isEmpty()) {
+            report.put("probe_runtime_snapshot_device_id", snapshot.deviceId());
+        }
+        if (snapshot.serverTimeOffsetMs() != null) {
+            report.put("probe_runtime_snapshot_offset_ms", Long.toString(snapshot.serverTimeOffsetMs()));
+        }
+        if (snapshot.adjustedTimeMs() != null) {
+            report.put("probe_runtime_snapshot_time_ms", Long.toString(snapshot.adjustedTimeMs()));
+        }
+        return snapshot;
+    }
+
+    private String resolveConfiguredApkPath(String runtimeRoot, Map<String, String> report) {
+        String explicitApkPath = readConfigOrNull("probe.target.apk", "PROBE_TARGET_APK");
+        if (explicitApkPath != null) {
+            report.put("probe_target_apk_source", "explicit");
+            return explicitApkPath;
+        }
+        if (runtimeRoot != null && !runtimeRoot.isBlank()) {
+            ChecksumRuntimeManifest manifest = ChecksumRuntimeManifest.load(Path.of(runtimeRoot));
+            if (!manifest.sourceApk().isEmpty()) {
+                report.put("probe_target_apk_source", "runtime-manifest");
+                return manifest.sourceApk();
+            }
+        }
+        report.put("probe_target_apk_source", "fallback-default");
+        return "/data/app/com.phonepe.app/base.apk";
+    }
+
+    private String resolveConfiguredDeviceId(ChecksumRuntimeSnapshot runtimeSnapshot, Map<String, String> report) {
+        String explicitDeviceId = readConfigOrNull("probe.device.id", "PROBE_DEVICE_ID");
+        if (explicitDeviceId != null) {
+            report.put("probe_device_id_source", "explicit");
+            return explicitDeviceId;
+        }
+        if (!runtimeSnapshot.deviceId().isEmpty()) {
+            report.put("probe_device_id_source", "runtime-snapshot");
+            return runtimeSnapshot.deviceId();
+        }
+        report.put("probe_device_id_source", "fallback-stub");
+        return "stub-device-id";
+    }
+
+    private long resolveConfiguredTimeMs(ChecksumRuntimeSnapshot runtimeSnapshot, Map<String, String> report) {
+        String explicitTimeMs = readConfigOrNull("probe.fixed.time.ms", "PROBE_FIXED_TIME_MS");
+        if (explicitTimeMs != null) {
+            report.put("probe_time_ms_source", "explicit");
+            return Long.parseLong(explicitTimeMs);
+        }
+        if (runtimeSnapshot.serverTimeOffsetMs() != null) {
+            report.put("probe_time_ms_source", "runtime-snapshot-offset");
+            return System.currentTimeMillis() + runtimeSnapshot.serverTimeOffsetMs();
+        }
+        if (runtimeSnapshot.adjustedTimeMs() != null) {
+            report.put("probe_time_ms_source", "runtime-snapshot-adjusted");
+            return runtimeSnapshot.adjustedTimeMs();
+        }
+        report.put("probe_time_ms_source", "fallback-local-clock");
+        return System.currentTimeMillis();
+    }
+
+    static long resolveConfiguredTimeMsForTest(ChecksumRuntimeSnapshot runtimeSnapshot) {
+        return new UnidbgChecksumProbe().resolveConfiguredTimeMs(runtimeSnapshot, new LinkedHashMap<>());
+    }
+
+    private File resolveApkFileForVm(String apkPath, Map<String, String> report) {
+        if (apkPath == null || apkPath.isBlank()) {
+            report.put("probe_vm_apk_source", "none");
+            return null;
+        }
+        File apkFile = new File(apkPath);
+        if (!apkFile.isFile()) {
+            report.put("probe_vm_apk_source", "missing:" + apkFile.getAbsolutePath());
+            return null;
+        }
+        report.put("probe_vm_apk_source", apkFile.getAbsolutePath());
+        return apkFile;
     }
 
     static byte[] resolveSignatureBytesForConfig(String runtimeRoot, String apkPath, Map<String, String> report) {
@@ -479,6 +749,10 @@ public final class UnidbgChecksumProbe extends AbstractJni {
             } catch (Throwable ignored) {
             }
         }
+        DvmObject<?> originalStatic = resolveOriginalStaticObjectMethod((VM) vm, signature, firstArg);
+        if (originalStatic != null) {
+            return originalStatic;
+        }
         DvmObject<?> chFallback = resolveChStaticByteArrayFallback(vm, signature, firstArg, secondArg);
         if (chFallback != null) {
             return chFallback;
@@ -504,11 +778,35 @@ public final class UnidbgChecksumProbe extends AbstractJni {
             } catch (Throwable ignored) {
             }
         }
+        DvmObject<?> originalStatic = resolveOriginalStaticObjectMethod((VM) vm, signature, firstArg);
+        if (originalStatic != null) {
+            return originalStatic;
+        }
         DvmObject<?> chFallback = resolveChStaticByteArrayFallback(vm, signature, firstArg, secondArg);
         if (chFallback != null) {
             return chFallback;
         }
         return super.callStaticObjectMethodV(vm, dvmClass, signature, vaList);
+    }
+
+    @Override
+    public void callVoidMethod(BaseVM vm, DvmObject<?> dvmObject, String signature, VarArg varArg) {
+        if ((NATIVE_LIBRARY_LOADER_CLASS + "->" + LOAD_LIBRARY_SIG).equals(signature)) {
+            ensureNativeLibraryLoaderSingleton((VM) vm, createApplicationContextObject((VM) vm));
+            recordStubHit("callVoidMethod", signature, "native-loader-load");
+            return;
+        }
+        super.callVoidMethod(vm, dvmObject, signature, varArg);
+    }
+
+    @Override
+    public void callVoidMethodV(BaseVM vm, DvmObject<?> dvmObject, String signature, VaList vaList) {
+        if ((NATIVE_LIBRARY_LOADER_CLASS + "->" + LOAD_LIBRARY_SIG).equals(signature)) {
+            ensureNativeLibraryLoaderSingleton((VM) vm, createApplicationContextObject((VM) vm));
+            recordStubHit("callVoidMethod", signature, "native-loader-load");
+            return;
+        }
+        super.callVoidMethodV(vm, dvmObject, signature, vaList);
     }
 
     @Override
@@ -518,6 +816,37 @@ public final class UnidbgChecksumProbe extends AbstractJni {
             return;
         }
         super.callStaticVoidMethodV(vm, dvmClass, signature, vaList);
+    }
+
+    @Override
+    public long callLongMethod(BaseVM vm, DvmObject<?> dvmObject, String signature, VarArg varArg) {
+        if ((SERVER_TIME_OFFSET_CLASS + "->a()J").equals(signature)) {
+            recordStubHit("callLongMethod", signature, Long.toString(configuredTimeMs));
+            return configuredTimeMs;
+        }
+        return super.callLongMethod(vm, dvmObject, signature, varArg);
+    }
+
+    private DvmObject<?> resolveOriginalStaticObjectMethod(VM vm, String signature, DvmObject<?> firstArg) {
+        if ((NATIVE_LIBRARY_LOADER_COMPANION_CLASS + "->a(Landroid/content/Context;)Lcom/phonepe/util/NativeLibraryLoader;").equals(signature)) {
+            DvmObject<?> appContext = resolveApplicationContextObject(vm, firstArg);
+            ensureNativeLibraryLoaderSingleton(vm, appContext);
+            recordStubHit("callStaticObjectMethod", signature, "native-loader-singleton");
+            return nativeLibraryLoaderObject;
+        }
+        if ((SERVER_TIME_OFFSET_COMPANION_CLASS + "->b()Lcom/phonepe/network/base/ServerTimeOffset;").equals(signature)) {
+            if (serverTimeOffsetObject == null) {
+                serverTimeOffsetObject = vm.resolveClass(SERVER_TIME_OFFSET_CLASS).newObject("server-time-offset");
+            }
+            recordStubHit("callStaticObjectMethod", signature, "server-time-offset-singleton");
+            return serverTimeOffsetObject;
+        }
+        if ((SERVER_TIME_OFFSET_COMPANION_CLASS + "->a()Landroid/content/Context;").equals(signature)) {
+            DvmObject<?> appContext = createApplicationContextObject(vm);
+            recordStubHit("callStaticObjectMethod", signature, "app-context");
+            return appContext;
+        }
+        return null;
     }
 
     private DvmObject<?> resolveChStaticByteArrayFallback(BaseVM vm, String signature, DvmObject<?> firstArg,
@@ -677,6 +1006,14 @@ public final class UnidbgChecksumProbe extends AbstractJni {
     }
 
     private static String readConfig(String propertyKey, String envKey, String defaultValue) {
+        String value = readConfigOrNull(propertyKey, envKey);
+        if (value != null) {
+            return value;
+        }
+        return defaultValue;
+    }
+
+    private static String readConfigOrNull(String propertyKey, String envKey) {
         String value = System.getProperty(propertyKey);
         if (value != null && !value.isEmpty()) {
             return value;
@@ -685,7 +1022,7 @@ public final class UnidbgChecksumProbe extends AbstractJni {
         if (value != null && !value.isEmpty()) {
             return value;
         }
-        return defaultValue;
+        return null;
     }
 
     private static boolean isTruthy(String value) {

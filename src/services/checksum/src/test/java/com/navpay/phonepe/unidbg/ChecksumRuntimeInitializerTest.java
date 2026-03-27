@@ -18,6 +18,7 @@ final class ChecksumRuntimeInitializerTest {
         ChecksumRuntimeInitializer.writeRuntimeArtifacts(
                 tempDir,
                 Path.of("/tmp/example.apk"),
+                Path.of("/tmp/original.apk"),
                 "abc123",
                 signature,
                 new String[]{
@@ -29,6 +30,7 @@ final class ChecksumRuntimeInitializerTest {
         assertArrayEquals(signature, Files.readAllBytes(tempDir.resolve("signature.bin")));
         String manifest = Files.readString(tempDir.resolve("manifest.json"));
         assertTrue(manifest.contains("\"apkSha256\":\"abc123\""));
+        assertTrue(manifest.contains("\"signatureSourceApk\":\"/tmp/original.apk\""));
         assertTrue(manifest.contains("\"signatureLength\":14"));
     }
 }

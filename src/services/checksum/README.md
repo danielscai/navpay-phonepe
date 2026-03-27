@@ -10,6 +10,7 @@
 
 - `manifest.json`
 - `signature.bin`
+- `runtime_snapshot.json`（可选，保存原始 App runtime 的 `deviceId/serverTimeOffsetMs` 快照）
 - `lib/arm64-v8a/libphonepe-cryptography-support-lib.so`
 - `lib/arm64-v8a/liba41935.so`
 - `lib/arm64-v8a/libc++_shared.so`
@@ -35,6 +36,18 @@
 yarn checksum:init /absolute/path/to/com.phonepe.app_merged_signed.apk
 ```
 
+如果不显式传第二个参数，初始化脚本会默认把原始签名源设为：
+
+- `samples/PhonePe APK v24.08.23.apk`
+
+也可以手动指定：
+
+```bash
+bash src/services/checksum/scripts/init_runtime.sh \
+  /absolute/path/to/com.phonepe.app_merged_signed.apk \
+  /absolute/path/to/original-phonepe.apk
+```
+
 启动服务：
 
 ```bash
@@ -58,6 +71,12 @@ APK 更新后的推荐流程：
 1. 重新运行 `yarn checksum:init /absolute/path/to/com.phonepe.app_merged_signed.apk`
 2. 检查 `src/services/checksum/runtime/manifest.json`
 3. 运行 `yarn checksum:test` 或 `cd src/services/checksum && mvn test`
+
+说明：
+
+- `sourceApk` 继续用于 DalvikVM 载入合并后的可运行 APK
+- `signatureSourceApk` 必须指向原始 PhonePe APK，而不是本地 debug/repacked APK
+- 否则 `Signature->toByteArray()` 语义会偏到调试签名，真实 V4 replay 会失败
 
 项目级接入文档：
 
@@ -87,26 +106,72 @@ curl -sS http://127.0.0.1:19190/validate \
   -d '{"path":"/apis/tstore/v2/units/changes","body":"","uuid":"8e8f7e5c-3f14-4cb3-bf70-8ec3dbf5a001"}'
 ```
 
+## Parser Compatibility Note
+
+`/checksum` 和 `/validate` 现在会按标准 JSON 规则反转义请求体字段，包含：
+
+- `\n`、`\r`、`\t`
+- `\/`
+- `\uXXXX`
+
+这对从 `navpay-admin` 拦截日志导出的 replay payload 是必要的，尤其是 body 中包含 `\u003d` 这类转义时。
+
+回归命令：
+
+```bash
+cd /Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum
+mvn -Dtest=ChecksumHttpServiceJsonParsingTest,ChecksumHttpServiceRealFixtureTest test
+bash scripts/validate_real_fixture.sh
+```
+
 ## Success Rule
 
-当前服务按“结构成功”判定，不要求与真实 app 进程 checksum 完全同值。
+当前正式验收不再以“结构成功”为最终标准。
 
-成功条件：
+最终通过条件：
 
-- `ok=true`
-- `structureOk=true`
-- 返回值为合法 Base64
-- 解码后为 ASCII 风格 token 串
-- 长度落在当前成功样本区间
+- 使用该服务生成 checksum
+- 将 checksum 注入真实 replay 请求头
+- 目标服务器返回 `HTTP 200`
+
+补充说明：
+
+- `structureOk=true` 仍然保留，用作本地结构回归信号
+- 但它不能替代真实 replay 验收
+- `19090` 和 `19190` checksum 字符串不要求一致
 
 ## Real-Log Validation
 
-本模块已经用一条真实的 `navpay-admin` 拦截日志做过 real-fixture 验证。
+本模块保留两类验证：
 
-- 样本来源：`navpay-admin` 日志 `654`
-- 请求形态：真实 `phonepe` `POST`
+1. 结构回归：
+   - 真实 fixture 走 `/checksum`
+   - 验证 JSON parser 和输出结构稳定
+2. 端到端 replay：
+   - 用生成出的 checksum 重放到真实目标服务器
+   - 以 `HTTP 200` 为唯一通过标准
+
+当前已验证的真实 V4 样本：
+
+- `navpay-admin` 日志 `1226`
+- 真实头字段：`X-REQUEST-CHECKSUM-V4`
+- `path` 取 `pathname`，不带 query
+- 当前结果：
+  - `19090` replay => `HTTP 200`
+  - `19190` replay => `HTTP 200`
+
+根因结论：
+
+- `19190` 之前失败，不是 `nmcs/jnmcs` 主链路没跑通，而是 runtime 初始化把 `signature.bin` 错误地取自 merged debug APK
+- 该签名指纹是 `c57335...`
+- 真实 PhonePe 原始包签名指纹应为 `5335bc...`
+- 将 `signature.bin` 改为原始 PhonePe APK 证书字节后，`19190` 的真实 V4 replay 恢复为 `HTTP 200`
+
+当前已验证的旧样本 fixture：
+
+- `navpay-admin` 日志 `654`
 - 真实头字段：`X-REQUEST-CHECKMATE`
-- 验证目标：确认 `19190` 的 checksum 服务可以用真实的 `path` 和 `body` 返回 `structureOk=true`
+- 用于结构回归，不作为 V4 端到端通过依据
 
 复跑流程：
 

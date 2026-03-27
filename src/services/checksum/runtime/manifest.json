@@ -1,7 +1,8 @@
 {
   "sourceApk":"/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/cache/phonepe/merged/com.phonepe.app_merged_signed.apk",
+  "signatureSourceApk":"/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/samples/PhonePe APK v24.08.23.apk",
   "apkSha256":"07bdb1e431ff407c23217ee6dee4e6219c3330351453ec8e3b231d4fc3aeae38",
-  "generatedAt":"2026-03-25T11:41:53.755513Z",
-  "signatureLength":744,
+  "generatedAt":"2026-03-27T10:09:24.699257Z",
+  "signatureLength":901,
   "libraries":["libphonepe-cryptography-support-lib.so","liba41935.so","libc++_shared.so"]
 }
