@@ -112,16 +112,13 @@ final class ChecksumServer {
                 return;
             }
 
-            String checksum = computeChecksum(context, path, rawBody, uuid);
-            if (checksum == null) {
-                writeJson(out, 500, error("checksum failed"));
+            JSONObject response = buildChecksumResponse(context, path, rawBody, uuid);
+            if (response.optBoolean("ok", false)) {
+                writeJson(out, 200, response);
                 return;
             }
-
-            JSONObject data = new JSONObject();
-            data.put("checksum", checksum);
-            data.put("uuid", uuid);
-            writeJson(out, 200, ok(data));
+            int statusCode = "missing path".equals(response.optString("error", "")) ? 400 : 500;
+            writeJson(out, statusCode, response);
 
         } catch (Throwable t) {
             Log.e(TAG, "handler error", t);
@@ -138,28 +135,46 @@ final class ChecksumServer {
         JSONObject body = new JSONObject(req.body.isEmpty() ? "{}" : req.body);
         String path = body.optString("path", "");
         String rawBody = body.optString("body", "");
-        String uuid = body.optString("uuid", "");
-        if (uuid.isEmpty()) {
-            uuid = UUID.randomUUID().toString();
+        JSONObject runtime = buildRuntimeSnapshot(context);
+        JSONObject response = buildChecksumResponse(context, path, rawBody, body.optString("uuid", ""));
+        if (!response.optBoolean("ok", false)) {
+            return response;
         }
-        if (path.isEmpty()) {
+
+        JSONObject data = new JSONObject();
+        JSONObject responseData = response.optJSONObject("data");
+        data.put("checksum", responseData == null ? "" : responseData.optString("checksum", ""));
+        data.put("uuid", response.optString("uuid", ""));
+        data.put("runtime", runtime);
+        return ok(data);
+    }
+
+    static JSONObject buildChecksumResponse(Context context, String path, String body, String uuid) throws JSONException {
+        JSONObject response = new JSONObject();
+        String normalizedPath = path == null ? "" : path.trim();
+        String normalizedBody = body == null ? "" : body;
+        String normalizedUuid = uuid == null ? "" : uuid.trim();
+        if (normalizedUuid.isEmpty()) {
+            normalizedUuid = UUID.randomUUID().toString();
+        }
+        if (normalizedPath.isEmpty()) {
             return error("missing path");
         }
 
-        JSONObject runtime = buildRuntimeSnapshot(context);
-        String checksum = computeChecksum(context, path, rawBody, uuid);
+        String checksum = computeChecksum(context, normalizedPath, normalizedBody, normalizedUuid);
         if (checksum == null) {
             return error("checksum failed");
         }
 
         JSONObject data = new JSONObject();
         data.put("checksum", checksum);
-        data.put("uuid", uuid);
-        data.put("runtime", runtime);
-        return ok(data);
+        response.put("ok", true);
+        response.put("data", data);
+        response.put("uuid", normalizedUuid);
+        return response;
     }
 
-    private static String computeChecksum(Context context, String path, String body, String uuid) {
+    static String computeChecksum(Context context, String path, String body, String uuid) {
         try {
             Context safeContext = resolveContext(context);
             if (safeContext == null) {
@@ -358,18 +373,24 @@ final class ChecksumServer {
     private static Request parseRequest(InputStream in) throws IOException {
         ByteArrayOutputStream headerBuf = new ByteArrayOutputStream();
         int b;
-        int state = 0;
+        int prev = -1;
+        int prev2 = -1;
+        int prev3 = -1;
         while ((b = in.read()) != -1) {
             headerBuf.write(b);
-            if (state == 0 && b == '\r') state = 1;
-            else if (state == 1 && b == '\n') state = 2;
-            else if (state == 2 && b == '\r') state = 3;
-            else if (state == 3 && b == '\n') break;
-            else state = 0;
+            // Support both CRLFCRLF and LFLF header terminators.
+            boolean endedWithCrLfCrLf = prev3 == '\r' && prev2 == '\n' && prev == '\r' && b == '\n';
+            boolean endedWithLfLf = prev == '\n' && b == '\n';
+            if (endedWithCrLfCrLf || endedWithLfLf) {
+                break;
+            }
+            prev3 = prev2;
+            prev2 = prev;
+            prev = b;
         }
         String headerText = headerBuf.toString(StandardCharsets.UTF_8.name());
         if (headerText.isEmpty()) return null;
-        String[] lines = headerText.split("\r\n");
+        String[] lines = headerText.replace("\r\n", "\n").split("\n");
         if (lines.length == 0) return null;
         String[] first = lines[0].split(" ");
         if (first.length < 2) return null;

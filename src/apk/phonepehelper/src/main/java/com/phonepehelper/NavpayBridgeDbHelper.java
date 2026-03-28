@@ -233,6 +233,24 @@ public final class NavpayBridgeDbHelper extends SQLiteOpenHelper {
 
     private static String resolveVersion(JSONObject snapshot, long updatedAt) {
         if (snapshot != null) {
+            long lastCollectedAtMs = snapshot.optLong("lastCollectedAtMs", -1L);
+            if (lastCollectedAtMs > 0L) {
+                return String.valueOf(lastCollectedAtMs);
+            }
+            JSONObject summary = snapshot.optJSONObject("summary");
+            if (summary != null) {
+                long summaryLastCollectedAtMs = summary.optLong("lastCollectedAtMs", -1L);
+                if (summaryLastCollectedAtMs > 0L) {
+                    return String.valueOf(summaryLastCollectedAtMs);
+                }
+            }
+            JSONObject latestSample = snapshot.optJSONObject("latestSample");
+            if (latestSample != null) {
+                long collectedAtMs = latestSample.optLong("collectedAtMs", -1L);
+                if (collectedAtMs > 0L) {
+                    return String.valueOf(collectedAtMs);
+                }
+            }
             long collectedAtMs = snapshot.optLong("collectedAtMs", -1L);
             if (collectedAtMs > 0L) {
                 return String.valueOf(collectedAtMs);

