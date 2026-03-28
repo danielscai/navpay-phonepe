@@ -1278,17 +1278,20 @@ def unified_test(
     log_info("准备安装环境：停止旧进程并清理 logcat")
     ensure_process_stopped()
     run([adb, "-s", device, "logcat", "-c"], concise=True)
+    # Disable incremental install to avoid transient class loading failures
+    # (e.g. NoClassDefFoundError right after install when package is still frozen).
+    base_install_cmd = [adb, "-s", device, "install", "--no-incremental"]
     if install_mode == "clean":
         log_info("安装前清理：卸载旧版本应用")
         run([adb, "-s", device, "uninstall", package], check=False, concise=True)
-        install_cmd = [adb, "-s", device, "install", str(signed_apk)]
+        install_cmd = [*base_install_cmd, str(signed_apk)]
     elif install_mode == "keep":
         log_info("安装前执行 keep 模式：卸载程序但保留数据（pm uninstall -k --user 0）")
         run([adb, "-s", device, "shell", "pm", "uninstall", "-k", "--user", "0", package], check=False, concise=True)
-        install_cmd = [adb, "-s", device, "install", str(signed_apk)]
+        install_cmd = [*base_install_cmd, str(signed_apk)]
     elif install_mode == "reinstall":
         log_info("安装前保留应用数据：跳过卸载")
-        install_cmd = [adb, "-s", device, "install", "-r", str(signed_apk)]
+        install_cmd = [*base_install_cmd, "-r", str(signed_apk)]
     else:
         raise RuntimeError(f"Unknown install mode: {install_mode}")
     log_info("安装测试 APK 到设备")

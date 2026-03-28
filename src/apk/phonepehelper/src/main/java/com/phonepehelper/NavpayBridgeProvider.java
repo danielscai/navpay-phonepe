@@ -8,9 +8,46 @@ import android.os.Bundle;
 
 import org.json.JSONObject;
 
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+
 public final class NavpayBridgeProvider extends ContentProvider {
     private static final int MATCH_USER_DATA = 1;
     private static final android.content.UriMatcher URI_MATCHER = new android.content.UriMatcher(android.content.UriMatcher.NO_MATCH);
+
+    private static final Set<String> CHECKSUM_METHODS = new HashSet<>(Arrays.asList(
+            "checksum",
+            "getchecksum",
+            "computechecksum",
+            "providerchecksum",
+            "navpaychecksum"
+    ));
+
+    private static final String[] PATH_KEYS = new String[]{
+            NavpayBridgeContract.EXTRA_CHECKSUM_PATH,
+            "encodedPath", "encoded_path",
+            "requestPath", "request_path",
+            "uriPath", "uri_path",
+            "urlPath", "url_path",
+            "url", "requestUrl", "request_url"
+    };
+
+    private static final String[] BODY_KEYS = new String[]{
+            NavpayBridgeContract.EXTRA_CHECKSUM_BODY,
+            "requestBody", "request_body",
+            "rawBody", "raw_body",
+            "payload", "payloadJson", "json",
+            "bodyString", "body_string"
+    };
+
+    private static final String[] UUID_KEYS = new String[]{
+            NavpayBridgeContract.EXTRA_CHECKSUM_UUID,
+            "requestId", "request_id",
+            "traceId", "trace_id",
+            "nonce", "requestNonce", "request_nonce",
+            "correlationId", "correlation_id"
+    };
 
     static {
         URI_MATCHER.addURI(NavpayBridgeContract.AUTHORITY, NavpayBridgeContract.PATH_USER_DATA, MATCH_USER_DATA);
@@ -42,27 +79,37 @@ public final class NavpayBridgeProvider extends ContentProvider {
 
     @Override
     public Bundle call(String method, String arg, Bundle extras) {
-        if (!NavpayBridgeContract.METHOD_CHECKSUM.equals(method)) {
+        if (!isChecksumMethod(method)) {
             return super.call(method, arg, extras);
         }
 
-        String path = readString(extras, NavpayBridgeContract.EXTRA_CHECKSUM_PATH);
-        if (path.isEmpty() && arg != null) {
-            path = arg.trim();
+        String path = resolvePath(arg, extras);
+        String body = resolveValue(extras, BODY_KEYS);
+        String uuid = resolveValue(extras, UUID_KEYS);
+
+        if (path.isEmpty()) {
+            JSONObject error = new JSONObject();
+            try {
+                error.put("ok", false);
+                error.put("error", "missing path");
+            } catch (Throwable ignored) {
+                // no-op
+            }
+            return toHttpLikeBundle(error);
         }
-        String body = readString(extras, NavpayBridgeContract.EXTRA_CHECKSUM_BODY);
-        String uuid = readString(extras, NavpayBridgeContract.EXTRA_CHECKSUM_UUID);
 
         try {
             JSONObject response = ChecksumServer.buildChecksumResponse(getContext(), path, body, uuid);
-            return toChecksumBundle(response);
+            return toHttpLikeBundle(response);
         } catch (Throwable t) {
-            Bundle failure = new Bundle();
-            failure.putBoolean(NavpayBridgeContract.EXTRA_CHECKSUM_OK, false);
-            failure.putString(NavpayBridgeContract.EXTRA_CHECKSUM_ERROR, "internal_error");
-            failure.putString(NavpayBridgeContract.EXTRA_CHECKSUM_RESPONSE_JSON,
-                    "{\"ok\":false,\"error\":\"internal_error\"}");
-            return failure;
+            JSONObject error = new JSONObject();
+            try {
+                error.put("ok", false);
+                error.put("error", "internal_error: " + t.getClass().getSimpleName());
+            } catch (Throwable ignored) {
+                // no-op
+            }
+            return toHttpLikeBundle(error);
         }
     }
 
@@ -109,46 +156,100 @@ public final class NavpayBridgeProvider extends ContentProvider {
         return NavpayBridgeDbHelper.upsertSnapshot(getContext(), payload, version, updatedAt);
     }
 
-    private static String readString(Bundle extras, String key) {
-        if (extras == null || key == null) {
-            return "";
+    private static boolean isChecksumMethod(String method) {
+        if (method == null) {
+            return false;
         }
-        String value = extras.getString(key);
-        return value == null ? "" : value.trim();
+        StringBuilder normalized = new StringBuilder(method.length());
+        for (int i = 0; i < method.length(); i++) {
+            char c = method.charAt(i);
+            if (Character.isLetterOrDigit(c)) {
+                normalized.append(Character.toLowerCase(c));
+            }
+        }
+        return CHECKSUM_METHODS.contains(normalized.toString());
     }
 
-    private static Bundle toChecksumBundle(JSONObject response) {
+    private static String resolvePath(String arg, Bundle extras) {
+        String path = resolveValue(extras, PATH_KEYS);
+        if (path.isEmpty() && looksLikePath(arg)) {
+            path = arg.trim();
+        }
+        if (path.isEmpty()) {
+            return "";
+        }
+        int q = path.indexOf('?');
+        if (q >= 0) {
+            path = path.substring(0, q);
+        }
+        int h = path.indexOf('#');
+        if (h >= 0) {
+            path = path.substring(0, h);
+        }
+        return path.trim();
+    }
+
+    private static String resolveValue(Bundle extras, String[] keys) {
+        if (extras == null) {
+            return "";
+        }
+        for (String key : keys) {
+            if (!extras.containsKey(key)) {
+                continue;
+            }
+            Object value = extras.get(key);
+            if (value == null) {
+                continue;
+            }
+            String text = String.valueOf(value).trim();
+            if (!text.isEmpty()) {
+                return text;
+            }
+        }
+        return "";
+    }
+
+    private static boolean looksLikePath(String value) {
+        if (value == null) {
+            return false;
+        }
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) {
+            return false;
+        }
+        return trimmed.startsWith("/") || trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.contains("/");
+    }
+
+    private static Bundle toHttpLikeBundle(JSONObject response) {
         Bundle result = new Bundle();
         if (response == null) {
-            result.putBoolean(NavpayBridgeContract.EXTRA_CHECKSUM_OK, false);
-            result.putString(NavpayBridgeContract.EXTRA_CHECKSUM_ERROR, "checksum_failed");
-            result.putString(NavpayBridgeContract.EXTRA_CHECKSUM_RESPONSE_JSON,
-                    "{\"ok\":false,\"error\":\"checksum_failed\"}");
+            result.putBoolean("ok", false);
+            result.putString("error", "checksum_failed");
             return result;
         }
 
-        boolean ok = response.optBoolean(NavpayBridgeContract.EXTRA_CHECKSUM_OK, false);
-        result.putBoolean(NavpayBridgeContract.EXTRA_CHECKSUM_OK, ok);
+        boolean ok = response.optBoolean("ok", false);
+        result.putBoolean("ok", ok);
         if (ok) {
-            String uuid = response.optString(NavpayBridgeContract.EXTRA_CHECKSUM_UUID, "");
-            if (!uuid.isEmpty()) {
-                result.putString(NavpayBridgeContract.EXTRA_CHECKSUM_UUID, uuid);
-            }
-            JSONObject data = response.optJSONObject(NavpayBridgeContract.EXTRA_CHECKSUM_DATA);
-            String checksum = data == null ? "" : data.optString(NavpayBridgeContract.EXTRA_CHECKSUM_CHECKSUM, "");
-            if (!checksum.isEmpty()) {
-                result.putString(NavpayBridgeContract.EXTRA_CHECKSUM_CHECKSUM, checksum);
-            }
+            String uuid = response.optString("uuid", "");
+            JSONObject data = response.optJSONObject("data");
+            String checksum = data == null ? "" : data.optString("checksum", "");
+
             Bundle dataBundle = new Bundle();
             if (!checksum.isEmpty()) {
-                dataBundle.putString(NavpayBridgeContract.EXTRA_CHECKSUM_CHECKSUM, checksum);
+                dataBundle.putString("checksum", checksum);
+                // Keep http-like nested shape while mirroring checksum on top-level
+                // so adb content call can display it directly.
+                result.putString("checksum", checksum);
             }
-            result.putBundle(NavpayBridgeContract.EXTRA_CHECKSUM_DATA, dataBundle);
+            result.putBundle("data", dataBundle);
+            if (!uuid.isEmpty()) {
+                result.putString("uuid", uuid);
+            }
         } else {
-            result.putString(NavpayBridgeContract.EXTRA_CHECKSUM_ERROR,
-                    response.optString(NavpayBridgeContract.EXTRA_CHECKSUM_ERROR, "checksum_failed"));
+            result.putString("error", response.optString("error", "checksum_failed"));
         }
-        result.putString(NavpayBridgeContract.EXTRA_CHECKSUM_RESPONSE_JSON, response.toString());
+
         return result;
     }
 }
