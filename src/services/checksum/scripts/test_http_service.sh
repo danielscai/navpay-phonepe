@@ -6,21 +6,18 @@ PORT="${CHECKSUM_HTTP_PORT:-19190}"
 BASE_URL="http://127.0.0.1:${PORT}"
 PAYLOAD='{"path":"/apis/tstore/v2/units/changes","body":"","uuid":"8e8f7e5c-3f14-4cb3-bf70-8ec3dbf5a001"}'
 STARTED_HERE=0
-SERVICE_PID=""
 LOG_FILE="/tmp/navpay_checksum_http_${PORT}.log"
 
 cleanup() {
-  if [[ "${STARTED_HERE}" == "1" && -n "${SERVICE_PID}" ]]; then
-    kill "${SERVICE_PID}" >/dev/null 2>&1 || true
-    wait "${SERVICE_PID}" >/dev/null 2>&1 || true
+  if [[ "${STARTED_HERE}" == "1" ]]; then
+    CHECKSUM_HTTP_PORT="${PORT}" "${ROOT_DIR}/src/services/checksum/scripts/stop_http_service.sh" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
 
 if ! curl -sS -m 2 "${BASE_URL}/health" >/dev/null 2>&1; then
   : > "${LOG_FILE}"
-  CHECKSUM_HTTP_PORT="${PORT}" "${ROOT_DIR}/src/services/checksum/scripts/start_http_service.sh" >"${LOG_FILE}" 2>&1 &
-  SERVICE_PID=$!
+  CHECKSUM_HTTP_PORT="${PORT}" "${ROOT_DIR}/src/services/checksum/scripts/start_http_service.sh" >"${LOG_FILE}" 2>&1
   STARTED_HERE=1
   for _ in $(seq 1 30); do
     if curl -sS -m 2 "${BASE_URL}/health" >/dev/null 2>&1; then

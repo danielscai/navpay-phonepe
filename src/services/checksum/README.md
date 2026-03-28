@@ -54,6 +54,20 @@ bash src/services/checksum/scripts/init_runtime.sh \
 yarn checksum:start
 ```
 
+说明：`checksum:start` 只会启动编译产物 `target/checksum-service.jar`，不会触发编译。请先执行 `yarn checksum:build`。
+
+停止服务：
+
+```bash
+yarn checksum:stop
+```
+
+手动编译服务（生成可运行 jar）：
+
+```bash
+yarn checksum:build
+```
+
 测试服务：
 
 ```bash
@@ -199,7 +213,9 @@ UPDATE_REAL_FIXTURE=1 bash scripts/validate_real_fixture.sh
 - Java 服务入口：`src/main/java/com/navpay/phonepe/unidbg/ChecksumHttpService.java`
 - probe：`src/main/java/com/navpay/phonepe/unidbg/UnidbgChecksumProbe.java`
 - runtime 初始化器：`src/main/java/com/navpay/phonepe/unidbg/ChecksumRuntimeInitializer.java`
+- 编译脚本：`scripts/build_http_service.sh`
 - 启动脚本：`scripts/start_http_service.sh`
+- 停止脚本：`scripts/stop_http_service.sh`
 - runtime 初始化脚本：`scripts/init_runtime.sh`
 - 测试脚本：`scripts/test_http_service.sh`
 - 技术说明：`TECHNICAL.md`

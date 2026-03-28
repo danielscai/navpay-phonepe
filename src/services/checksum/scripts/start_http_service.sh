@@ -5,6 +5,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 SERVICE_DIR="${ROOT_DIR}/src/services/checksum"
 PORT="${CHECKSUM_HTTP_PORT:-19190}"
 RUNTIME_DIR="${PROBE_RUNTIME_ROOT:-${SERVICE_DIR}/runtime}"
+ARTIFACT_PATH="${CHECKSUM_ARTIFACT_PATH:-${SERVICE_DIR}/target/checksum-service.jar}"
+RUN_DIR="${SERVICE_DIR}/run"
+PID_FILE="${RUN_DIR}/checksum-http-${PORT}.pid"
+LOG_FILE="${RUN_DIR}/checksum-http-${PORT}.log"
 
 if [[ ! -f "${RUNTIME_DIR}/manifest.json" ]]; then
   echo "missing runtime manifest: ${RUNTIME_DIR}/manifest.json" >&2
@@ -32,8 +36,37 @@ then
   exit 2
 fi
 
-mvn -f "${SERVICE_DIR}/pom.xml" -q -DskipTests compile
+if [[ ! -f "${ARTIFACT_PATH}" ]]; then
+  echo "missing compiled artifact: ${ARTIFACT_PATH}" >&2
+  echo "run: yarn checksum:build" >&2
+  exit 2
+fi
 
-CHECKSUM_HTTP_PORT="${PORT}" PROBE_RUNTIME_ROOT="${RUNTIME_DIR}" \
-  mvn -f "${SERVICE_DIR}/pom.xml" -q -DskipTests exec:java \
-  -Dexec.mainClass=com.navpay.phonepe.unidbg.ChecksumHttpService
+mkdir -p "${RUN_DIR}"
+: > "${LOG_FILE}"
+
+nohup env CHECKSUM_HTTP_PORT="${PORT}" PROBE_RUNTIME_ROOT="${RUNTIME_DIR}" \
+  bash -lc "cd '${ROOT_DIR}' && exec java -jar '${ARTIFACT_PATH}'" >>"${LOG_FILE}" 2>&1 &
+SERVICE_PID=$!
+echo "${SERVICE_PID}" > "${PID_FILE}"
+
+for _ in $(seq 1 30); do
+  if curl -sS -m 2 "${BASE_URL}/health" >/dev/null 2>&1; then
+    echo "checksum service started on ${BASE_URL}"
+    echo "pid: ${SERVICE_PID}"
+    echo "log: ${LOG_FILE}"
+    exit 0
+  fi
+  if ! kill -0 "${SERVICE_PID}" >/dev/null 2>&1; then
+    echo "checksum service exited unexpectedly; see log: ${LOG_FILE}" >&2
+    rm -f "${PID_FILE}"
+    exit 2
+  fi
+  sleep 1
+done
+
+echo "checksum service startup timeout; see log: ${LOG_FILE}" >&2
+kill "${SERVICE_PID}" >/dev/null 2>&1 || true
+wait "${SERVICE_PID}" >/dev/null 2>&1 || true
+rm -f "${PID_FILE}"
+exit 2

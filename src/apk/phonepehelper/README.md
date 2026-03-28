@@ -11,6 +11,7 @@
 - UPI / 请求元数据 JSON 组装
 - MPIN 记录（仅长度日志）
 - 5 秒定时器触发同步逻辑（本地日志）
+- 固定周期强制上传 snapshot（默认 1 小时，避免“仅变更触发”导致后台长期不更新）
 - Activity 生命周期日志（用于确认注入生效）
 
 ## 目录结构
@@ -67,6 +68,9 @@ adb logcat -s PPHelper
   - 模拟器优先：`http://10.0.2.2:3000/api/intercept/phonepe/snapshot`
   - 真机优先：`http://127.0.0.1:3000/api/intercept/phonepe/snapshot`（配合 `adb reverse tcp:3000 tcp:3000`）
 - 可通过 JVM 属性覆盖地址：`-Dnavpay.snapshot.endpoint=<url>`
+- 可通过 JVM 属性覆盖强制上传频率（毫秒）：`-Dnavpay.snapshot.force_interval_ms=<ms>`
+  - 默认：`3600000`
+  - 最小：`5000`（低于该值会自动钳制）
 - 上传内容：`{ androidId, payload }`
 - `payload` 由 `PhonePeHelper.buildSnapshotForNavpay()` 构建，包含请求元数据和本地采集快照
 

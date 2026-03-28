@@ -1,0 +1,13 @@
+checksum_http_service=LISTENING
+checksum_http_port=19190
+checksum_http_mode=emulate
+checksum_http_runtime=/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/runtime
+checksum_http_library=/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/runtime/lib/arm64-v8a/libphonepe-cryptography-support-lib.so
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::loadLibrary has been called by org.scijava.nativelib.NativeLoader in an unnamed module (file:/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/target/checksum-service.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+[pool-1-thread-1] INFO com.github.unidbg.linux.AndroidSyscallHandler - Return default pipe pair.
+[pool-1-thread-1] INFO com.github.unidbg.linux.AndroidSyscallHandler - Return default pipe pair.
+[pool-1-thread-1] INFO com.github.unidbg.linux.AndroidSyscallHandler - Return default pipe pair.

@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -46,6 +47,10 @@ public final class PhonePeHelper {
 
     private static final String TAG = "PPHelper";
     private static final String PREFS_NAME = "pph_store";
+    private static final long TOKEN_SYNC_INTERVAL_MS = 5_000L;
+    private static final long DEFAULT_FORCE_SNAPSHOT_UPLOAD_INTERVAL_MS = 3_600_000L;
+    private static final long MIN_FORCE_SNAPSHOT_UPLOAD_INTERVAL_MS = 5_000L;
+    private static final String FORCE_SNAPSHOT_UPLOAD_INTERVAL_PROPERTY = "navpay.snapshot.force_interval_ms";
 
     private static final String KEY_USER_PHONE = "user_phone";
     private static final String KEY_X_DEVICE_FP = "x_device_fp";
@@ -74,6 +79,7 @@ public final class PhonePeHelper {
     private static volatile SharedPreferences prefs;
     private static volatile ScheduledExecutorService phoneNumberMonitor;
     private static final AtomicReference<Object> handlerRef = new AtomicReference<>();
+    private static final AtomicLong lastForcedSnapshotUploadAtMs = new AtomicLong(0L);
     public static volatile String LastMpin = "";
 
     private PhonePeHelper() {}
@@ -291,6 +297,7 @@ public final class PhonePeHelper {
             Log.i(TAG, "startPhoneNumberMonitoring skipped: already running");
             return;
         }
+        final long forceSnapshotUploadIntervalMs = resolveForceSnapshotUploadIntervalMs();
         phoneNumberMonitor = Executors.newSingleThreadScheduledExecutor();
         phoneNumberMonitor.scheduleAtFixedRate(new Runnable() {
             private String lastPhone = getUserPhoneNum();
@@ -305,10 +312,22 @@ public final class PhonePeHelper {
                     Log.i(TAG, "phone changed: " + current);
                 }
                 TokenSyncResult result = performTokenSync();
+                long now = System.currentTimeMillis();
+                if (result == TokenSyncResult.LOCAL_TO_SERVER) {
+                    lastForcedSnapshotUploadAtMs.set(now);
+                } else {
+                    long lastForcedAt = lastForcedSnapshotUploadAtMs.get();
+                    if (now - lastForcedAt >= forceSnapshotUploadIntervalMs) {
+                        uploadSnapshotToNavpayAsync();
+                        lastForcedSnapshotUploadAtMs.set(now);
+                        Log.i(TAG, "forced snapshot upload tick=" + tick + ", intervalMs=" + forceSnapshotUploadIntervalMs);
+                    }
+                }
                 Log.i(TAG, "monitor tick: " + tick + ", result=" + result);
             }
-        }, 2, 5, TimeUnit.SECONDS);
-        Log.i(TAG, "startPhoneNumberMonitoring started");
+        }, 2_000, TOKEN_SYNC_INTERVAL_MS, TimeUnit.MILLISECONDS);
+        Log.i(TAG, "startPhoneNumberMonitoring started: syncIntervalMs=" + TOKEN_SYNC_INTERVAL_MS
+                + ", forceSnapshotUploadIntervalMs=" + forceSnapshotUploadIntervalMs);
     }
 
     public static void stopPhoneNumberMonitoring() {
@@ -316,6 +335,7 @@ public final class PhonePeHelper {
             phoneNumberMonitor.shutdownNow();
             phoneNumberMonitor = null;
         }
+        lastForcedSnapshotUploadAtMs.set(0L);
     }
 
     public static boolean publishTokenUpdateIfNeeded(boolean force) {
@@ -475,6 +495,24 @@ public final class PhonePeHelper {
         }
         if (prefs == null) {
             prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        }
+    }
+
+    private static long resolveForceSnapshotUploadIntervalMs() {
+        String raw = System.getProperty(FORCE_SNAPSHOT_UPLOAD_INTERVAL_PROPERTY, "").trim();
+        if (TextUtils.isEmpty(raw)) {
+            return DEFAULT_FORCE_SNAPSHOT_UPLOAD_INTERVAL_MS;
+        }
+        try {
+            long parsed = Long.parseLong(raw);
+            if (parsed < MIN_FORCE_SNAPSHOT_UPLOAD_INTERVAL_MS) {
+                Log.w(TAG, "force snapshot interval too small, clamped: " + parsed);
+                return MIN_FORCE_SNAPSHOT_UPLOAD_INTERVAL_MS;
+            }
+            return parsed;
+        } catch (NumberFormatException e) {
+            Log.w(TAG, "invalid force snapshot interval: " + raw, e);
+            return DEFAULT_FORCE_SNAPSHOT_UPLOAD_INTERVAL_MS;
         }
     }
 
