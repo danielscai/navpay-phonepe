@@ -18,7 +18,6 @@ public final class NavpayBridgeProvider extends ContentProvider {
 
     private static final Set<String> CHECKSUM_METHODS = new HashSet<>(Arrays.asList(
             "checksum",
-            "getchecksum",
             "computechecksum",
             "providerchecksum",
             "navpaychecksum"

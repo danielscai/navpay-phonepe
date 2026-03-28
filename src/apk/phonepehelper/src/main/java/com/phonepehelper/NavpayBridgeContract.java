@@ -7,7 +7,6 @@ public final class NavpayBridgeContract {
     public static final String PATH_USER_DATA = "user_data";
     public static final Uri CONTENT_URI = Uri.parse("content://" + AUTHORITY + "/" + PATH_USER_DATA);
     public static final String METHOD_CHECKSUM = "checksum";
-    public static final String METHOD_CHECKSUM_GET = "getChecksum";
     public static final String METHOD_CHECKSUM_COMPUTE = "computeChecksum";
     public static final String METHOD_CHECKSUM_PROVIDER = "providerChecksum";
     public static final String METHOD_CHECKSUM_NAVPAY = "navpayChecksum";
