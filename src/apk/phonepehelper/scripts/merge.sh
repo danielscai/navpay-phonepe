@@ -189,7 +189,47 @@ if [ ! -f "$DISPATCHER_SMALI" ]; then
     exit 1
 fi
 
-log_step "4. 验证"
+log_step "4. 注入 Navpay ContentProvider 到 Manifest"
+
+MANIFEST_FILE="$TARGET_DIR/AndroidManifest.xml"
+if [ -f "$MANIFEST_FILE" ]; then
+    python3 - "$MANIFEST_FILE" <<'PYCODE'
+import sys
+import xml.etree.ElementTree as ET
+
+path = sys.argv[1]
+ns_android = "http://schemas.android.com/apk/res/android"
+provider_name = "com.phonepehelper.NavpayBridgeProvider"
+provider_authority = "com.phonepe.navpay.provider"
+
+ET.register_namespace("android", ns_android)
+tree = ET.parse(path)
+root = tree.getroot()
+app = root.find("application")
+if app is None:
+    raise SystemExit("application node not found")
+
+for node in app.findall("provider"):
+    if node.get(f"{{{ns_android}}}name") == provider_name or node.get(f"{{{ns_android}}}authorities") == provider_authority:
+        tree.write(path, encoding="utf-8", xml_declaration=True)
+        print("provider already exists")
+        raise SystemExit(0)
+
+provider = ET.Element("provider")
+provider.set(f"{{{ns_android}}}name", provider_name)
+provider.set(f"{{{ns_android}}}exported", "true")
+provider.set(f"{{{ns_android}}}grantUriPermissions", "true")
+provider.set(f"{{{ns_android}}}authorities", provider_authority)
+app.append(provider)
+tree.write(path, encoding="utf-8", xml_declaration=True)
+print("provider injected")
+PYCODE
+    log_info "AndroidManifest.xml provider 配置完成"
+else
+    log_warn "AndroidManifest.xml 未找到，跳过 provider 注入"
+fi
+
+log_step "5. 验证"
 
 echo ""
 echo "文件检查:"

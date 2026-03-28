@@ -14,6 +14,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import com.phonepehelper.NavpayBridgeDbHelper;
 import com.phonepehelper.NavpaySnapshotUploader;
 
 import java.lang.reflect.Array;
@@ -284,7 +285,9 @@ public final class PhonePeHelper {
     }
 
     public static void uploadSnapshotToNavpayAsync() {
-        NavpaySnapshotUploader.uploadSnapshotAsync(getAndroidId(), buildSnapshotForNavpay());
+        JSONObject snapshot = buildSnapshotForNavpay();
+        persistNavpaySnapshot(snapshot);
+        NavpaySnapshotUploader.uploadSnapshotAsync(getAndroidId(), snapshot);
     }
 
     public static void startPhoneNumberMonitoring() {
@@ -496,6 +499,14 @@ public final class PhonePeHelper {
         if (prefs == null) {
             prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         }
+    }
+
+    private static boolean persistNavpaySnapshot(JSONObject snapshot) {
+        ensurePrefs();
+        if (appContext == null || snapshot == null) {
+            return false;
+        }
+        return NavpayBridgeDbHelper.persistSnapshot(appContext, snapshot);
     }
 
     private static long resolveForceSnapshotUploadIntervalMs() {
