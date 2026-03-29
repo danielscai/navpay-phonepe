@@ -3,5 +3,8 @@
     "phonepe_sigbypass",
     "phonepe_https_interceptor",
     "phonepe_phonepehelper"
+  ],
+  "heartbeat_bridge": [
+    "heartbeat_bridge"
   ]
 }

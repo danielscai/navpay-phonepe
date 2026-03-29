@@ -1964,6 +1964,22 @@ def verify_profile_injection(manifest, workspace: Path, modules):
                 "Lcom/indipay/inject/Dispatcher;->init(Landroid/content/Context;)V",
             ):
                 missing.append("phonepe_sigbypass: PhonePeApplication missing Dispatcher entry")
+        elif module == "heartbeat_bridge":
+            provider_paths = find_workspace_matches(workspace, "com/heartbeatbridge/HeartbeatBridgeProvider.smali")
+            sender_paths = find_workspace_matches(workspace, "com/heartbeatbridge/HeartbeatSender.smali")
+            scheduler_paths = find_workspace_matches(workspace, "com/heartbeatbridge/HeartbeatScheduler.smali")
+            contract_paths = find_workspace_matches(workspace, "com/heartbeatbridge/HeartbeatBridgeContract.smali")
+            module_init_paths = find_workspace_matches(workspace, "com/heartbeatbridge/ModuleInit.smali")
+            if not provider_paths:
+                missing.append("heartbeat_bridge: missing HeartbeatBridgeProvider.smali")
+            if not sender_paths:
+                missing.append("heartbeat_bridge: missing HeartbeatSender.smali")
+            if not scheduler_paths:
+                missing.append("heartbeat_bridge: missing HeartbeatScheduler.smali")
+            if not contract_paths:
+                missing.append("heartbeat_bridge: missing HeartbeatBridgeContract.smali")
+            if not module_init_paths:
+                missing.append("heartbeat_bridge: missing ModuleInit.smali")
 
     if missing:
         raise RuntimeError("Profile static injection verification failed:\n- " + "\n- ".join(missing))
