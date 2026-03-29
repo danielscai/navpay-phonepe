@@ -29,28 +29,4 @@ public class LogEndpointResolverTest {
             LogEndpointResolver.resolve(true, "https://example.com/custom")
         );
     }
-
-    @Test
-    public void resolvesDebugHeartbeatDefaultToAdminDeviceHeartbeatApi() {
-        assertEquals(
-            "http://10.0.2.2:3000/api/device/heartbeat",
-            LogEndpointResolver.resolveHeartbeatEndpoint(true, null)
-        );
-    }
-
-    @Test
-    public void resolvesReleaseHeartbeatDefaultToAdminDeviceHeartbeatApi() {
-        assertEquals(
-            "http://10.0.2.2:3000/api/device/heartbeat",
-            LogEndpointResolver.resolveHeartbeatEndpoint(false, null)
-        );
-    }
-
-    @Test
-    public void heartbeatOverrideUrlWinsOverBuildTypeDefaults() {
-        assertEquals(
-            "https://example.com/device-heartbeat",
-            LogEndpointResolver.resolveHeartbeatEndpoint(true, "https://example.com/device-heartbeat")
-        );
-    }
 }

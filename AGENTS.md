@@ -16,6 +16,10 @@ This repository is a security research and reverse‑engineering workspace for A
 
 - `./tools/decompile.sh --all`: regenerate all decompiled artifacts into `decompiled/`.
 - `./tools/decompile.sh pev70`: decompile a single sample (see `--help` for options).
+- Latest APK release workflow (required):
+  - Build only from repo root with `yarn apk`.
+  - Install/verify on emulator with `yarn test` (which runs the orchestrated test/install flow).
+  - Do **not** treat `src/apk/https_interceptor` as an independently shippable APK path for final validation.
 - `cd src/https_interceptor && ./gradlew assembleDebug`: build the demo APK.
 - `cd src/log_server && npm run start`: run the log server (use `npm run dev` for watch mode).
 - `cd src/log_server && ./start.sh`: convenience script (installs deps, sets `adb reverse`, starts server).

@@ -58,8 +58,9 @@ public class LogSender {
     private static final int MAX_FAILURES = 10;
     private static final String DEFAULT_SOURCE_APP = "phonepe";
     private static final AndroidIdCache ANDROID_ID_CACHE = new AndroidIdCache();
-    private static final long HEARTBEAT_INTERVAL_MS = 10000L;
-    private static final String HEARTBEAT_APP_NAME = "phonepe";
+    private static final long HEARTBEAT_INTERVAL_MS = 30000L;
+    private static final String HEARTBEAT_SOURCE_APP = "phonepe";
+    private static final String HEARTBEAT_PSEUDO_URL = "app://phonepe/heartbeat";
     private static final String DEVICE_COMMAND_HEADER = "X-Navpay-Device-Command";
     private static final String DEVICE_COMMAND_ACK_HEADER = "X-Navpay-Device-Command-Ack";
     private static final String TRIGGER_PHONEPE_SNAPSHOT_COMMAND = "trigger_phonepe_snapshot_once";
@@ -93,7 +94,7 @@ public class LogSender {
 
         // 启动发送线程
         executor.submit(this::sendLoop);
-        heartbeatExecutor.scheduleWithFixedDelay(
+        heartbeatExecutor.scheduleAtFixedRate(
             this::enqueueHeartbeatLog,
             HEARTBEAT_INTERVAL_MS,
             HEARTBEAT_INTERVAL_MS,
@@ -175,14 +176,16 @@ public class LogSender {
         JSONObject json = toJson(buildHeartbeatPayloadMap(getAndroidId(), System.currentTimeMillis()));
         boolean sent = sendHeartbeat(json);
         if (!sent) {
-            Log.w(TAG, "Failed to send heartbeat to " + LogEndpointResolver.resolveHeartbeatEndpoint((String) null));
+            Log.w(TAG, "Failed to send heartbeat to " + LogEndpointResolver.resolve((String) null));
         }
     }
 
     static Map<String, Object> buildHeartbeatPayloadMap(String clientDeviceId, long timestampMs) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("timestamp", timestampMs);
-        payload.put("appName", HEARTBEAT_APP_NAME);
+        payload.put("sourceApp", HEARTBEAT_SOURCE_APP);
+        payload.put("url", HEARTBEAT_PSEUDO_URL);
+        payload.put("method", "HEARTBEAT");
         payload.put("clientDeviceId", clientDeviceId == null || clientDeviceId.trim().isEmpty() ? "unknown" : clientDeviceId.trim());
         return payload;
     }
@@ -233,7 +236,7 @@ public class LogSender {
     }
 
     private boolean sendHeartbeat(JSONObject heartbeat) {
-        String endpoint = LogEndpointResolver.resolveHeartbeatEndpoint((String) null);
+        String endpoint = LogEndpointResolver.resolve((String) null);
         return sendToEndpoint(endpoint, heartbeat, false);
     }
 

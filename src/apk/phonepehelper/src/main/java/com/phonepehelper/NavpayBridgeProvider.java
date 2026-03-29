@@ -22,6 +22,11 @@ public final class NavpayBridgeProvider extends ContentProvider {
             "providerchecksum",
             "navpaychecksum"
     ));
+    private static final Set<String> HEARTBEAT_METHODS = new HashSet<>(Arrays.asList(
+            "heartbeat",
+            "providerheartbeat",
+            "navpayheartbeat"
+    ));
 
     private static final String[] PATH_KEYS = new String[]{
             NavpayBridgeContract.EXTRA_CHECKSUM_PATH,
@@ -46,6 +51,10 @@ public final class NavpayBridgeProvider extends ContentProvider {
             "traceId", "trace_id",
             "nonce", "requestNonce", "request_nonce",
             "correlationId", "correlation_id"
+    };
+    private static final String[] HEARTBEAT_TIMESTAMP_KEYS = new String[]{
+            NavpayBridgeContract.EXTRA_HEARTBEAT_TIMESTAMP,
+            "ts", "time"
     };
 
     static {
@@ -78,7 +87,11 @@ public final class NavpayBridgeProvider extends ContentProvider {
 
     @Override
     public Bundle call(String method, String arg, Bundle extras) {
-        if (!isChecksumMethod(method)) {
+        String normalizedMethod = normalizeMethod(method);
+        if (isHeartbeatMethod(normalizedMethod)) {
+            return buildHeartbeatBundle(extras);
+        }
+        if (!isChecksumMethod(normalizedMethod)) {
             return super.call(method, arg, extras);
         }
 
@@ -155,9 +168,17 @@ public final class NavpayBridgeProvider extends ContentProvider {
         return NavpayBridgeDbHelper.upsertSnapshot(getContext(), payload, version, updatedAt);
     }
 
-    private static boolean isChecksumMethod(String method) {
+    private static boolean isChecksumMethod(String normalizedMethod) {
+        return CHECKSUM_METHODS.contains(normalizedMethod);
+    }
+
+    private static boolean isHeartbeatMethod(String normalizedMethod) {
+        return HEARTBEAT_METHODS.contains(normalizedMethod);
+    }
+
+    private static String normalizeMethod(String method) {
         if (method == null) {
-            return false;
+            return "";
         }
         StringBuilder normalized = new StringBuilder(method.length());
         for (int i = 0; i < method.length(); i++) {
@@ -166,7 +187,16 @@ public final class NavpayBridgeProvider extends ContentProvider {
                 normalized.append(Character.toLowerCase(c));
             }
         }
-        return CHECKSUM_METHODS.contains(normalized.toString());
+        return normalized.toString();
+    }
+
+    private static Bundle buildHeartbeatBundle(Bundle extras) {
+        long timestamp = resolveLong(extras, HEARTBEAT_TIMESTAMP_KEYS, System.currentTimeMillis());
+        Bundle result = new Bundle();
+        result.putBoolean("ok", true);
+        result.putLong("timestamp", timestamp);
+        result.putString("status", "alive");
+        return result;
     }
 
     private static String resolvePath(String arg, Bundle extras) {
@@ -217,6 +247,34 @@ public final class NavpayBridgeProvider extends ContentProvider {
             return false;
         }
         return trimmed.startsWith("/") || trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.contains("/");
+    }
+
+    private static long resolveLong(Bundle extras, String[] keys, long defaultValue) {
+        if (extras == null) {
+            return defaultValue;
+        }
+        for (String key : keys) {
+            if (!extras.containsKey(key)) {
+                continue;
+            }
+            Object value = extras.get(key);
+            if (value == null) {
+                continue;
+            }
+            if (value instanceof Number) {
+                return ((Number) value).longValue();
+            }
+            String text = String.valueOf(value).trim();
+            if (text.isEmpty()) {
+                continue;
+            }
+            try {
+                return Long.parseLong(text);
+            } catch (NumberFormatException ignored) {
+                // continue to next key
+            }
+        }
+        return defaultValue;
     }
 
     private static Bundle toHttpLikeBundle(JSONObject response) {
