@@ -23,6 +23,22 @@ public class LogEndpointResolverTest {
     }
 
     @Test
+    public void resolvesHeartbeatDefaultToDeviceHeartbeatApi() {
+        assertEquals(
+            "http://10.0.2.2:3000/api/device/heartbeat",
+            LogEndpointResolver.resolveHeartbeat(null)
+        );
+    }
+
+    @Test
+    public void heartbeatOverrideWinsOverDefault() {
+        assertEquals(
+            "https://example.com/custom-heartbeat",
+            LogEndpointResolver.resolveHeartbeat("https://example.com/custom-heartbeat")
+        );
+    }
+
+    @Test
     public void overrideUrlWinsOverBuildTypeDefaults() {
         assertEquals(
             "https://example.com/custom",

@@ -14,10 +14,12 @@ public class LogSenderHeartbeatTest {
         Map<String, Object> payload = LogSender.buildHeartbeatPayloadMap("cid-123", 1700000000123L);
 
         assertEquals(1700000000123L, payload.get("timestamp"));
-        assertEquals("phonepe", payload.get("sourceApp"));
-        assertEquals("app://phonepe/heartbeat", payload.get("url"));
-        assertEquals("HEARTBEAT", payload.get("method"));
+        assertEquals("phonepe", payload.get("appName"));
         assertEquals("cid-123", payload.get("clientDeviceId"));
+        assertEquals(3, payload.size());
+        assertFalse(payload.containsKey("sourceApp"));
+        assertFalse(payload.containsKey("url"));
+        assertFalse(payload.containsKey("method"));
         assertFalse(payload.containsKey("protocol"));
         assertFalse(payload.containsKey("status_code"));
     }

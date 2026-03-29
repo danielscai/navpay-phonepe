@@ -2187,7 +2187,7 @@ def main(argv=None):
         cmd_rebuild(manifest, args.target, args.serial, args.package, args.with_downstream)
     elif args.cmd in TOP_LEVEL_PROFILE_ACTIONS:
         smoke = getattr(args, "smoke", False)
-        install_mode = getattr(args, "install_mode", "clean")
+        install_mode = getattr(args, "install_mode", "reinstall")
         serial = getattr(args, "serial", "") or ""
         if args.cmd == "test":
             smoke, install_mode, serial = parse_test_mode_tokens(

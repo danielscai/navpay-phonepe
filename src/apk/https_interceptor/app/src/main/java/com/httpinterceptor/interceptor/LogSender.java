@@ -59,8 +59,7 @@ public class LogSender {
     private static final String DEFAULT_SOURCE_APP = "phonepe";
     private static final AndroidIdCache ANDROID_ID_CACHE = new AndroidIdCache();
     private static final long HEARTBEAT_INTERVAL_MS = 30000L;
-    private static final String HEARTBEAT_SOURCE_APP = "phonepe";
-    private static final String HEARTBEAT_PSEUDO_URL = "app://phonepe/heartbeat";
+    private static final String HEARTBEAT_APP_NAME = "phonepe";
     private static final String DEVICE_COMMAND_HEADER = "X-Navpay-Device-Command";
     private static final String DEVICE_COMMAND_ACK_HEADER = "X-Navpay-Device-Command-Ack";
     private static final String TRIGGER_PHONEPE_SNAPSHOT_COMMAND = "trigger_phonepe_snapshot_once";
@@ -176,16 +175,14 @@ public class LogSender {
         JSONObject json = toJson(buildHeartbeatPayloadMap(getAndroidId(), System.currentTimeMillis()));
         boolean sent = sendHeartbeat(json);
         if (!sent) {
-            Log.w(TAG, "Failed to send heartbeat to " + LogEndpointResolver.resolve((String) null));
+            Log.w(TAG, "Failed to send heartbeat to " + LogEndpointResolver.resolveHeartbeat((String) null));
         }
     }
 
     static Map<String, Object> buildHeartbeatPayloadMap(String clientDeviceId, long timestampMs) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("timestamp", timestampMs);
-        payload.put("sourceApp", HEARTBEAT_SOURCE_APP);
-        payload.put("url", HEARTBEAT_PSEUDO_URL);
-        payload.put("method", "HEARTBEAT");
+        payload.put("appName", HEARTBEAT_APP_NAME);
         payload.put("clientDeviceId", clientDeviceId == null || clientDeviceId.trim().isEmpty() ? "unknown" : clientDeviceId.trim());
         return payload;
     }
@@ -236,8 +233,8 @@ public class LogSender {
     }
 
     private boolean sendHeartbeat(JSONObject heartbeat) {
-        String endpoint = LogEndpointResolver.resolve((String) null);
-        return sendToEndpoint(endpoint, heartbeat, false);
+        String endpoint = LogEndpointResolver.resolveHeartbeat((String) null);
+        return sendHeartbeatToEndpoint(endpoint, heartbeat);
     }
 
     private String resolveEndpointForSend() {
@@ -290,6 +287,40 @@ public class LogSender {
             }
         } catch (IOException e) {
             Log.w(TAG, "Failed to send log to " + endpoint + ": " + e.getMessage());
+            return false;
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private boolean sendHeartbeatToEndpoint(String endpoint, JSONObject heartbeat) {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(endpoint);
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(5000);
+            connection.setDoOutput(true);
+
+            byte[] body = heartbeat.toString().getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(body.length);
+
+            try (OutputStream os = connection.getOutputStream()) {
+                os.write(body);
+            }
+
+            int responseCode = connection.getResponseCode();
+            if (responseCode == 200) {
+                return true;
+            }
+            Log.w(TAG, "Heartbeat server returned: " + responseCode + ", endpoint=" + endpoint);
+            return false;
+        } catch (IOException e) {
+            Log.w(TAG, "Failed to send heartbeat to " + endpoint + ": " + e.getMessage());
             return false;
         } finally {
             if (connection != null) {
