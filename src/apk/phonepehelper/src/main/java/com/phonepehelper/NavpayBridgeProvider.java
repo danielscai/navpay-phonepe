@@ -89,7 +89,10 @@ public final class NavpayBridgeProvider extends ContentProvider {
     public Bundle call(String method, String arg, Bundle extras) {
         String normalizedMethod = normalizeMethod(method);
         if (isHeartbeatMethod(normalizedMethod)) {
-            return buildHeartbeatBundle(extras);
+            Bundle result = buildHeartbeatBundle(extras);
+            long timestamp = result.getLong("timestamp", System.currentTimeMillis());
+            NavpayHeartbeatSender.sendHeartbeatAsync(getContext(), timestamp);
+            return result;
         }
         if (!isChecksumMethod(normalizedMethod)) {
             return super.call(method, arg, extras);

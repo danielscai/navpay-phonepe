@@ -23,8 +23,6 @@ import java.util.TimeZone;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 /**
  * 日志发送器
@@ -48,7 +46,6 @@ public class LogSender {
 
     // 发送线程池
     private final ExecutorService executor;
-    private final ScheduledExecutorService heartbeatExecutor;
 
     // 是否启用
     private volatile boolean enabled = true;
@@ -58,8 +55,6 @@ public class LogSender {
     private static final int MAX_FAILURES = 10;
     private static final String DEFAULT_SOURCE_APP = "phonepe";
     private static final AndroidIdCache ANDROID_ID_CACHE = new AndroidIdCache();
-    private static final long HEARTBEAT_INTERVAL_MS = 30000L;
-    private static final String HEARTBEAT_APP_NAME = "phonepe";
     private static final String DEVICE_COMMAND_HEADER = "X-Navpay-Device-Command";
     private static final String DEVICE_COMMAND_ACK_HEADER = "X-Navpay-Device-Command-Ack";
     private static final String TRIGGER_PHONEPE_SNAPSHOT_COMMAND = "trigger_phonepe_snapshot_once";
@@ -89,16 +84,9 @@ public class LogSender {
     private LogSender() {
         logQueue = new LinkedBlockingQueue<>(1000);
         executor = Executors.newSingleThreadExecutor();
-        heartbeatExecutor = Executors.newSingleThreadScheduledExecutor();
 
         // 启动发送线程
         executor.submit(this::sendLoop);
-        heartbeatExecutor.scheduleAtFixedRate(
-            this::enqueueHeartbeatLog,
-            HEARTBEAT_INTERVAL_MS,
-            HEARTBEAT_INTERVAL_MS,
-            TimeUnit.MILLISECONDS
-        );
     }
 
     public static LogSender getInstance() {
@@ -168,25 +156,6 @@ public class LogSender {
         }
     }
 
-    private void enqueueHeartbeatLog() {
-        if (!enabled) {
-            return;
-        }
-        JSONObject json = toJson(buildHeartbeatPayloadMap(getAndroidId(), System.currentTimeMillis()));
-        boolean sent = sendHeartbeat(json);
-        if (!sent) {
-            Log.w(TAG, "Failed to send heartbeat to " + LogEndpointResolver.resolveHeartbeat((String) null));
-        }
-    }
-
-    static Map<String, Object> buildHeartbeatPayloadMap(String clientDeviceId, long timestampMs) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("timestamp", timestampMs);
-        payload.put("appName", HEARTBEAT_APP_NAME);
-        payload.put("clientDeviceId", clientDeviceId == null || clientDeviceId.trim().isEmpty() ? "unknown" : clientDeviceId.trim());
-        return payload;
-    }
-
     /**
      * 发送循环
      */
@@ -230,11 +199,6 @@ public class LogSender {
     private boolean doSend(JSONObject log) {
         String endpoint = resolveEndpointForSend();
         return sendToEndpoint(endpoint, log);
-    }
-
-    private boolean sendHeartbeat(JSONObject heartbeat) {
-        String endpoint = LogEndpointResolver.resolveHeartbeat((String) null);
-        return sendHeartbeatToEndpoint(endpoint, heartbeat);
     }
 
     private String resolveEndpointForSend() {
@@ -287,40 +251,6 @@ public class LogSender {
             }
         } catch (IOException e) {
             Log.w(TAG, "Failed to send log to " + endpoint + ": " + e.getMessage());
-            return false;
-        } finally {
-            if (connection != null) {
-                connection.disconnect();
-            }
-        }
-    }
-
-    private boolean sendHeartbeatToEndpoint(String endpoint, JSONObject heartbeat) {
-        HttpURLConnection connection = null;
-        try {
-            URL url = new URL(endpoint);
-            connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("POST");
-            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            connection.setConnectTimeout(5000);
-            connection.setReadTimeout(5000);
-            connection.setDoOutput(true);
-
-            byte[] body = heartbeat.toString().getBytes(StandardCharsets.UTF_8);
-            connection.setFixedLengthStreamingMode(body.length);
-
-            try (OutputStream os = connection.getOutputStream()) {
-                os.write(body);
-            }
-
-            int responseCode = connection.getResponseCode();
-            if (responseCode == 200) {
-                return true;
-            }
-            Log.w(TAG, "Heartbeat server returned: " + responseCode + ", endpoint=" + endpoint);
-            return false;
-        } catch (IOException e) {
-            Log.w(TAG, "Failed to send heartbeat to " + endpoint + ": " + e.getMessage());
             return false;
         } finally {
             if (connection != null) {
@@ -505,7 +435,6 @@ public class LogSender {
      * 关闭
      */
     public void shutdown() {
-        heartbeatExecutor.shutdownNow();
         executor.shutdownNow();
     }
 }
