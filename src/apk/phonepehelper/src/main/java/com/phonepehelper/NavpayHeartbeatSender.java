@@ -7,7 +7,10 @@ import android.util.Log;
 
 import org.json.JSONObject;
 
-import java.lang.reflect.Method;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -68,7 +71,7 @@ public final class NavpayHeartbeatSender {
         Throwable lastError = null;
         for (String endpoint : endpoints) {
             try {
-                int code = postWithOkHttp(endpoint, body);
+                int code = postHeartbeat(endpoint, body);
                 if (code >= 200 && code < 300) {
                     return;
                 }
@@ -80,52 +83,28 @@ public final class NavpayHeartbeatSender {
         Log.w(TAG, "heartbeat upload failed for endpoints=" + joinEndpoints(endpoints), lastError);
     }
 
-    private static int postWithOkHttp(String endpoint, String body) throws Exception {
-        Class<?> mediaTypeClass = Class.forName("okhttp3.MediaType");
-        Class<?> requestBodyClass = Class.forName("okhttp3.RequestBody");
-        Class<?> requestBuilderClass = Class.forName("okhttp3.Request$Builder");
-        Class<?> requestClass = Class.forName("okhttp3.Request");
-        Class<?> okHttpClientClass = Class.forName("okhttp3.OkHttpClient");
-
-        Method parseMethod = mediaTypeClass.getMethod("parse", String.class);
-        Object mediaType = parseMethod.invoke(null, "application/json; charset=utf-8");
-        Object requestBody = createRequestBody(requestBodyClass, mediaTypeClass, mediaType, body);
-
-        Object builder = requestBuilderClass.getConstructor().newInstance();
-        requestBuilderClass.getMethod("url", String.class).invoke(builder, endpoint);
-        requestBuilderClass.getMethod("post", requestBodyClass).invoke(builder, requestBody);
-        Object request = requestBuilderClass.getMethod("build").invoke(builder);
-
-        Object client = okHttpClientClass.getConstructor().newInstance();
-        Object call = okHttpClientClass.getMethod("newCall", requestClass).invoke(client, request);
-        Object response = call.getClass().getMethod("execute").invoke(call);
+    // Reference scheme from https_interceptor LogSender: use plain HttpURLConnection.
+    private static int postHeartbeat(String endpoint, String body) throws IOException {
+        HttpURLConnection connection = null;
         try {
-            Object codeObj = response.getClass().getMethod("code").invoke(response);
-            if (codeObj instanceof Number) {
-                return ((Number) codeObj).intValue();
+            URL url = new URL(endpoint);
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(5000);
+            connection.setDoOutput(true);
+
+            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+            connection.setFixedLengthStreamingMode(bytes.length);
+            try (OutputStream outputStream = connection.getOutputStream()) {
+                outputStream.write(bytes);
             }
-            return 0;
+            return connection.getResponseCode();
         } finally {
-            try {
-                response.getClass().getMethod("close").invoke(response);
-            } catch (Throwable ignored) {
-                // no-op
+            if (connection != null) {
+                connection.disconnect();
             }
-        }
-    }
-
-    private static Object createRequestBody(
-            Class<?> requestBodyClass,
-            Class<?> mediaTypeClass,
-            Object mediaType,
-            String body
-    ) throws Exception {
-        try {
-            Method create = requestBodyClass.getMethod("create", mediaTypeClass, String.class);
-            return create.invoke(null, mediaType, body);
-        } catch (NoSuchMethodException ignored) {
-            Method create = requestBodyClass.getMethod("create", mediaTypeClass, byte[].class);
-            return create.invoke(null, mediaType, body.getBytes(StandardCharsets.UTF_8));
         }
     }
 
