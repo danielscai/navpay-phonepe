@@ -74,6 +74,22 @@ yarn checksum:build
 yarn checksum:test
 ```
 
+Docker 部署（本机构建 + 启动）：
+
+```bash
+docker build -f src/services/checksum/Dockerfile -t navpay/checksum-service:local .
+docker run --rm -p 19190:19190 --name checksum-service navpay/checksum-service:local
+```
+
+容器验证：
+
+```bash
+curl -sS http://127.0.0.1:19190/health
+curl -sS http://127.0.0.1:19190/checksum \
+  -H 'Content-Type: application/json' \
+  -d '{"path":"/apis/tstore/v2/units/changes","body":"","uuid":"8e8f7e5c-3f14-4cb3-bf70-8ec3dbf5a001"}'
+```
+
 保留旧的 Android 进程内 helper 启动方式：
 
 ```bash

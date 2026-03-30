@@ -24,6 +24,7 @@ public final class ChecksumHttpService {
             Pattern.compile("\"([^\"]+)\"\\s*:\\s*\"((?:\\\\.|[^\\\\\"])*)\"");
 
     private static final int DEFAULT_PORT = 19190;
+    private static final String DEFAULT_HOST = "127.0.0.1";
 
     private final String runtimeRoot;
     private final String libPath;
@@ -38,20 +39,26 @@ public final class ChecksumHttpService {
     }
 
     public static void main(String[] args) throws Exception {
-        Path repoRoot = ChecksumRuntimePaths.resolveRepoRoot(Path.of(System.getProperty("user.dir")));
-        Path runtimeRoot = Path.of(readConfig("probe.runtime.root", "PROBE_RUNTIME_ROOT",
-                ChecksumRuntimePaths.resolveRuntimeRoot(repoRoot).toString())).toAbsolutePath().normalize();
+        String configuredRuntime = readConfig("probe.runtime.root", "PROBE_RUNTIME_ROOT", "");
+        Path runtimeRoot;
+        if (!configuredRuntime.isEmpty()) {
+            runtimeRoot = Path.of(configuredRuntime).toAbsolutePath().normalize();
+        } else {
+            Path repoRoot = ChecksumRuntimePaths.resolveRepoRoot(Path.of(System.getProperty("user.dir")));
+            runtimeRoot = ChecksumRuntimePaths.resolveRuntimeRoot(repoRoot);
+        }
         ChecksumRuntimePaths.validatePreparedRuntime(runtimeRoot);
+        String host = readConfig("checksum.http.host", "CHECKSUM_HTTP_HOST", DEFAULT_HOST);
         int port = Integer.parseInt(readConfig("checksum.http.port", "CHECKSUM_HTTP_PORT", String.valueOf(DEFAULT_PORT)));
         String libPath = ChecksumRuntimePaths.runtimeLib(runtimeRoot, "libphonepe-cryptography-support-lib.so").toString();
         String loadOrder = readConfig("probe.load.order", "PROBE_LOAD_ORDER", "e755b7-first");
         boolean loadLibcxx = isTruthy(readConfig("probe.load.libcxx", "PROBE_LOAD_LIBCXX", "false"));
         ChecksumHttpService service = new ChecksumHttpService(runtimeRoot.toString(), libPath, loadOrder, loadLibcxx);
-        service.start(port);
+        service.start(host, port);
     }
 
-    private void start(int port) throws IOException {
-        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
+    private void start(String host, int port) throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress(host, port), 0);
         server.createContext("/health", exchange -> {
             if (!"GET".equals(exchange.getRequestMethod())) {
                 writeJson(exchange, 405, jsonError("method not allowed"));
