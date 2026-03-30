@@ -3,7 +3,6 @@ package com.httpinterceptor.interceptor;
 final class DeviceSnapshot {
 
     final String androidId;
-    final String clientDeviceId;
     final String deviceName;
     final String brand;
     final String model;
@@ -14,7 +13,6 @@ final class DeviceSnapshot {
 
     DeviceSnapshot(
         String androidId,
-        String clientDeviceId,
         String deviceName,
         String brand,
         String model,
@@ -24,7 +22,6 @@ final class DeviceSnapshot {
         String locale
     ) {
         this.androidId = androidId;
-        this.clientDeviceId = clientDeviceId;
         this.deviceName = deviceName;
         this.brand = brand;
         this.model = model;

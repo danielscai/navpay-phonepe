@@ -15,7 +15,7 @@ public final class HeartbeatBridgeContract {
     public static final String EXTRA_STATUS = "status";
     public static final String EXTRA_TIMESTAMP = "timestamp";
     public static final String EXTRA_APP_NAME = "appName";
-    public static final String EXTRA_CLIENT_DEVICE_ID = "clientDeviceId";
+    public static final String EXTRA_ANDROID_ID = "androidId";
 
     public static final String APP_NAME_PHONEPE = "phonepe";
 

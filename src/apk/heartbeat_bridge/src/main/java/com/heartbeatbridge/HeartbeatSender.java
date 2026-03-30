@@ -35,7 +35,7 @@ public final class HeartbeatSender {
         try {
             payload.put(HeartbeatBridgeContract.EXTRA_TIMESTAMP, timestampMs > 0L ? timestampMs : System.currentTimeMillis());
             payload.put(HeartbeatBridgeContract.EXTRA_APP_NAME, APP_NAME);
-            payload.put(HeartbeatBridgeContract.EXTRA_CLIENT_DEVICE_ID, resolveAndroidId(context));
+            payload.put(HeartbeatBridgeContract.EXTRA_ANDROID_ID, resolveAndroidId(context));
         } catch (Throwable t) {
             Log.w(TAG, "Failed to build heartbeat payload", t);
             return;

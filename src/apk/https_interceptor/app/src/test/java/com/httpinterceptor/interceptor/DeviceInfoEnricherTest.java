@@ -7,18 +7,18 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
 public class DeviceInfoEnricherTest {
 
     @Test
-    public void enrichesMissingDeviceFieldsAndMirrorsAndroidIdIntoClientDeviceId() {
+    public void enrichesMissingDeviceFieldsWithAndroidIdOnly() {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("androidId", "existing-android-id");
         payload.put("model", "keep-me");
 
         DeviceSnapshot snapshot = new DeviceSnapshot(
             "snapshot-android-id",
-            "snapshot-client-device-id",
             "Pixel 8",
             "Google",
             "Pixel 8",
@@ -31,7 +31,7 @@ public class DeviceInfoEnricherTest {
         Map<String, Object> enriched = DeviceInfoEnricher.enrich(payload, snapshot);
 
         assertEquals("existing-android-id", enriched.get("androidId"));
-        assertEquals("existing-android-id", enriched.get("clientDeviceId"));
+        assertFalse(enriched.containsKey("clientDeviceId"));
         assertEquals("Pixel 8", enriched.get("deviceName"));
         assertEquals("Google", enriched.get("brand"));
         assertEquals("keep-me", enriched.get("model"));

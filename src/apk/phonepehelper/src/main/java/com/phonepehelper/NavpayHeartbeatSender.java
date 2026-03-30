@@ -55,12 +55,12 @@ public final class NavpayHeartbeatSender {
     }
 
     private static void sendHeartbeat(Context context, long timestampMs) {
-        String clientDeviceId = resolveAndroidId(context);
+        String androidId = resolveAndroidId(context);
         JSONObject heartbeat = new JSONObject();
         try {
             heartbeat.put("timestamp", timestampMs > 0L ? timestampMs : System.currentTimeMillis());
             heartbeat.put("appName", HEARTBEAT_APP_NAME);
-            heartbeat.put("clientDeviceId", clientDeviceId);
+            heartbeat.put("androidId", androidId);
         } catch (Throwable t) {
             Log.w(TAG, "build heartbeat payload failed", t);
             return;
