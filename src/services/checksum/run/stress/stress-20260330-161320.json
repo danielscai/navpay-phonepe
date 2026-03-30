@@ -1,0 +1,86 @@
+{
+  "meta": {
+    "timestamp": "2026-03-30T16:13:35",
+    "url": "http://127.0.0.1:19190/checksum",
+    "ports": [
+      19190
+    ],
+    "rounds": 2,
+    "requestsPerRound": 3000,
+    "concurrency": 20,
+    "timeoutSeconds": 60.0,
+    "serviceWorkers": 1,
+    "autoStartedPorts": [],
+    "jsonPath": "/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/run/stress/stress-20260330-161320.json",
+    "mdPath": "/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/run/stress/stress-20260330-161320.md"
+  },
+  "rounds": [
+    {
+      "round": 1,
+      "requests": 3000,
+      "concurrency": 20,
+      "durationSeconds": 8.365,
+      "throughputRps": 358.63,
+      "success": 3000,
+      "failed": 0,
+      "successRate": 100.0,
+      "latencyMs": {
+        "min": 43.04,
+        "max": 681.38,
+        "mean": 55.57,
+        "p50": 47.66,
+        "p90": 55.29,
+        "p95": 77.17,
+        "p99": 164.95
+      },
+      "statusCodes": {
+        "200": 3000
+      },
+      "errors": {}
+    },
+    {
+      "round": 2,
+      "requests": 3000,
+      "concurrency": 20,
+      "durationSeconds": 7.252,
+      "throughputRps": 413.67,
+      "success": 3000,
+      "failed": 0,
+      "successRate": 100.0,
+      "latencyMs": {
+        "min": 6.55,
+        "max": 97.14,
+        "mean": 48.12,
+        "p50": 47.3,
+        "p90": 50.86,
+        "p95": 52.93,
+        "p99": 61.42
+      },
+      "statusCodes": {
+        "200": 3000
+      },
+      "errors": {}
+    }
+  ],
+  "aggregate": {
+    "totalRequests": 6000,
+    "success": 6000,
+    "failed": 0,
+    "successRate": 100.0,
+    "durationSeconds": 15.627,
+    "throughputRps": 383.95,
+    "latencyMs": {
+      "min": 6.55,
+      "max": 681.38,
+      "mean": 51.85,
+      "p50": 47.43,
+      "p90": 52.85,
+      "p95": 57.07,
+      "p99": 128.25
+    },
+    "statusCodes": {
+      "200": 6000
+    },
+    "errors": {}
+  }
+}
