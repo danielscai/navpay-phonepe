@@ -1195,20 +1195,103 @@ public final class PhonePeHelper {
         if (appContext == null) {
             return 0;
         }
-        int triggered = 0;
-        triggered += triggerRefreshViaEntryPoint(
-                appContext,
-                "com.phonepe.login.internal.di.PPeLoginEntryPoint",
-                "R3",
-                "SSOTokenProvider"
-        );
-        triggered += triggerRefreshViaEntryPoint(
-                appContext,
-                "com.phonepe.account.internal.di.PPeAccountEntryPoint",
-                "R2",
-                "AccountTokenProvider"
-        );
-        return triggered;
+        return triggerRefreshViaOrgTokenManager(appContext);
+    }
+
+    private static int triggerRefreshViaOrgTokenManager(Context context) {
+        try {
+            Object sessionSdk = resolveProviderFromEntryPoint(
+                    context,
+                    "com.phonepe.loginprovider.di.LoginProviderEntryPoint",
+                    "Xa"
+            );
+            if (sessionSdk == null) {
+                Log.w(TAG, "refreshToken: PhonePeSessionSDK provider missing");
+                return 0;
+            }
+            String clientId = resolveLoginClientId();
+            if (TextUtils.isEmpty(clientId)) {
+                Log.w(TAG, "refreshToken: missing login clientId");
+                return 0;
+            }
+            Object orgTokenManager = invokeMethodNoThrow(sessionSdk, "a", clientId);
+            if (orgTokenManager == null) {
+                Log.w(TAG, "refreshToken: org token manager unavailable");
+                return 0;
+            }
+            Object tokenRequest = newSessionTokenRequest();
+            Object result = invokeSuspendMethod(
+                    orgTokenManager,
+                    "b",
+                    new Object[]{tokenRequest},
+                    TOKEN_REFRESH_TIMEOUT_MS
+            );
+            boolean success = isTokenResultSuccess(result);
+            Log.i(TAG, "refreshToken: Org1faTokenManager result=" + (result == null ? "null" : result.getClass().getSimpleName()));
+            return success ? 1 : 0;
+        } catch (Throwable t) {
+            Log.w(TAG, "refreshToken: Org1faTokenManager trigger failed", t);
+            return 0;
+        }
+    }
+
+    private static String resolveLoginClientId() {
+        try {
+            Class<?> cacheClass = Class.forName("com.phonepe.login.common.cache.LoginCommonCache");
+            Object value = invokeStaticNoArgMethodNoThrow(cacheClass, "d");
+            String clientId = value == null ? "" : String.valueOf(value).trim();
+            if (!TextUtils.isEmpty(clientId) && !"null".equalsIgnoreCase(clientId)) {
+                return clientId;
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "resolveLoginClientId failed", t);
+        }
+        return "";
+    }
+
+    private static Object invokeStaticNoArgMethodNoThrow(Class<?> cls, String methodName) {
+        if (cls == null || TextUtils.isEmpty(methodName)) {
+            return null;
+        }
+        try {
+            Method[] methods = cls.getDeclaredMethods();
+            for (Method method : methods) {
+                if (!methodName.equals(method.getName())) {
+                    continue;
+                }
+                if ((method.getModifiers() & java.lang.reflect.Modifier.STATIC) == 0) {
+                    continue;
+                }
+                if (method.getParameterTypes().length != 0) {
+                    continue;
+                }
+                method.setAccessible(true);
+                return method.invoke(null);
+            }
+        } catch (Throwable ignored) {
+            return null;
+        }
+        return null;
+    }
+
+    private static Object newSessionTokenRequest() throws Exception {
+        Class<?> requestClass = Class.forName("com.phonepe.session.api.data.TokenRequest");
+        try {
+            return requestClass.getConstructor(int.class).newInstance(0);
+        } catch (NoSuchMethodException ignored) {
+            return requestClass.newInstance();
+        }
+    }
+
+    private static boolean isTokenResultSuccess(Object result) {
+        if (result == null) {
+            return false;
+        }
+        String className = result.getClass().getName();
+        if (className.contains("TokenResult$Success")) {
+            return true;
+        }
+        return "Success".equals(result.getClass().getSimpleName());
     }
 
     private static int triggerRefreshViaEntryPoint(Context context, String entryPointClassName, String accessorName, String label) {

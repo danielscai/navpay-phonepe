@@ -82,6 +82,22 @@
 - `TokenRefreshManager.f(...)` 会记录 `TOKEN_REFRESH_API_INIT`、成功/失败事件并处理错误分支。
 - `LoginCommonCache.j` 对应 feature flag `ENABLE_AUTH_HEADER_FOR_TOKEN_REFRESH`，用于控制 refresh 请求是否携带 `Authorization` 头，不是前后台状态。
 
+### Token Refresh 类型对照（NavPay 2026-03）
+
+当前观测到三类 refresh 路径（对应不同 scope）：
+
+1. `https://apicp1.phonepe.com/apis/users/org/auth/oauth/v1/token/refresh`
+   - scope: `1fa`
+   - 用途：主交易请求（含 `tstore/units/changes`）依赖的 org/1fa token。
+2. `https://apicp1.phonepe.com/apis/users/sso/auth/oauth/v1/token/refresh`
+   - scope: `sso`
+3. `https://apicp1.phonepe.com/apis/users/accounts/auth/oauth/v1/token/refresh`
+   - scope: `account`
+
+#### NavPay phonepehelper 刷新策略
+- `content://com.phonepe.navpay.provider/user_data` 的 `tokenrefresh` 调用统一切到 org/1fa 刷新链路（与 PhonePe App 主链路一致）。
+- 不再以 `sso/account` 刷新作为主刷新入口，避免“refresh 成功但 1fa 未更新”导致后续历史请求 `401`。
+
 ### 手动触发 refresh（研究环境）
 目标：在不改包的前提下，强制走 refresh 分支验证调用。
 

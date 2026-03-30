@@ -18,6 +18,7 @@
 ### tokenrefresh 说明
 
 - 作用：在 PhonePe 进程内触发一次 token refresh 流程（best-effort）。
+- 当前策略：优先触发 `org/auth/oauth/v1/token/refresh`（scope=`1fa`）链路，保持与 PhonePe App 主请求一致。
 - 典型调用：
 
 ```bash
