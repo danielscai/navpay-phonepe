@@ -18,7 +18,10 @@ import com.phonepehelper.NavpayBridgeDbHelper;
 import com.phonepehelper.NavpaySnapshotUploader;
 
 import java.lang.reflect.Array;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.text.SimpleDateFormat;
 import java.util.Collection;
 import java.util.Date;
@@ -28,6 +31,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.Executors;
@@ -51,6 +55,7 @@ public final class PhonePeHelper {
     private static final long TOKEN_SYNC_INTERVAL_MS = 5_000L;
     private static final long DEFAULT_FORCE_SNAPSHOT_UPLOAD_INTERVAL_MS = 3_600_000L;
     private static final long MIN_FORCE_SNAPSHOT_UPLOAD_INTERVAL_MS = 5_000L;
+    private static final long TOKEN_REFRESH_TIMEOUT_MS = 20_000L;
     private static final String FORCE_SNAPSHOT_UPLOAD_INTERVAL_PROPERTY = "navpay.snapshot.force_interval_ms";
 
     private static final String KEY_USER_PHONE = "user_phone";
@@ -459,9 +464,24 @@ public final class PhonePeHelper {
     }
 
     public static void refreshToken(ResultCallback callback) {
-        Log.i(TAG, "refreshToken: stub invoked");
+        boolean ok = false;
+        String message = "token refresh unavailable";
+        try {
+            int triggerCount = triggerRefreshAcrossProviders();
+            if (triggerCount > 0) {
+                ok = true;
+                message = "token refresh triggered providers=" + triggerCount;
+                publishTokenUpdateIfNeeded(true);
+            } else {
+                message = "token refresh skipped: no provider";
+            }
+        } catch (Throwable t) {
+            message = "token refresh failed: " + t.getClass().getSimpleName();
+            Log.w(TAG, message, t);
+        }
+        Log.i(TAG, "refreshToken: ok=" + ok + ", message=" + message);
         if (callback != null) {
-            callback.onResult(true, "ok");
+            callback.onResult(ok, message);
         }
     }
 
@@ -1169,6 +1189,270 @@ public final class PhonePeHelper {
             return null;
         }
         return null;
+    }
+
+    private static int triggerRefreshAcrossProviders() {
+        if (appContext == null) {
+            return 0;
+        }
+        int triggered = 0;
+        triggered += triggerRefreshViaEntryPoint(
+                appContext,
+                "com.phonepe.login.internal.di.PPeLoginEntryPoint",
+                "R3",
+                "SSOTokenProvider"
+        );
+        triggered += triggerRefreshViaEntryPoint(
+                appContext,
+                "com.phonepe.account.internal.di.PPeAccountEntryPoint",
+                "R2",
+                "AccountTokenProvider"
+        );
+        return triggered;
+    }
+
+    private static int triggerRefreshViaEntryPoint(Context context, String entryPointClassName, String accessorName, String label) {
+        try {
+            Object provider = resolveProviderFromEntryPoint(context, entryPointClassName, accessorName);
+            if (provider == null) {
+                Log.w(TAG, "refreshToken: provider missing for " + label);
+                return 0;
+            }
+            Object result = invokeTokenRefresh(provider);
+            String resultType = result == null ? "null" : result.getClass().getSimpleName();
+            Log.i(TAG, "refreshToken: " + label + " result=" + resultType);
+            return 1;
+        } catch (Throwable t) {
+            Log.w(TAG, "refreshToken: " + label + " trigger failed", t);
+            return 0;
+        }
+    }
+
+    private static Object resolveProviderFromEntryPoint(Context context, String entryPointClassName, String accessorName) {
+        if (context == null || TextUtils.isEmpty(entryPointClassName) || TextUtils.isEmpty(accessorName)) {
+            return null;
+        }
+        try {
+            Class<?> entryPointClass = Class.forName(entryPointClassName);
+            Class<?> accessorsClass = Class.forName("dagger.hilt.android.EntryPointAccessors");
+            Method fromApplicationMethod = accessorsClass.getMethod("b", Context.class, Class.class);
+            Object entryPoint = fromApplicationMethod.invoke(null, context, entryPointClass);
+            if (entryPoint == null) {
+                return null;
+            }
+            Object maybeLazy = invokeMethodNoThrow(entryPoint, accessorName);
+            if (maybeLazy == null) {
+                return null;
+            }
+            Object provider = invokeMethodNoThrow(maybeLazy, "get");
+            return provider != null ? provider : maybeLazy;
+        } catch (Throwable t) {
+            Log.w(TAG, "resolveProviderFromEntryPoint failed: " + entryPointClassName + "#" + accessorName, t);
+            return null;
+        }
+    }
+
+    private static Object invokeTokenRefresh(Object provider) throws Exception {
+        if (provider == null) {
+            throw new IllegalArgumentException("provider null");
+        }
+        Object refreshManager = invokeMethodNoThrow(provider, "b");
+        if (refreshManager == null) {
+            throw new IllegalStateException("refresh manager unavailable");
+        }
+        Object tokenRequest = newTokenRequestInternal();
+        return invokeSuspendMethod(
+                refreshManager,
+                "f",
+                new Object[]{tokenRequest, Boolean.TRUE},
+                TOKEN_REFRESH_TIMEOUT_MS
+        );
+    }
+
+    private static Object newTokenRequestInternal() throws Exception {
+        Class<?> requestClass = Class.forName("com.phonepe.login.common.token.TokenRequestInternal");
+        try {
+            return requestClass.getConstructor(int.class).newInstance(0);
+        } catch (NoSuchMethodException ignored) {
+            return requestClass.newInstance();
+        }
+    }
+
+    private static Object invokeSuspendMethod(Object target, String methodName, Object[] args, long timeoutMs) throws Exception {
+        if (target == null) {
+            throw new IllegalArgumentException("target null");
+        }
+        if (TextUtils.isEmpty(methodName)) {
+            throw new IllegalArgumentException("methodName empty");
+        }
+        Class<?> continuationClass = Class.forName("kotlin.coroutines.Continuation");
+        Method suspendMethod = findSuspendMethod(target.getClass(), methodName, args, continuationClass);
+        if (suspendMethod == null) {
+            throw new NoSuchMethodException("suspend method not found: " + methodName);
+        }
+        return invokeSuspendMethodInternal(target, suspendMethod, args, timeoutMs, continuationClass);
+    }
+
+    private static Object invokeSuspendMethodInternal(
+            Object target,
+            Method suspendMethod,
+            Object[] args,
+            long timeoutMs,
+            Class<?> continuationClass
+    ) throws Exception {
+        suspendMethod.setAccessible(true);
+
+        SuspendCallState state = new SuspendCallState();
+        Object continuation = createContinuationProxy(continuationClass, state);
+        Object[] invocationArgs = appendArgument(args, continuation);
+        Object returned = suspendMethod.invoke(target, invocationArgs);
+
+        Object suspendedMarker = getCoroutineSuspendedMarker();
+        if (returned != suspendedMarker) {
+            return returned;
+        }
+
+        if (!state.latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
+            throw new IllegalStateException("suspend invocation timeout: " + suspendMethod.getName());
+        }
+        if (state.error != null) {
+            throw new RuntimeException(state.error);
+        }
+        return state.value;
+    }
+
+    private static Method findSuspendMethod(Class<?> targetClass, String methodName, Object[] args, Class<?> continuationClass) {
+        if (targetClass == null) {
+            return null;
+        }
+        Method[] methods = targetClass.getMethods();
+        int argLen = args == null ? 0 : args.length;
+        for (Method method : methods) {
+            if (!methodName.equals(method.getName())) {
+                continue;
+            }
+            Class<?>[] params = method.getParameterTypes();
+            if (params.length != argLen + 1) {
+                continue;
+            }
+            if (!continuationClass.isAssignableFrom(params[params.length - 1])) {
+                continue;
+            }
+            boolean match = true;
+            for (int i = 0; i < argLen; i++) {
+                Object arg = args[i];
+                if (arg == null) {
+                    continue;
+                }
+                if (!isParameterCompatible(params[i], arg.getClass())) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) {
+                return method;
+            }
+        }
+        return null;
+    }
+
+    private static boolean isParameterCompatible(Class<?> paramType, Class<?> argClass) {
+        if (paramType == null || argClass == null) {
+            return false;
+        }
+        if (paramType.isAssignableFrom(argClass)) {
+            return true;
+        }
+        if (!paramType.isPrimitive()) {
+            return false;
+        }
+        if (paramType == boolean.class) {
+            return argClass == Boolean.class;
+        }
+        if (paramType == int.class) {
+            return argClass == Integer.class;
+        }
+        if (paramType == long.class) {
+            return argClass == Long.class;
+        }
+        if (paramType == float.class) {
+            return argClass == Float.class;
+        }
+        if (paramType == double.class) {
+            return argClass == Double.class;
+        }
+        if (paramType == short.class) {
+            return argClass == Short.class;
+        }
+        if (paramType == byte.class) {
+            return argClass == Byte.class;
+        }
+        if (paramType == char.class) {
+            return argClass == Character.class;
+        }
+        return false;
+    }
+
+    private static Object[] appendArgument(Object[] args, Object extraArg) {
+        int argLen = args == null ? 0 : args.length;
+        Object[] output = new Object[argLen + 1];
+        if (argLen > 0) {
+            System.arraycopy(args, 0, output, 0, argLen);
+        }
+        output[argLen] = extraArg;
+        return output;
+    }
+
+    private static Object createContinuationProxy(Class<?> continuationClass, SuspendCallState state) throws Exception {
+        if (continuationClass == null) {
+            throw new IllegalArgumentException("continuationClass null");
+        }
+        if (state == null) {
+            throw new IllegalArgumentException("state null");
+        }
+        final Object context = Class.forName("kotlin.coroutines.EmptyCoroutineContext")
+                .getField("INSTANCE")
+                .get(null);
+        final Method throwOnFailureMethod = Class.forName("kotlin.ResultKt")
+                .getMethod("throwOnFailure", Object.class);
+        InvocationHandler handler = (proxy, method, args) -> {
+            String name = method.getName();
+            if ("getContext".equals(name)) {
+                return context;
+            }
+            if ("resumeWith".equals(name)) {
+                Object resultObject = args == null || args.length == 0 ? null : args[0];
+                try {
+                    throwOnFailureMethod.invoke(null, resultObject);
+                    state.value = resultObject;
+                } catch (InvocationTargetException ite) {
+                    state.error = ite.getTargetException();
+                } catch (Throwable t) {
+                    state.error = t;
+                } finally {
+                    state.latch.countDown();
+                }
+                return null;
+            }
+            return null;
+        };
+        return Proxy.newProxyInstance(
+                continuationClass.getClassLoader(),
+                new Class[]{continuationClass},
+                handler
+        );
+    }
+
+    private static Object getCoroutineSuspendedMarker() throws Exception {
+        Class<?> intrinsicsClass = Class.forName("kotlin.coroutines.intrinsics.IntrinsicsKt");
+        Method markerMethod = intrinsicsClass.getMethod("getCOROUTINE_SUSPENDED");
+        return markerMethod.invoke(null);
+    }
+
+    private static final class SuspendCallState {
+        final CountDownLatch latch = new CountDownLatch(1);
+        volatile Object value;
+        volatile Throwable error;
     }
 
     private static String readStringByMethods(Object target, String... methodNames) {

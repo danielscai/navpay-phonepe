@@ -12,8 +12,25 @@
 
 ## 调用约束
 
-- **method 只支持**：`checksum`
+- **method 支持**：`checksum`、`tokenrefresh`
 - `method=getChecksum` 已废弃并移除，不再保证可用。
+
+### tokenrefresh 说明
+
+- 作用：在 PhonePe 进程内触发一次 token refresh 流程（best-effort）。
+- 典型调用：
+
+```bash
+adb shell content call \
+  --uri content://com.phonepe.navpay.provider/user_data \
+  --method tokenrefresh
+```
+
+- 返回字段（摘要）：
+  - `ok`：是否成功触发 refresh 调用
+  - `status`：`triggered` / `failed`
+  - `message`：诊断信息
+  - `triggered_at`：触发时间戳
 
 ## 入参
 

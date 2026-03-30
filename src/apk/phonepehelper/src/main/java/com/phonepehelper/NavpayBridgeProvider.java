@@ -27,6 +27,11 @@ public final class NavpayBridgeProvider extends ContentProvider {
             "providerheartbeat",
             "navpayheartbeat"
     ));
+    private static final Set<String> TOKEN_REFRESH_METHODS = new HashSet<>(Arrays.asList(
+            "tokenrefresh",
+            "providertokenrefresh",
+            "navpaytokenrefresh"
+    ));
 
     private static final String[] PATH_KEYS = new String[]{
             NavpayBridgeContract.EXTRA_CHECKSUM_PATH,
@@ -93,6 +98,9 @@ public final class NavpayBridgeProvider extends ContentProvider {
             long timestamp = result.getLong("timestamp", System.currentTimeMillis());
             NavpayHeartbeatSender.sendHeartbeatAsync(getContext(), timestamp);
             return result;
+        }
+        if (isTokenRefreshMethod(normalizedMethod)) {
+            return buildTokenRefreshBundle(extras);
         }
         if (!isChecksumMethod(normalizedMethod)) {
             return super.call(method, arg, extras);
@@ -179,6 +187,10 @@ public final class NavpayBridgeProvider extends ContentProvider {
         return HEARTBEAT_METHODS.contains(normalizedMethod);
     }
 
+    private static boolean isTokenRefreshMethod(String normalizedMethod) {
+        return TOKEN_REFRESH_METHODS.contains(normalizedMethod);
+    }
+
     private static String normalizeMethod(String method) {
         if (method == null) {
             return "";
@@ -199,6 +211,42 @@ public final class NavpayBridgeProvider extends ContentProvider {
         result.putBoolean("ok", true);
         result.putLong("timestamp", timestamp);
         result.putString("status", "alive");
+        return result;
+    }
+
+    private static Bundle buildTokenRefreshBundle(Bundle extras) {
+        long triggeredAt = resolveLong(
+                extras,
+                new String[]{
+                        NavpayBridgeContract.EXTRA_TOKEN_REFRESH_TRIGGERED_AT,
+                        "timestamp",
+                        "ts",
+                        "time"
+                },
+                System.currentTimeMillis()
+        );
+        final boolean[] okRef = new boolean[]{false};
+        final String[] messageRef = new String[]{"token refresh callback missing"};
+        try {
+            com.PhonePeTweak.Def.PhonePeHelper.refreshToken((ok, message) -> {
+                okRef[0] = ok;
+                messageRef[0] = message == null ? "" : message.trim();
+            });
+        } catch (Throwable t) {
+            okRef[0] = false;
+            messageRef[0] = "token refresh invoke failed: " + t.getClass().getSimpleName();
+        }
+
+        Bundle result = new Bundle();
+        result.putBoolean("ok", okRef[0]);
+        result.putLong("triggered_at", triggeredAt);
+        result.putString("status", okRef[0] ? "triggered" : "failed");
+        if (messageRef[0] != null && !messageRef[0].isEmpty()) {
+            result.putString("message", messageRef[0]);
+            if (!okRef[0]) {
+                result.putString("error", messageRef[0]);
+            }
+        }
         return result;
     }
 
