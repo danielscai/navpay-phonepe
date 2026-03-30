@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "timestamp": "2026-03-30T13:32:49",
+    "ports": [
+      19410,
+      19411
+    ],
+    "concurrency": 20,
+    "timeoutSeconds": 60.0,
+    "targetSeconds": 300.0,
+    "jsonPath": "/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/run/stress/stair-20260330-132720.json",
+    "mdPath": "/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/run/stress/stair-20260330-132720.md"
+  },
+  "rounds": [
+    {
+      "requests": 2000,
+      "durationSeconds": 326.413,
+      "throughputRps": 6.13,
+      "success": 1929,
+      "failed": 71,
+      "successRate": 96.45,
+      "latencyMs": {
+        "p50": 2583.28,
+        "p95": 5637.74,
+        "p99": 21435.7,
+        "max": 37653.89
+      },
+      "resources": {
+        "avgCpuPercent": 204.68,
+        "peakCpuPercent": 532.3,
+        "avgMemMb": 1813.01,
+        "peakMemMb": 4039.22
+      },
+      "errors": {
+        "ConnectionResetError": 29,
+        "RemoteDisconnected": 2,
+        "URLError": 40
+      },
+      "round": 1
+    }
+  ],
+  "bestWithinTarget": null
+}

@@ -31,12 +31,14 @@ public final class ChecksumHttpService {
     private final String libPath;
     private final String loadOrder;
     private final boolean loadLibcxx;
+    private final UnidbgChecksumProbe probe;
 
     private ChecksumHttpService(String runtimeRoot, String libPath, String loadOrder, boolean loadLibcxx) {
         this.runtimeRoot = runtimeRoot;
         this.libPath = libPath;
         this.loadOrder = loadOrder;
         this.loadLibcxx = loadLibcxx;
+        this.probe = new UnidbgChecksumProbe();
     }
 
     public static void main(String[] args) throws Exception {
@@ -100,19 +102,37 @@ public final class ChecksumHttpService {
     }
 
     private synchronized ProbeResponse runProbe(Map<String, String> request) throws Exception {
+        long t0 = System.nanoTime();
         String path = request.getOrDefault("path", "");
         if (path.isEmpty()) {
             throw new IllegalArgumentException("missing path");
         }
         String uuid = request.getOrDefault("uuid", "8e8f7e5c-3f14-4cb3-bf70-8ec3dbf5a001");
         String body = request.getOrDefault("body", "");
-        Map<String, String> report = new UnidbgChecksumProbe().execute(libPath, path, body, uuid, loadOrder, loadLibcxx);
+        long tConstruct0 = System.nanoTime();
+        long tConstruct1 = tConstruct0;
+        Map<String, String> report = probe.execute(libPath, path, body, uuid, loadOrder, loadLibcxx);
+        long t1 = System.nanoTime();
         String checksum = report.getOrDefault("checksum", "");
         if (checksum.isEmpty()) {
             throw new IllegalStateException("probe returned empty checksum");
         }
+        report.put("perf_construct_probe_ms", formatMillis(tConstruct1 - tConstruct0));
+        report.put("perf_execute_probe_ms", formatMillis(t1 - tConstruct1));
+        report.put("perf_http_run_probe_ms", formatMillis(t1 - t0));
+        System.err.println("checksum_perf"
+                + " construct_ms=" + report.get("perf_construct_probe_ms")
+                + " execute_ms=" + report.get("perf_execute_probe_ms")
+                + " prepare_ms=" + report.getOrDefault("perf_prepare_session_ms", "n/a")
+                + " checksum_ms=" + report.getOrDefault("perf_probe_checksum_ms", "n/a")
+                + " jnmcs_ms=" + report.getOrDefault("perf_probe_jnmcs_ms", "n/a")
+                + " reused=" + report.getOrDefault("probe_session_reused", "n/a"));
         ChecksumShape shape = ChecksumShape.fromChecksum(checksum);
         return new ProbeResponse(report, checksum, shape);
+    }
+
+    private static String formatMillis(long nanos) {
+        return String.format(java.util.Locale.ROOT, "%.3f", nanos / 1_000_000.0d);
     }
 
     private String buildChecksumResponse(ProbeResponse probe, ChecksumShape exampleShape) {

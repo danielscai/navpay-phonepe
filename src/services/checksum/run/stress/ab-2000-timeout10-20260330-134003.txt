@@ -1,0 +1,28 @@
+This is ApacheBench, Version 2.3 <$Revision: 1913912 $>
+Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
+Licensed to The Apache Software Foundation, http://www.apache.org/
+
+Benchmarking 127.0.0.1 (be patient)
+Completed 200 requests
+apr_pollset_poll: The timeout specified has expired (70007)
+Total of 234 requests completed
+real 61.19
+user 0.00
+sys 0.03
+             3571712  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+                 576  page reclaims
+                  82  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                 254  messages sent
+                 234  messages received
+                   0  signals received
+                  36  voluntary context switches
+                 809  involuntary context switches
+            86794906  instructions retired
+           112160037  cycles elapsed
+             2081032  peak memory footprint

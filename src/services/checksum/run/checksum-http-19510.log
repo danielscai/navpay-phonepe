@@ -1,0 +1,6 @@
+checksum_http_service=LISTENING
+checksum_http_port=19510
+checksum_http_workers=1
+checksum_http_mode=emulate
+checksum_http_runtime=/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/runtime
+checksum_http_library=/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/src/services/checksum/runtime/lib/arm64-v8a/libphonepe-cryptography-support-lib.so

@@ -24,6 +24,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -53,6 +54,7 @@ public final class UnidbgChecksumProbe extends AbstractJni {
     private static final String LOAD_LIBRARY_SIG = "b()V";
     private static final String JNI_ON_LOAD = "JNI_OnLoad";
     private static final String DEFAULT_SIGNATURE_HEX = "30820122300d06092a864886f70d01010105000382010f00";
+    private static final Method DELETE_LOCAL_REFS_METHOD = resolveDeleteLocalRefsMethod();
 
     private Map<String, String> activeReport;
     private String chMode = "emulate";
@@ -71,6 +73,12 @@ public final class UnidbgChecksumProbe extends AbstractJni {
     private DvmObject<?> serverTimeOffsetCompanionObject;
     private DvmObject<?> serverTimeOffsetObject;
     private boolean nativeLibraryLoaderInitialized;
+    private AndroidEmulator preparedEmulator;
+    private VM preparedVm;
+    private String preparedLibPath;
+    private String preparedLoadOrder;
+    private boolean preparedLoadLibcxx;
+    private String preparedApkPath;
 
     private static final List<String> CANDIDATE_CLASSES = Collections.unmodifiableList(Arrays.asList(
             ENCRYPTION_CLASS,
@@ -197,9 +205,11 @@ public final class UnidbgChecksumProbe extends AbstractJni {
         }
     }
 
-    private String run(String libPath, String path, String body, String uuid, String loadOrder, boolean loadLibcxx,
+    private synchronized String run(String libPath, String path, String body, String uuid, String loadOrder, boolean loadLibcxx,
                        Map<String, String> report) {
+        long runStart = System.nanoTime();
         this.activeReport = report;
+        long tConfigStart = System.nanoTime();
         this.chMode = readConfig("probe.ch.mode", "PROBE_CH_MODE", "emulate");
         this.configuredRuntimeRoot = readConfig("probe.runtime.root", "PROBE_RUNTIME_ROOT", "");
         ChecksumRuntimeSnapshot runtimeSnapshot = loadRuntimeSnapshot(configuredRuntimeRoot, report);
@@ -207,6 +217,7 @@ public final class UnidbgChecksumProbe extends AbstractJni {
         this.configuredTimeMs = resolveConfiguredTimeMs(runtimeSnapshot, report);
         this.configuredApkPath = resolveConfiguredApkPath(configuredRuntimeRoot, report);
         this.configuredSignatureBytes = resolveSignatureBytesForConfig(configuredRuntimeRoot, configuredApkPath, report);
+        long tConfigEnd = System.nanoTime();
         this.chFallbackHits = 0;
         this.stubHits = 0;
         report.put("probe_ch_mode", chMode);
@@ -214,6 +225,40 @@ public final class UnidbgChecksumProbe extends AbstractJni {
         report.put("probe_time_ms", Long.toString(configuredTimeMs));
         report.put("probe_runtime_root", configuredRuntimeRoot);
         report.put("probe_target_apk", configuredApkPath);
+        try {
+            long tPrepareStart = System.nanoTime();
+            boolean reused = ensurePreparedSession(libPath, loadOrder, loadLibcxx, report);
+            long tPrepareEnd = System.nanoTime();
+            report.put("probe_session_reused", Boolean.toString(reused));
+            report.put("perf_prepare_session_ms", formatMillis(tPrepareEnd - tPrepareStart));
+            String checksum = probeChecksum(preparedVm, preparedEmulator, path, body, uuid, report);
+            long runEnd = System.nanoTime();
+            report.put("perf_config_ms", formatMillis(tConfigEnd - tConfigStart));
+            report.put("perf_probe_total_ms", formatMillis(runEnd - runStart));
+            report.put("stub_hits", Integer.toString(stubHits));
+            report.put("ch_fallback_hits", Integer.toString(chFallbackHits));
+            return checksum;
+        } catch (BackendException be) {
+            throw new IllegalStateException("unidbg backend exception: " + be.getMessage(), be);
+        } finally {
+            clearVmLocalRefs(preparedVm);
+            this.activeReport = null;
+        }
+    }
+
+    private boolean ensurePreparedSession(String libPath, String loadOrder, boolean loadLibcxx, Map<String, String> report) {
+        boolean reusable = preparedEmulator != null
+                && preparedVm != null
+                && libPath.equals(preparedLibPath)
+                && loadOrder.equals(preparedLoadOrder)
+                && loadLibcxx == preparedLoadLibcxx
+                && configuredApkPath.equals(preparedApkPath);
+        if (reusable) {
+            return true;
+        }
+
+        closePreparedSession();
+
         AndroidEmulator emulator = AndroidEmulatorBuilder.for64Bit().setProcessName("com.phonepe.app").build();
         try {
             Memory memory = emulator.getMemory();
@@ -259,30 +304,50 @@ public final class UnidbgChecksumProbe extends AbstractJni {
             }
 
             report.put("loaded_modules", String.join(" | ", loadedModules));
-
             probeRegistration(vm, emulator, report);
             initializeNativeLibraryLoader(vm, emulator, report);
-            String checksum = probeChecksum(vm, emulator, path, body, uuid, report);
-            report.put("stub_hits", Integer.toString(stubHits));
-            report.put("ch_fallback_hits", Integer.toString(chFallbackHits));
-            return checksum;
-        } catch (BackendException be) {
-            throw new IllegalStateException("unidbg backend exception: " + be.getMessage(), be);
-        } finally {
-            this.activeReport = null;
-            this.applicationContextObject = null;
-            this.nativeLibraryLoaderObject = null;
-            this.nativeLibraryLoaderCompanionObject = null;
-            this.deviceIdFetcherObject = null;
-            this.deviceIdContractObject = null;
-            this.serverTimeOffsetCompanionObject = null;
-            this.serverTimeOffsetObject = null;
-            this.nativeLibraryLoaderInitialized = false;
+
+            preparedEmulator = emulator;
+            preparedVm = vm;
+            preparedLibPath = libPath;
+            preparedLoadOrder = loadOrder;
+            preparedLoadLibcxx = loadLibcxx;
+            preparedApkPath = configuredApkPath;
+            return false;
+        } catch (Throwable t) {
             try {
                 emulator.close();
             } catch (Exception ignored) {
             }
+            throw t;
         }
+    }
+
+    private void closePreparedSession() {
+        resetSessionObjects();
+        if (preparedEmulator != null) {
+            try {
+                preparedEmulator.close();
+            } catch (Exception ignored) {
+            }
+        }
+        preparedEmulator = null;
+        preparedVm = null;
+        preparedLibPath = null;
+        preparedLoadOrder = null;
+        preparedLoadLibcxx = false;
+        preparedApkPath = null;
+    }
+
+    private void resetSessionObjects() {
+        this.applicationContextObject = null;
+        this.nativeLibraryLoaderObject = null;
+        this.nativeLibraryLoaderCompanionObject = null;
+        this.deviceIdFetcherObject = null;
+        this.deviceIdContractObject = null;
+        this.serverTimeOffsetCompanionObject = null;
+        this.serverTimeOffsetObject = null;
+        this.nativeLibraryLoaderInitialized = false;
     }
 
     private DalvikModule loadLibrary(AndroidEmulator emulator, VM vm, File file, String label, boolean callJniOnLoad,
@@ -350,6 +415,7 @@ public final class UnidbgChecksumProbe extends AbstractJni {
 
     private String probeChecksum(VM vm, AndroidEmulator emulator, String path, String body, String uuid,
                                  Map<String, String> report) {
+        long probeStart = System.nanoTime();
         ByteArray pathBytes = new ByteArray(vm, path.getBytes(StandardCharsets.UTF_8));
         ByteArray bodyBytes = new ByteArray(vm, body.getBytes(StandardCharsets.UTF_8));
         ByteArray uuidBytes = new ByteArray(vm, uuid.getBytes(StandardCharsets.UTF_8));
@@ -361,23 +427,31 @@ public final class UnidbgChecksumProbe extends AbstractJni {
             String wrapperAttemptKey = toKey(className) + ".call_jnmcs";
             String attemptKey = toKey(className) + ".call_nmcs";
             try {
+                long tJnmcsStart = System.nanoTime();
                 DvmObject<?> ret = invokeOriginalJnmcs(vm, emulator, className, contextObj, pathBytes, bodyBytes, uuidBytes);
+                long tJnmcsEnd = System.nanoTime();
                 String checksum = extractChecksum(ret);
+                report.put("perf_probe_jnmcs_ms", formatMillis(tJnmcsEnd - tJnmcsStart));
                 report.put(wrapperAttemptKey, "PASS");
                 report.put("checksum_source", className + "#jnmcs");
                 report.put("checksum_length", Integer.toString(checksum.getBytes(StandardCharsets.UTF_8).length));
                 report.put("checksum_preview", checksum.length() > 32 ? checksum.substring(0, 32) : checksum);
+                report.put("perf_probe_checksum_ms", formatMillis(System.nanoTime() - probeStart));
                 return checksum;
             } catch (Throwable t) {
                 report.put(wrapperAttemptKey, "FAIL:" + sanitize(t));
             }
             try {
+                long tNmcsStart = System.nanoTime();
                 DvmObject<?> ret = dvmClass.callStaticJniMethodObject(emulator, NMCS_SIG, pathBytes, bodyBytes, uuidBytes, contextObj);
+                long tNmcsEnd = System.nanoTime();
                 String checksum = extractChecksum(ret);
+                report.put("perf_probe_nmcs_ms", formatMillis(tNmcsEnd - tNmcsStart));
                 report.put(attemptKey, "PASS");
                 report.put("checksum_source", className);
                 report.put("checksum_length", Integer.toString(checksum.getBytes(StandardCharsets.UTF_8).length));
                 report.put("checksum_preview", checksum.length() > 32 ? checksum.substring(0, 32) : checksum);
+                report.put("perf_probe_checksum_ms", formatMillis(System.nanoTime() - probeStart));
                 return checksum;
             } catch (Throwable t) {
                 String failure = sanitize(t);
@@ -1003,6 +1077,30 @@ public final class UnidbgChecksumProbe extends AbstractJni {
             return "null";
         }
         return value.replace('\n', ' ').replace('\r', ' ');
+    }
+
+    private static String formatMillis(long nanos) {
+        return String.format(java.util.Locale.ROOT, "%.3f", nanos / 1_000_000.0d);
+    }
+
+    private static Method resolveDeleteLocalRefsMethod() {
+        try {
+            Method method = BaseVM.class.getDeclaredMethod("deleteLocalRefs");
+            method.setAccessible(true);
+            return method;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static void clearVmLocalRefs(VM vm) {
+        if (vm == null || DELETE_LOCAL_REFS_METHOD == null) {
+            return;
+        }
+        try {
+            DELETE_LOCAL_REFS_METHOD.invoke(vm);
+        } catch (Throwable ignored) {
+        }
     }
 
     private static String readConfig(String propertyKey, String envKey, String defaultValue) {
