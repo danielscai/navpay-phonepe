@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+yarn orch apk --fresh 是完全删除旧包，然后重新安装。 这个命令是极其危险的，如果你要用这个命令，必须要停下来征求我的统一，否则默认都是用 yarn orch apk 的方式打包
+
 ## Project Structure & Module Organization
 
 This repository is a security research and reverse‑engineering workspace for Android malware targeting UPI apps.
