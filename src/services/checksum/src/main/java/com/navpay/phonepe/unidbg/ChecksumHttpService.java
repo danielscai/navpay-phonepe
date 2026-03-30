@@ -24,6 +24,7 @@ public final class ChecksumHttpService {
             Pattern.compile("\"([^\"]+)\"\\s*:\\s*\"((?:\\\\.|[^\\\\\"])*)\"");
 
     private static final int DEFAULT_PORT = 19190;
+    private static final int DEFAULT_WORKERS = 1;
 
     private final String runtimeRoot;
     private final String libPath;
@@ -43,14 +44,17 @@ public final class ChecksumHttpService {
                 ChecksumRuntimePaths.resolveRuntimeRoot(repoRoot).toString())).toAbsolutePath().normalize();
         ChecksumRuntimePaths.validatePreparedRuntime(runtimeRoot);
         int port = Integer.parseInt(readConfig("checksum.http.port", "CHECKSUM_HTTP_PORT", String.valueOf(DEFAULT_PORT)));
+        int workers = Integer.parseInt(readConfig("checksum.http.workers", "CHECKSUM_HTTP_WORKERS", String.valueOf(DEFAULT_WORKERS)));
         String libPath = ChecksumRuntimePaths.runtimeLib(runtimeRoot, "libphonepe-cryptography-support-lib.so").toString();
         String loadOrder = readConfig("probe.load.order", "PROBE_LOAD_ORDER", "e755b7-first");
         boolean loadLibcxx = isTruthy(readConfig("probe.load.libcxx", "PROBE_LOAD_LIBCXX", "false"));
+        System.setProperty("probe.ch.mode", "emulate");
+        System.setProperty("probe.runtime.root", runtimeRoot.toString());
         ChecksumHttpService service = new ChecksumHttpService(runtimeRoot.toString(), libPath, loadOrder, loadLibcxx);
-        service.start(port);
+        service.start(port, workers);
     }
 
-    private void start(int port) throws IOException {
+    private void start(int port, int workers) throws IOException {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
         server.createContext("/health", exchange -> {
             if (!"GET".equals(exchange.getRequestMethod())) {
@@ -62,11 +66,15 @@ public final class ChecksumHttpService {
         });
         server.createContext("/checksum", new JsonPostHandler(this::handleChecksum));
         server.createContext("/validate", new JsonPostHandler(this::handleValidate));
-        // unidbg/unicorn is not stable under concurrent request execution in the same JVM.
+        int effectiveWorkers = 1;
+        if (workers > 1) {
+            System.err.println("checksum_http_workers_requested=" + workers + " ignored; forcing single worker for unidbg stability");
+        }
         server.setExecutor(Executors.newSingleThreadExecutor());
         server.start();
         System.out.println("checksum_http_service=LISTENING");
         System.out.println("checksum_http_port=" + port);
+        System.out.println("checksum_http_workers=" + effectiveWorkers);
         System.out.println("checksum_http_mode=emulate");
         System.out.println("checksum_http_runtime=" + runtimeRoot);
         System.out.println("checksum_http_library=" + libPath);
@@ -91,8 +99,6 @@ public final class ChecksumHttpService {
         }
         String uuid = request.getOrDefault("uuid", "8e8f7e5c-3f14-4cb3-bf70-8ec3dbf5a001");
         String body = request.getOrDefault("body", "");
-        System.setProperty("probe.ch.mode", "emulate");
-        System.setProperty("probe.runtime.root", runtimeRoot);
         Map<String, String> report = new UnidbgChecksumProbe().execute(libPath, path, body, uuid, loadOrder, loadLibcxx);
         String checksum = report.getOrDefault("checksum", "");
         if (checksum.isEmpty()) {

@@ -1,0 +1,148 @@
+{
+  "meta": {
+    "timestamp": "2026-03-30T13:03:27",
+    "ports": [
+      19210,
+      19211
+    ],
+    "concurrency": 20,
+    "timeoutSeconds": 60.0,
+    "targetSeconds": 180.0,
+    "jsonPath": "/Users/danielscai/.codex/worktrees/e94c/navpay-phonepe/src/services/checksum/run/stress/stair-20260330-125746.json",
+    "mdPath": "/Users/danielscai/.codex/worktrees/e94c/navpay-phonepe/src/services/checksum/run/stress/stair-20260330-125746.md"
+  },
+  "rounds": [
+    {
+      "requests": 100,
+      "durationSeconds": 12.879,
+      "throughputRps": 7.76,
+      "success": 100,
+      "failed": 0,
+      "successRate": 100.0,
+      "latencyMs": {
+        "p50": 2323.67,
+        "p95": 3033.07,
+        "p99": 3415.3,
+        "max": 3637.24
+      },
+      "resources": {
+        "avgCpuPercent": 190.83,
+        "peakCpuPercent": 331.5,
+        "avgMemMb": 414.72,
+        "peakMemMb": 554.86
+      },
+      "errors": {},
+      "round": 1
+    },
+    {
+      "requests": 200,
+      "durationSeconds": 21.208,
+      "throughputRps": 9.43,
+      "success": 200,
+      "failed": 0,
+      "successRate": 100.0,
+      "latencyMs": {
+        "p50": 2084.12,
+        "p95": 2207.2,
+        "p99": 2238.06,
+        "max": 2275.82
+      },
+      "resources": {
+        "avgCpuPercent": 199.22,
+        "peakCpuPercent": 210.1,
+        "avgMemMb": 528.9,
+        "peakMemMb": 547.39
+      },
+      "errors": {},
+      "round": 2
+    },
+    {
+      "requests": 400,
+      "durationSeconds": 45.149,
+      "throughputRps": 8.86,
+      "success": 400,
+      "failed": 0,
+      "successRate": 100.0,
+      "latencyMs": {
+        "p50": 2102.91,
+        "p95": 3056.55,
+        "p99": 3324.75,
+        "max": 3393.54
+      },
+      "resources": {
+        "avgCpuPercent": 200.27,
+        "peakCpuPercent": 323.4,
+        "avgMemMb": 500.07,
+        "peakMemMb": 586.8
+      },
+      "errors": {},
+      "round": 3
+    },
+    {
+      "requests": 800,
+      "durationSeconds": 88.522,
+      "throughputRps": 9.04,
+      "success": 800,
+      "failed": 0,
+      "successRate": 100.0,
+      "latencyMs": {
+        "p50": 2126.2,
+        "p95": 2533.03,
+        "p99": 4124.17,
+        "max": 4688.9
+      },
+      "resources": {
+        "avgCpuPercent": 193.56,
+        "peakCpuPercent": 230.6,
+        "avgMemMb": 449.47,
+        "peakMemMb": 491.8
+      },
+      "errors": {},
+      "round": 4
+    },
+    {
+      "requests": 1600,
+      "durationSeconds": 169.116,
+      "throughputRps": 9.46,
+      "success": 1600,
+      "failed": 0,
+      "successRate": 100.0,
+      "latencyMs": {
+        "p50": 2086.17,
+        "p95": 2540.77,
+        "p99": 3060.57,
+        "max": 3663.59
+      },
+      "resources": {
+        "avgCpuPercent": 195.27,
+        "peakCpuPercent": 223.7,
+        "avgMemMb": 479.98,
+        "peakMemMb": 511.55
+      },
+      "errors": {},
+      "round": 5
+    }
+  ],
+  "bestWithinTarget": {
+    "requests": 1600,
+    "durationSeconds": 169.116,
+    "throughputRps": 9.46,
+    "success": 1600,
+    "failed": 0,
+    "successRate": 100.0,
+    "latencyMs": {
+      "p50": 2086.17,
+      "p95": 2540.77,
+      "p99": 3060.57,
+      "max": 3663.59
+    },
+    "resources": {
+      "avgCpuPercent": 195.27,
+      "peakCpuPercent": 223.7,
+      "avgMemMb": 479.98,
+      "peakMemMb": 511.55
+    },
+    "errors": {},
+    "round": 5
+  }
+}
