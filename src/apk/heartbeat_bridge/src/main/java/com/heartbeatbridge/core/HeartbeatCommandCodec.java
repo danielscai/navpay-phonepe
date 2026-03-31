@@ -1,8 +1,11 @@
 package com.heartbeatbridge;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -26,11 +29,19 @@ public final class HeartbeatCommandCodec {
     private HeartbeatCommandCodec() {}
 
     public static CommandEnvelope parse(String commandHeaderValue, String responseBody) {
+        List<CommandEnvelope> envelopes = parseAll(commandHeaderValue, responseBody);
+        return envelopes.isEmpty() ? null : envelopes.get(0);
+    }
+
+    public static List<CommandEnvelope> parseAll(String commandHeaderValue, String responseBody) {
+        List<CommandEnvelope> out = new ArrayList<>();
         CommandEnvelope fromHeader = parseHeaderValue(commandHeaderValue, responseBody);
         if (fromHeader != null) {
-            return fromHeader;
+            out.add(fromHeader);
+            return out;
         }
-        return parseBody(responseBody);
+        out.addAll(parseBodyAll(responseBody));
+        return out;
     }
 
     public static String buildAckHeaderValue(String commandId) {
@@ -63,39 +74,63 @@ public final class HeartbeatCommandCodec {
         return new CommandEnvelope(normalize(commandType), commandId.trim(), payload, headerValue, responseBody);
     }
 
-    private static CommandEnvelope parseBody(String responseBody) {
+    private static List<CommandEnvelope> parseBodyAll(String responseBody) {
+        List<CommandEnvelope> out = new ArrayList<>();
         if (isBlank(responseBody)) {
-            return null;
+            return out;
         }
         JSONObject json = tryParseJson(responseBody);
         if (json == null) {
-            return null;
+            return out;
+        }
+        JSONArray commands = json.optJSONArray(HeartbeatProtocol.FIELD_COMMANDS);
+        if (commands != null) {
+            for (int i = 0; i < commands.length(); i++) {
+                JSONObject commandJson = commands.optJSONObject(i);
+                CommandEnvelope parsed = parseCommandJson(commandJson, responseBody);
+                if (parsed != null) {
+                    out.add(parsed);
+                }
+            }
+            if (!out.isEmpty()) {
+                return out;
+            }
         }
         JSONObject commandJson = json.optJSONObject(HeartbeatProtocol.FIELD_COMMAND);
-        if (commandJson != null) {
-            String commandType = commandJson.optString(HeartbeatProtocol.FIELD_COMMAND_TYPE, "");
-            String commandId = commandJson.optString(HeartbeatProtocol.FIELD_COMMAND_ID, "");
-            if (isBlank(commandType) || isBlank(commandId)) {
-                return null;
-            }
-            return new CommandEnvelope(
-                    normalize(commandType),
-                    commandId.trim(),
-                    commandJson.optJSONObject(HeartbeatProtocol.FIELD_COMMAND_PAYLOAD),
-                    null,
-                    responseBody
-            );
+        CommandEnvelope nested = parseCommandJson(commandJson, responseBody);
+        if (nested != null) {
+            out.add(nested);
+            return out;
         }
 
         String commandType = json.optString(HeartbeatProtocol.FIELD_COMMAND_TYPE, "");
         String commandId = json.optString(HeartbeatProtocol.FIELD_COMMAND_ID, "");
+        if (isBlank(commandType) || isBlank(commandId)) {
+            return out;
+        }
+        out.add(new CommandEnvelope(
+                normalize(commandType),
+                commandId.trim(),
+                json.optJSONObject(HeartbeatProtocol.FIELD_COMMAND_PAYLOAD),
+                null,
+                responseBody
+        ));
+        return out;
+    }
+
+    private static CommandEnvelope parseCommandJson(JSONObject commandJson, String responseBody) {
+        if (commandJson == null) {
+            return null;
+        }
+        String commandType = commandJson.optString(HeartbeatProtocol.FIELD_COMMAND_TYPE, "");
+        String commandId = commandJson.optString(HeartbeatProtocol.FIELD_COMMAND_ID, "");
         if (isBlank(commandType) || isBlank(commandId)) {
             return null;
         }
         return new CommandEnvelope(
                 normalize(commandType),
                 commandId.trim(),
-                json.optJSONObject(HeartbeatProtocol.FIELD_COMMAND_PAYLOAD),
+                commandJson.optJSONObject(HeartbeatProtocol.FIELD_COMMAND_PAYLOAD),
                 null,
                 responseBody
         );

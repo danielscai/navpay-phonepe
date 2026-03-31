@@ -13,6 +13,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.List;
 import java.util.Scanner;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -97,24 +98,26 @@ public final class HeartbeatSender {
     }
 
     private static void handleHeartbeatCommand(HeartbeatExchangeResult exchange) {
-        HeartbeatCommandCodec.CommandEnvelope command = HeartbeatCommandCodec.parse(exchange.commandHeaderValue, exchange.responseBody);
-        if (command == null) {
+        List<HeartbeatCommandCodec.CommandEnvelope> commands = HeartbeatCommandCodec.parseAll(exchange.commandHeaderValue, exchange.responseBody);
+        if (commands.isEmpty()) {
             return;
         }
-        if (!HeartbeatCommandRegistry.isSupported(command.commandType)) {
-            Log.i(TAG, "heartbeat command ignored: unsupported type=" + command.commandType);
-            return;
-        }
-        if (command.commandId != null && command.commandId.equals(lastHandledCommandId)) {
-            pendingCommandAckId = command.commandId;
-            return;
-        }
+        for (HeartbeatCommandCodec.CommandEnvelope command : commands) {
+            if (!HeartbeatCommandRegistry.isSupported(command.commandType)) {
+                Log.i(TAG, "heartbeat command ignored: unsupported type=" + command.commandType);
+                continue;
+            }
+            if (command.commandId != null && command.commandId.equals(lastHandledCommandId)) {
+                pendingCommandAckId = command.commandId;
+                continue;
+            }
 
-        HeartbeatPingHandler.PingResult result = HeartbeatPingHandler.handle(command, System.currentTimeMillis());
-        if (result.handled) {
-            lastHandledCommandId = result.commandId;
-            pendingCommandAckId = result.commandId;
-            Log.i(TAG, "downlink ping -> pong");
+            HeartbeatPingHandler.PingResult result = HeartbeatPingHandler.handle(command, System.currentTimeMillis());
+            if (result.handled) {
+                lastHandledCommandId = result.commandId;
+                pendingCommandAckId = result.commandId;
+                Log.i(TAG, "downlink ping -> pong, commandId=" + result.commandId);
+            }
         }
     }
 

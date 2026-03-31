@@ -10,6 +10,7 @@ public final class HeartbeatProtocol {
     public static final String FIELD_APP_NAME = "appName";
     public static final String FIELD_ANDROID_ID = "androidId";
     public static final String FIELD_COMMAND = "command";
+    public static final String FIELD_COMMANDS = "commands";
     public static final String FIELD_COMMAND_TYPE = "commandType";
     public static final String FIELD_COMMAND_ID = "commandId";
     public static final String FIELD_COMMAND_PAYLOAD = "commandPayload";
