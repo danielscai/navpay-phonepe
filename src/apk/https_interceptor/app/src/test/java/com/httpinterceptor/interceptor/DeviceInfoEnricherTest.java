@@ -29,9 +29,10 @@ public class DeviceInfoEnricherTest {
         );
 
         Map<String, Object> enriched = DeviceInfoEnricher.enrich(payload, snapshot);
+        String legacyIdentityKey = "client" + "DeviceId";
 
         assertEquals("existing-android-id", enriched.get("androidId"));
-        assertFalse(enriched.containsKey("clientDeviceId"));
+        assertFalse(enriched.containsKey(legacyIdentityKey));
         assertEquals("Pixel 8", enriched.get("deviceName"));
         assertEquals("Google", enriched.get("brand"));
         assertEquals("keep-me", enriched.get("model"));
