@@ -1,8 +1,11 @@
 package com.navpay.phonepe.unidbg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -29,6 +32,20 @@ final class ChecksumHttpServiceJsonParsingTest {
 
         assertEquals("/a/b", parsed.get("path"));
         assertEquals("line1\nline2\t=中", parsed.get("body"));
+    }
+
+    @Test
+    void parseJsonBodyShouldRejectLongMalformedPayloadWithoutStackOverflow() throws Exception {
+        String json = "{\"body\":\"" + "\\\\".repeat(20000) + "x";
+        Method parseJsonBody = ChecksumHttpService.class.getDeclaredMethod("parseJsonBody", String.class);
+        parseJsonBody.setAccessible(true);
+
+        try {
+            parseJsonBody.invoke(null, json);
+            fail("expected parseJsonBody to reject malformed payload");
+        } catch (InvocationTargetException e) {
+            assertInstanceOf(IllegalArgumentException.class, e.getCause());
+        }
     }
 
     @SuppressWarnings("unchecked")

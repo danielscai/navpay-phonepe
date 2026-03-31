@@ -26,9 +26,7 @@ def test_heartbeat_bridge_contract_mentions_async_send_and_scheduler() -> None:
     sender = (MODULE_ROOT / "src/main/java/com/heartbeatbridge/HeartbeatSender.java").read_text(encoding="utf-8")
     scheduler = (MODULE_ROOT / "src/main/java/com/heartbeatbridge/HeartbeatScheduler.java").read_text(encoding="utf-8")
     contract = (MODULE_ROOT / "src/main/java/com/heartbeatbridge/HeartbeatBridgeContract.java").read_text(encoding="utf-8")
-    navpay_sender = (REPO_ROOT / "src/apk/phonepehelper/src/main/java/com/phonepehelper/NavpayHeartbeatSender.java").read_text(
-        encoding="utf-8"
-    )
+    legacy_sender = REPO_ROOT / "src/apk/phonepehelper/src/main/java/com/phonepehelper/NavpayHeartbeatSender.java"
 
     assert "HeartbeatSender.sendHeartbeatAsync" in provider
     assert "scheduleAtFixedRate" in scheduler
@@ -39,5 +37,4 @@ def test_heartbeat_bridge_contract_mentions_async_send_and_scheduler() -> None:
     assert 'EXTRA_ANDROID_ID = "androidId"' in contract
     assert "EXTRA_CLIENT_DEVICE_ID" not in contract
     assert "EXTRA_ANDROID_ID" in sender
-    assert '"androidId"' in navpay_sender
-    assert '"clientDeviceId"' not in navpay_sender
+    assert not legacy_sender.exists()

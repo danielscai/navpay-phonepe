@@ -15,13 +15,8 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.Executors;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 public final class ChecksumHttpService {
-
-    private static final Pattern JSON_STRING_FIELD =
-            Pattern.compile("\"([^\"]+)\"\\s*:\\s*\"((?:\\\\.|[^\\\\\"])*)\"");
 
     private static final int DEFAULT_PORT = 19190;
     private static final String DEFAULT_HOST = "127.0.0.1";
@@ -160,11 +155,101 @@ public final class ChecksumHttpService {
 
     private static Map<String, String> parseJsonBody(String body) {
         Map<String, String> out = new LinkedHashMap<>();
-        Matcher matcher = JSON_STRING_FIELD.matcher(body);
-        while (matcher.find()) {
-            out.put(matcher.group(1), unescapeJson(matcher.group(2)));
+        int index = skipWhitespace(body, 0);
+        if (index >= body.length()) {
+            return out;
         }
-        return out;
+        if (body.charAt(index) != '{') {
+            throw new IllegalArgumentException("invalid request json");
+        }
+        index++;
+        while (true) {
+            index = skipWhitespace(body, index);
+            if (index >= body.length()) {
+                throw new IllegalArgumentException("invalid request json");
+            }
+            if (body.charAt(index) == '}') {
+                return out;
+            }
+            if (body.charAt(index) != '"') {
+                throw new IllegalArgumentException("invalid request json");
+            }
+            StringToken keyToken = readJsonStringToken(body, index);
+            String key = keyToken.decoded;
+            index = skipWhitespace(body, keyToken.nextIndex);
+            if (index >= body.length() || body.charAt(index) != ':') {
+                throw new IllegalArgumentException("invalid request json");
+            }
+            index++;
+            index = skipWhitespace(body, index);
+            if (index >= body.length()) {
+                throw new IllegalArgumentException("invalid request json");
+            }
+            if (body.charAt(index) == '"') {
+                StringToken valueToken = readJsonStringToken(body, index);
+                out.put(key, valueToken.decoded);
+                index = valueToken.nextIndex;
+            } else {
+                index = skipNonStringValue(body, index);
+            }
+            index = skipWhitespace(body, index);
+            if (index >= body.length()) {
+                throw new IllegalArgumentException("invalid request json");
+            }
+            char separator = body.charAt(index);
+            if (separator == ',') {
+                index++;
+                continue;
+            }
+            if (separator == '}') {
+                return out;
+            }
+            throw new IllegalArgumentException("invalid request json");
+        }
+    }
+
+    private static int skipWhitespace(String body, int index) {
+        int cursor = index;
+        while (cursor < body.length() && Character.isWhitespace(body.charAt(cursor))) {
+            cursor++;
+        }
+        return cursor;
+    }
+
+    private static int skipNonStringValue(String body, int index) {
+        int cursor = index;
+        while (cursor < body.length()) {
+            char c = body.charAt(cursor);
+            if (c == ',' || c == '}') {
+                return cursor;
+            }
+            cursor++;
+        }
+        throw new IllegalArgumentException("invalid request json");
+    }
+
+    private static StringToken readJsonStringToken(String body, int quoteStart) {
+        int cursor = quoteStart + 1;
+        boolean escaped = false;
+        while (cursor < body.length()) {
+            char c = body.charAt(cursor);
+            if (escaped) {
+                escaped = false;
+                cursor++;
+                continue;
+            }
+            if (c == '\\') {
+                escaped = true;
+                cursor++;
+                continue;
+            }
+            if (c == '"') {
+                String decoded = unescapeJson(body.substring(quoteStart + 1, cursor));
+                return new StringToken(decoded, cursor + 1);
+            }
+            cursor++;
+        }
+        throw new IllegalArgumentException("unterminated string in request json");
     }
 
     private static String readConfig(String propertyKey, String envKey, String defaultValue) {
@@ -320,6 +405,16 @@ public final class ChecksumHttpService {
             this.report = report;
             this.checksum = checksum;
             this.shape = shape;
+        }
+    }
+
+    private static final class StringToken {
+        private final String decoded;
+        private final int nextIndex;
+
+        private StringToken(String decoded, int nextIndex) {
+            this.decoded = decoded;
+            this.nextIndex = nextIndex;
         }
     }
 
