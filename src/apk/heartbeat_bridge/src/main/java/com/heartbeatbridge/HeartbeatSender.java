@@ -8,10 +8,12 @@ import android.util.Log;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.charset.StandardCharsets;
+import java.util.Scanner;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -20,8 +22,9 @@ public final class HeartbeatSender {
     private static final String ENDPOINT_OVERRIDE_PROPERTY = "navpay.heartbeat.endpoint";
     private static final String EMULATOR_ENDPOINT = "http://10.0.2.2:3000/api/device/heartbeat";
     private static final String DEVICE_ENDPOINT = "http://127.0.0.1:3000/api/device/heartbeat";
-    private static final String APP_NAME = HeartbeatBridgeContract.APP_NAME_PHONEPE;
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
+    private static volatile String pendingCommandAckId = "";
+    private static volatile String lastHandledCommandId = "";
 
     private HeartbeatSender() {}
 
@@ -34,13 +37,9 @@ public final class HeartbeatSender {
     }
 
     private static void sendHeartbeat(Context context, long timestampMs) {
-        JSONObject payload = new JSONObject();
-        try {
-            payload.put(HeartbeatBridgeContract.EXTRA_TIMESTAMP, timestampMs > 0L ? timestampMs : System.currentTimeMillis());
-            payload.put(HeartbeatBridgeContract.EXTRA_APP_NAME, APP_NAME);
-            payload.put(HeartbeatBridgeContract.EXTRA_ANDROID_ID, resolveAndroidId(context));
-        } catch (Throwable t) {
-            Log.w(TAG, "Failed to build heartbeat payload", t);
+        JSONObject payload = HeartbeatPayloadBuilder.build(resolveAndroidId(context), timestampMs);
+        if (payload == null) {
+            Log.w(TAG, "Failed to build heartbeat payload");
             return;
         }
 
@@ -48,11 +47,12 @@ public final class HeartbeatSender {
         Throwable lastError = null;
         for (String endpoint : endpoints) {
             try {
-                int code = postWithHttpURLConnection(endpoint, payload.toString());
-                if (code >= 200 && code < 300) {
+                HeartbeatExchangeResult exchange = postWithHttpURLConnection(endpoint, payload.toString());
+                if (exchange.code >= 200 && exchange.code < 300) {
+                    handleHeartbeatCommand(exchange);
                     return;
                 }
-                lastError = new IllegalStateException("heartbeat request returned code=" + code + ", endpoint=" + endpoint);
+                lastError = new IllegalStateException("heartbeat request returned code=" + exchange.code + ", endpoint=" + endpoint);
             } catch (Throwable t) {
                 lastError = t;
             }
@@ -61,13 +61,18 @@ public final class HeartbeatSender {
         Log.w(TAG, "heartbeat upload failed for endpoints=" + String.join(", ", endpoints), lastError);
     }
 
-    private static int postWithHttpURLConnection(String endpoint, String bodyJson) throws IOException {
+    private static HeartbeatExchangeResult postWithHttpURLConnection(String endpoint, String bodyJson) throws IOException {
         HttpURLConnection connection = null;
         try {
             URL url = new URL(endpoint);
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("POST");
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+            connection.setRequestProperty(HeartbeatProtocol.HEADER_PROTOCOL_VERSION, HeartbeatProtocol.PROTOCOL_VERSION);
+            String ackCommandId = pendingCommandAckId == null ? "" : pendingCommandAckId.trim();
+            if (!ackCommandId.isEmpty()) {
+                connection.setRequestProperty(HeartbeatProtocol.HEADER_COMMAND_ACK, HeartbeatCommandCodec.buildAckHeaderValue(ackCommandId));
+            }
             connection.setConnectTimeout(5000);
             connection.setReadTimeout(5000);
             connection.setDoOutput(true);
@@ -77,10 +82,60 @@ public final class HeartbeatSender {
             try (OutputStream outputStream = connection.getOutputStream()) {
                 outputStream.write(bytes);
             }
-            return connection.getResponseCode();
+            int code = connection.getResponseCode();
+            String responseBody = readResponseBody(connection, code);
+            String commandHeader = connection.getHeaderField(HeartbeatProtocol.HEADER_COMMAND);
+            if (!ackCommandId.isEmpty() && code >= 200 && code < 300) {
+                pendingCommandAckId = "";
+            }
+            return new HeartbeatExchangeResult(code, responseBody, commandHeader);
         } finally {
             if (connection != null) {
                 connection.disconnect();
+            }
+        }
+    }
+
+    private static void handleHeartbeatCommand(HeartbeatExchangeResult exchange) {
+        HeartbeatCommandCodec.CommandEnvelope command = HeartbeatCommandCodec.parse(exchange.commandHeaderValue, exchange.responseBody);
+        if (command == null) {
+            return;
+        }
+        if (!HeartbeatCommandRegistry.isSupported(command.commandType)) {
+            Log.i(TAG, "heartbeat command ignored: unsupported type=" + command.commandType);
+            return;
+        }
+        if (command.commandId != null && command.commandId.equals(lastHandledCommandId)) {
+            pendingCommandAckId = command.commandId;
+            return;
+        }
+
+        HeartbeatPingHandler.PingResult result = HeartbeatPingHandler.handle(command, System.currentTimeMillis());
+        if (result.handled) {
+            lastHandledCommandId = result.commandId;
+            pendingCommandAckId = result.commandId;
+            Log.i(TAG, "downlink ping -> pong");
+        }
+    }
+
+    private static String readResponseBody(HttpURLConnection connection, int code) {
+        InputStream stream = null;
+        try {
+            stream = code >= 400 ? connection.getErrorStream() : connection.getInputStream();
+            if (stream == null) {
+                return "";
+            }
+            Scanner scanner = new Scanner(stream, StandardCharsets.UTF_8.name()).useDelimiter("\\A");
+            return scanner.hasNext() ? scanner.next() : "";
+        } catch (Throwable ignored) {
+            return "";
+        } finally {
+            if (stream != null) {
+                try {
+                    stream.close();
+                } catch (IOException ignored) {
+                    // no-op
+                }
             }
         }
     }
@@ -124,5 +179,17 @@ public final class HeartbeatSender {
                 || product.contains("sdk")
                 || hardware.contains("goldfish")
                 || hardware.contains("ranchu");
+    }
+
+    private static final class HeartbeatExchangeResult {
+        final int code;
+        final String responseBody;
+        final String commandHeaderValue;
+
+        private HeartbeatExchangeResult(int code, String responseBody, String commandHeaderValue) {
+            this.code = code;
+            this.responseBody = responseBody == null ? "" : responseBody;
+            this.commandHeaderValue = commandHeaderValue == null ? "" : commandHeaderValue;
+        }
     }
 }

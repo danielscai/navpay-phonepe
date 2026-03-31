@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class HeartbeatScheduler {
     private static final String TAG = "HeartbeatBridge";
-    private static final long HEARTBEAT_INTERVAL_MS = 30_000L;
+    private static final HeartbeatSchedulePolicy SCHEDULE_POLICY = new HeartbeatSchedulePolicy();
     private static final ScheduledExecutorService SCHEDULER = Executors.newSingleThreadScheduledExecutor();
     private static final AtomicBoolean STARTED = new AtomicBoolean(false);
 
@@ -22,12 +22,18 @@ public final class HeartbeatScheduler {
         }
 
         final Context appContext = context.getApplicationContext() != null ? context.getApplicationContext() : context;
-        Log.i(TAG, "heartbeat scheduler started, intervalMs=" + HEARTBEAT_INTERVAL_MS);
-        HeartbeatSender.sendHeartbeatAsync(appContext, System.currentTimeMillis());
-        SCHEDULER.scheduleAtFixedRate(
-                () -> HeartbeatSender.sendHeartbeatAsync(appContext, System.currentTimeMillis()),
-                HEARTBEAT_INTERVAL_MS,
-                HEARTBEAT_INTERVAL_MS,
+        Log.i(TAG, "heartbeat scheduler started, intervalMs=" + SCHEDULE_POLICY.heartbeatIntervalMs());
+        scheduleNext(appContext, SCHEDULE_POLICY.initialDelayMs());
+    }
+
+    private static void scheduleNext(Context appContext, long delayMs) {
+        SCHEDULER.schedule(
+                () -> {
+                    long startedAtMs = System.currentTimeMillis();
+                    HeartbeatSender.sendHeartbeatAsync(appContext, startedAtMs);
+                    scheduleNext(appContext, SCHEDULE_POLICY.nextDelayMs(startedAtMs, System.currentTimeMillis()));
+                },
+                delayMs,
                 TimeUnit.MILLISECONDS
         );
     }
