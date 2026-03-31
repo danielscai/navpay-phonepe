@@ -13,6 +13,7 @@ TARGET_MODULES = (
     "phonepe_sigbypass",
     "phonepe_https_interceptor",
     "phonepe_phonepehelper",
+    "heartbeat_bridge",
 )
 
 sys.path.insert(0, str(CACHE_MANAGER_DIR))
@@ -82,6 +83,7 @@ class ManifestDecouplingTest(unittest.TestCase):
             Path("src/apk/signature_bypass/scripts/merge.sh"),
             Path("src/apk/https_interceptor/scripts/merge.sh"),
             Path("src/apk/phonepehelper/scripts/merge.sh"),
+            Path("src/apk/heartbeat_bridge/scripts/merge.sh"),
         )
         for path in injectors:
             with self.subTest(path=path):

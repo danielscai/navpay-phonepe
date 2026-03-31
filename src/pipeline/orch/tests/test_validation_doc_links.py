@@ -14,9 +14,9 @@ class ValidationDocLinksTest(unittest.TestCase):
         validation_doc = Path("docs/verification/heartbeat_bridge_validation.md")
         text = validation_doc.read_text(encoding="utf-8")
 
-        self.assertIn("test_profile_resolver.py", text)
-        self.assertIn("test_profile_injection_verification.py", text)
+        self.assertIn("full", text)
         self.assertIn("heartbeat_bridge", text)
+        self.assertNotIn("resolve_profile(\"heartbeat_bridge\")", text)
 
 
 if __name__ == "__main__":

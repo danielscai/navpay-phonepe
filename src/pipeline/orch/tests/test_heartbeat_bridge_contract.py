@@ -29,6 +29,6 @@ def test_heartbeat_bridge_contract_mentions_async_send_and_scheduler() -> None:
     assert "HeartbeatSender.sendHeartbeatAsync" in provider
     assert "scheduleAtFixedRate" in scheduler
     assert "30_000L" in scheduler
-    assert 'Class.forName("okhttp3.OkHttpClient")' in sender
-    assert 'Class.forName("okhttp3.Request$Builder")' in sender
+    assert "HttpURLConnection" in sender
+    assert "openConnection()" in sender
     assert 'navpay.heartbeat.endpoint' in sender

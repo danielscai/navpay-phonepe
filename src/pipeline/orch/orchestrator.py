@@ -32,6 +32,7 @@ SUPPORTED_TOP_LEVEL_PROFILES = (DEFAULT_PROFILE,)
 SIGBYPASS_BUILD_DIR = "cache/phonepe_sigbypass_build"
 HTTPS_BUILD_DIR = "cache/phonepe_https_interceptor_build"
 PHONEPEHELPER_BUILD_DIR = "cache/phonepe_phonepehelper_build"
+HEARTBEAT_BRIDGE_BUILD_DIR = "cache/heartbeat_bridge_build"
 DEFAULT_UNSIGNED_APK = "patched_unsigned.apk"
 DEFAULT_ALIGNED_APK = "patched_aligned.apk"
 DEFAULT_SIGNED_APK = "patched_signed.apk"
@@ -47,7 +48,12 @@ DEFAULT_TEST_MODE = "sigbypass"
 DEFAULT_EMULATOR_BOOT_TIMEOUT = 20
 REUSE_STATE_FILE = "reuse_artifacts_state.json"
 MERGE_STATE_FILE = "profile_merge_state.json"
-ARTIFACT_INJECT_MODULES = {"phonepe_sigbypass", "phonepe_https_interceptor", "phonepe_phonepehelper"}
+ARTIFACT_INJECT_MODULES = {
+    "phonepe_sigbypass",
+    "phonepe_https_interceptor",
+    "phonepe_phonepehelper",
+    "heartbeat_bridge",
+}
 
 COLOR_RESET = "\033[0m"
 COLOR_BLUE = "\033[0;34m"
@@ -166,6 +172,16 @@ MODULE_DEFAULTS = {
         "login_activity": SIGBYPASS_LOGIN_ACTIVITY,
         "test_mode": "unified",
         "merge_script": "src/apk/phonepehelper/scripts/merge.sh",
+    },
+    "heartbeat_bridge": {
+        "label": "HEARTBEAT",
+        "path": "cache/heartbeat_bridge",
+        "build_dir": HEARTBEAT_BRIDGE_BUILD_DIR,
+        "log_tag": "HeartbeatBridge",
+        "runtime_log_required": False,
+        "login_activity": SIGBYPASS_LOGIN_ACTIVITY,
+        "test_mode": "unified",
+        "merge_script": "src/apk/heartbeat_bridge/scripts/merge.sh",
     },
 }
 

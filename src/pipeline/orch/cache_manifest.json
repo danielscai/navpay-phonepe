@@ -113,5 +113,37 @@
     "added_paths": [
       "smali_classes*"
     ]
+  },
+  "heartbeat_bridge": {
+    "deps": ["phonepe_decompiled"],
+    "source_cache": "phonepe_decompiled",
+    "source_subdir": "base_decompiled_clean",
+    "builder": {
+      "command": "src/apk/heartbeat_bridge/scripts/compile.sh",
+      "args": [],
+      "fingerprint_inputs": [
+        "src/apk/heartbeat_bridge/src/main/java",
+        "src/apk/heartbeat_bridge/scripts/compile.sh",
+        "src/apk/heartbeat_bridge/scripts/merge.sh"
+      ],
+      "outputs": [
+        {
+          "source": "src/apk/heartbeat_bridge/build/smali",
+          "target": "smali"
+        }
+      ]
+    },
+    "merge_script": "src/apk/heartbeat_bridge/scripts/merge.sh",
+    "path": "cache/heartbeat_bridge",
+    "reset_paths": [
+      "smali_classes*/com/heartbeatbridge/HeartbeatBridgeProvider.smali"
+    ],
+    "build_dir": "cache/heartbeat_bridge_build",
+    "log_tag": "HeartbeatBridge",
+    "runtime_log_required": false,
+    "uninstall_before_install": false,
+    "added_paths": [
+      "smali_classes*"
+    ]
   }
 }

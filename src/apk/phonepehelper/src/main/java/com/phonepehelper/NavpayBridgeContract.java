@@ -10,9 +10,6 @@ public final class NavpayBridgeContract {
     public static final String METHOD_CHECKSUM_COMPUTE = "computeChecksum";
     public static final String METHOD_CHECKSUM_PROVIDER = "providerChecksum";
     public static final String METHOD_CHECKSUM_NAVPAY = "navpayChecksum";
-    public static final String METHOD_HEARTBEAT = "heartbeat";
-    public static final String METHOD_HEARTBEAT_PROVIDER = "providerHeartbeat";
-    public static final String METHOD_HEARTBEAT_NAVPAY = "navpayHeartbeat";
     public static final String METHOD_TOKEN_REFRESH = "tokenrefresh";
     public static final String METHOD_TOKEN_REFRESH_PROVIDER = "providerTokenrefresh";
     public static final String METHOD_TOKEN_REFRESH_NAVPAY = "navpayTokenrefresh";
@@ -33,7 +30,6 @@ public final class NavpayBridgeContract {
     public static final String EXTRA_CHECKSUM_CHECKSUM = "checksum";
     public static final String EXTRA_CHECKSUM_RESPONSE_JSON = "response_json";
     public static final String EXTRA_CHECKSUM_RESPONSE_JSON_CAMEL = "responseJson";
-    public static final String EXTRA_HEARTBEAT_TIMESTAMP = "timestamp";
     public static final String EXTRA_TOKEN_REFRESH_TRIGGERED_AT = "triggered_at";
 
     public static final String DATABASE_NAME = "navpay_bridge.db";

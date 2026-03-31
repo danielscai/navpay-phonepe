@@ -54,6 +54,7 @@ Current artifact-backed modules:
 - `phonepe_sigbypass`
 - `phonepe_https_interceptor`
 - `phonepe_phonepehelper`
+- `heartbeat_bridge`
 
 ## Auto-discover Module Relationships
 
@@ -80,13 +81,13 @@ Interpretation:
 Run these commands in order if you want to inspect the real build behavior.
 
 1. `python3 src/pipeline/orch/orchestrator.py plan`
-   Meaning: prints the exact module order used by the default composed build. This confirms the orchestrator will build `sigbypass`, then `https_interceptor`, then `phonepehelper`.
+   Meaning: prints the exact module order used by the default composed build. This confirms the orchestrator will build `sigbypass`, then `https_interceptor`, then `phonepehelper`, then `heartbeat_bridge`.
 
 2. `python3 src/pipeline/orch/orchestrator.py prepare`
    Meaning: recreates a clean profile workspace from the decompiled baseline. This guarantees later injection happens on a fresh tree instead of a dirty previous run.
 
 3. `python3 src/pipeline/orch/orchestrator.py smali`
-   Meaning: builds the three module artifacts once into `cache/module_artifacts/`. This is the step that replaces the old “each module compiles during inject” behavior.
+   Meaning: builds the four module artifacts once into `cache/module_artifacts/`. This is the step that replaces the old “each module compiles during inject” behavior.
 
 4. `python3 src/pipeline/orch/orchestrator.py merge`
    Meaning: merges module artifacts into the workspace once, without APK packaging.

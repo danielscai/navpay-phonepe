@@ -18,12 +18,9 @@ class ProfileResolverTest(unittest.TestCase):
                 "phonepe_sigbypass",
                 "phonepe_https_interceptor",
                 "phonepe_phonepehelper",
+                "heartbeat_bridge",
             ],
         )
-
-    def test_heartbeat_bridge_profile_order(self) -> None:
-        modules = resolve_profile("heartbeat_bridge")
-        self.assertEqual(modules, ["heartbeat_bridge"])
 
     def test_unknown_profile_raises(self) -> None:
         with self.assertRaises(ValueError) as exc:

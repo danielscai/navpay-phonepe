@@ -41,7 +41,6 @@ public final class ModuleInit {
         } catch (Throwable t) {
             Log.w(TAG, "ChecksumServer start failed", t);
         }
-        NavpayHeartbeatSender.startIfNeeded(helperContext);
         Log.i(TAG, "PhonePeHelper initialized");
     }
 

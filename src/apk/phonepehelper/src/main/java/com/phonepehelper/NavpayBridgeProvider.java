@@ -2,6 +2,7 @@ package com.phonepehelper;
 
 import android.content.ContentProvider;
 import android.content.ContentValues;
+import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
@@ -21,11 +22,6 @@ public final class NavpayBridgeProvider extends ContentProvider {
             "computechecksum",
             "providerchecksum",
             "navpaychecksum"
-    ));
-    private static final Set<String> HEARTBEAT_METHODS = new HashSet<>(Arrays.asList(
-            "heartbeat",
-            "providerheartbeat",
-            "navpayheartbeat"
     ));
     private static final Set<String> TOKEN_REFRESH_METHODS = new HashSet<>(Arrays.asList(
             "tokenrefresh",
@@ -56,10 +52,6 @@ public final class NavpayBridgeProvider extends ContentProvider {
             "traceId", "trace_id",
             "nonce", "requestNonce", "request_nonce",
             "correlationId", "correlation_id"
-    };
-    private static final String[] HEARTBEAT_TIMESTAMP_KEYS = new String[]{
-            NavpayBridgeContract.EXTRA_HEARTBEAT_TIMESTAMP,
-            "ts", "time"
     };
 
     static {
@@ -93,12 +85,6 @@ public final class NavpayBridgeProvider extends ContentProvider {
     @Override
     public Bundle call(String method, String arg, Bundle extras) {
         String normalizedMethod = normalizeMethod(method);
-        if (isHeartbeatMethod(normalizedMethod)) {
-            Bundle result = buildHeartbeatBundle(extras);
-            long timestamp = result.getLong("timestamp", System.currentTimeMillis());
-            NavpayHeartbeatSender.sendHeartbeatAsync(getContext(), timestamp);
-            return result;
-        }
         if (isTokenRefreshMethod(normalizedMethod)) {
             return buildTokenRefreshBundle(extras);
         }
@@ -183,10 +169,6 @@ public final class NavpayBridgeProvider extends ContentProvider {
         return CHECKSUM_METHODS.contains(normalizedMethod);
     }
 
-    private static boolean isHeartbeatMethod(String normalizedMethod) {
-        return HEARTBEAT_METHODS.contains(normalizedMethod);
-    }
-
     private static boolean isTokenRefreshMethod(String normalizedMethod) {
         return TOKEN_REFRESH_METHODS.contains(normalizedMethod);
     }
@@ -203,15 +185,6 @@ public final class NavpayBridgeProvider extends ContentProvider {
             }
         }
         return normalized.toString();
-    }
-
-    private static Bundle buildHeartbeatBundle(Bundle extras) {
-        long timestamp = resolveLong(extras, HEARTBEAT_TIMESTAMP_KEYS, System.currentTimeMillis());
-        Bundle result = new Bundle();
-        result.putBoolean("ok", true);
-        result.putLong("timestamp", timestamp);
-        result.putString("status", "alive");
-        return result;
     }
 
     private static Bundle buildTokenRefreshBundle(Bundle extras) {

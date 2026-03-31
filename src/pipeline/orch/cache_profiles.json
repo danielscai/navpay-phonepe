@@ -2,9 +2,7 @@
   "full": [
     "phonepe_sigbypass",
     "phonepe_https_interceptor",
-    "phonepe_phonepehelper"
-  ],
-  "heartbeat_bridge": [
+    "phonepe_phonepehelper",
     "heartbeat_bridge"
   ]
 }
