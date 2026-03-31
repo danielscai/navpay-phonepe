@@ -19,7 +19,6 @@ final class DeviceInfoEnricher {
                 "unknown",
                 "unknown",
                 "unknown",
-                "unknown",
                 -1,
                 "unknown",
                 "unknown"
@@ -28,15 +27,10 @@ final class DeviceInfoEnricher {
 
         String canonicalDeviceId = firstNonEmpty(
             normalizedString(payload.get("androidId")),
-            normalizedString(payload.get("clientDeviceId")),
-            normalizedString(snapshot.androidId),
-            normalizedString(snapshot.clientDeviceId)
+            normalizedString(snapshot.androidId)
         );
         if (isMissingOrEmpty(payload, "androidId")) {
             payload.put("androidId", canonicalDeviceId);
-        }
-        if (isMissingOrEmpty(payload, "clientDeviceId")) {
-            payload.put("clientDeviceId", canonicalDeviceId);
         }
         if (isMissingOrEmpty(payload, "deviceName")) {
             payload.put("deviceName", snapshot.deviceName);

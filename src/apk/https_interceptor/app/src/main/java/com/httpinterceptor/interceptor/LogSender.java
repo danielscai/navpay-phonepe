@@ -354,7 +354,6 @@ public class LogSender {
         String androidId = getAndroidId();
         return new DeviceSnapshot(
             androidId,
-            androidId,
             Build.DEVICE,
             Build.BRAND,
             Build.MODEL,
