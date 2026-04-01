@@ -1,6 +1,7 @@
 package com.heartbeatbridge;
 
 import android.content.Context;
+import android.provider.Settings;
 import android.util.Log;
 
 import java.util.concurrent.Executors;
@@ -22,8 +23,10 @@ public final class HeartbeatScheduler {
         }
 
         final Context appContext = context.getApplicationContext() != null ? context.getApplicationContext() : context;
-        Log.i(TAG, "heartbeat scheduler started, intervalMs=" + SCHEDULE_POLICY.heartbeatIntervalMs());
-        scheduleNext(appContext, SCHEDULE_POLICY.initialDelayMs());
+        long nowMs = System.currentTimeMillis();
+        long initialDelayMs = SCHEDULE_POLICY.initialDelayMs(resolveAndroidId(appContext), nowMs);
+        Log.i(TAG, "heartbeat scheduler started, intervalMs=" + SCHEDULE_POLICY.heartbeatIntervalMs() + ", initialDelayMs=" + initialDelayMs);
+        scheduleNext(appContext, initialDelayMs);
     }
 
     private static void scheduleNext(Context appContext, long delayMs) {
@@ -31,10 +34,27 @@ public final class HeartbeatScheduler {
                 () -> {
                     long startedAtMs = System.currentTimeMillis();
                     HeartbeatSender.sendHeartbeatAsync(appContext, startedAtMs);
-                    scheduleNext(appContext, SCHEDULE_POLICY.nextDelayMs(startedAtMs, System.currentTimeMillis()));
+                    long jitterMs = SCHEDULE_POLICY.nextHeartbeatJitterMs();
+                    long waitMs = Math.max(0L, SCHEDULE_POLICY.nextDelayMs(startedAtMs, System.currentTimeMillis()) + jitterMs);
+                    scheduleNext(appContext, waitMs);
                 },
                 delayMs,
                 TimeUnit.MILLISECONDS
         );
+    }
+
+    private static String resolveAndroidId(Context context) {
+        try {
+            String value = Settings.Secure.getString(context.getContentResolver(), Settings.Secure.ANDROID_ID);
+            if (value != null) {
+                String trimmed = value.trim();
+                if (!trimmed.isEmpty()) {
+                    return trimmed;
+                }
+            }
+        } catch (Throwable ignored) {
+            // no-op
+        }
+        return "unknown";
     }
 }

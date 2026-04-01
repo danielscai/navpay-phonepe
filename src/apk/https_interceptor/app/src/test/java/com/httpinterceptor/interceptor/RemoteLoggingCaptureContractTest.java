@@ -38,4 +38,15 @@ public class RemoteLoggingCaptureContractTest {
         );
         assertTrue(src.contains("PhonePeTokenCapture.captureFromTraffic("));
     }
+
+    @Test
+    public void tokenCaptureMustPreferOauthRefreshResponseToken() throws Exception {
+        String src = new String(
+            Files.readAllBytes(Paths.get("src/main/java/com/httpinterceptor/interceptor/PhonePeTokenCapture.java")),
+            StandardCharsets.UTF_8
+        );
+        assertTrue(src.contains("/apis/users/org/auth/oauth/v1/token/refresh"));
+        assertTrue(src.contains("tokenFromOAuthRefreshEndpoint("));
+        assertTrue(src.contains("firstToken(carrier, \"token\", \"accessToken\", \"access_token\")"));
+    }
 }

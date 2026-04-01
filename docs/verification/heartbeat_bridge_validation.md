@@ -9,6 +9,9 @@ This document validates the `navpay-phonepe` side of the shared heartbeat protoc
 - `heartbeat_bridge` uses `HttpURLConnection` for transport.
 - `heartbeat_bridge` keeps protocol logic separate from adapter/runtime concerns.
 - `heartbeat_bridge` maintains its own command registry for supported downlink commands.
+- `heartbeat_bridge` scheduler includes anti-thundering-herd controls:
+  - deterministic initial offset by android id
+  - bounded per-cycle jitter (current target: `+-2000ms`)
 - `verify_profile_injection(...)` accepts the full module set, including `com/heartbeatbridge/*` smali markers.
 
 ## Protocol consistency checklist
@@ -46,3 +49,6 @@ Check the following against `docs/architecture/heartbeat/heartbeat-protocol-v1.m
 - No deprecated heartbeat sender code is present in `phonepehelper`.
 - Protocol-related changes are applied through the shared spec/core flow before adapter changes.
 - Registry changes are reviewed before adapter code is merged.
+- Redis heartbeat observation in `navpay-admin` matches runtime expectation:
+  - `navpay-android` foreground: `navpay` + `phonepe` keys advance
+  - `phonepe` foreground: only `phonepe` key advances

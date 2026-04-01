@@ -31,7 +31,9 @@ final class PhonePeTokenCapture {
         JSONObject auth = null;
         JSONObject accounts = null;
 
-        if (url.contains("/v5.0/tokens/1fa")) {
+        if (url.contains("/apis/users/org/auth/oauth/v1/token/refresh")) {
+            oneFa = tokenFromOAuthRefreshEndpoint(root);
+        } else if (url.contains("/v5.0/tokens/1fa")) {
             oneFa = tokenFrom1faEndpoint(root);
         } else if (url.contains("/v5.0/token")) {
             JSONObject carrier = firstCarrier(root);
@@ -78,6 +80,28 @@ final class PhonePeTokenCapture {
             return enrichObservedToken(nested);
         }
         return new JSONObject();
+    }
+
+    private static JSONObject tokenFromOAuthRefreshEndpoint(JSONObject root) {
+        if (isEmpty(root)) {
+            return new JSONObject();
+        }
+        JSONObject carrier = firstCarrier(root);
+        JSONObject token = firstToken(carrier, "token", "accessToken", "access_token");
+        if (isEmpty(token)) {
+            return new JSONObject();
+        }
+        try {
+            if (!token.has("observedFrom")) {
+                token.put("observedFrom", "oauth_refresh_response");
+            }
+            if (!token.has("observedAtMs")) {
+                token.put("observedAtMs", System.currentTimeMillis());
+            }
+        } catch (JSONException ignored) {
+            // ignore
+        }
+        return token;
     }
 
     private static JSONObject firstCarrier(JSONObject root) {

@@ -56,6 +56,8 @@ public final class PhonePeHelper {
     private static final long DEFAULT_FORCE_SNAPSHOT_UPLOAD_INTERVAL_MS = 3_600_000L;
     private static final long MIN_FORCE_SNAPSHOT_UPLOAD_INTERVAL_MS = 5_000L;
     private static final long TOKEN_REFRESH_TIMEOUT_MS = 20_000L;
+    private static final long TOKEN_REFRESH_CAPTURE_WAIT_MS = 2_500L;
+    private static final long TOKEN_REFRESH_CAPTURE_POLL_MS = 150L;
     private static final String FORCE_SNAPSHOT_UPLOAD_INTERVAL_PROPERTY = "navpay.snapshot.force_interval_ms";
 
     private static final String KEY_USER_PHONE = "user_phone";
@@ -466,11 +468,13 @@ public final class PhonePeHelper {
     public static void refreshToken(ResultCallback callback) {
         boolean ok = false;
         String message = "token refresh unavailable";
+        String beforeToken = stringify(get1faToken());
         try {
             int triggerCount = triggerRefreshAcrossProviders();
             if (triggerCount > 0) {
                 ok = true;
-                message = "token refresh triggered providers=" + triggerCount;
+                boolean tokenChanged = waitFor1faTokenUpdate(beforeToken, TOKEN_REFRESH_CAPTURE_WAIT_MS);
+                message = "token refresh triggered providers=" + triggerCount + ", tokenChanged=" + tokenChanged;
                 publishTokenUpdateIfNeeded(true);
             } else {
                 message = "token refresh skipped: no provider";
@@ -483,6 +487,24 @@ public final class PhonePeHelper {
         if (callback != null) {
             callback.onResult(ok, message);
         }
+    }
+
+    private static boolean waitFor1faTokenUpdate(String beforeTokenJson, long timeoutMs) {
+        long start = System.currentTimeMillis();
+        String baseline = beforeTokenJson == null ? "" : beforeTokenJson;
+        while (System.currentTimeMillis() - start <= Math.max(0L, timeoutMs)) {
+            String current = stringify(get1faToken());
+            if (!TextUtils.equals(current, baseline)) {
+                return true;
+            }
+            try {
+                Thread.sleep(TOKEN_REFRESH_CAPTURE_POLL_MS);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return false;
     }
 
     public static void saveHandler(Object handler) {

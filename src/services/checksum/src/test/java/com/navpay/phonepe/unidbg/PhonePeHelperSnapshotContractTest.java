@@ -41,6 +41,18 @@ final class PhonePeHelperSnapshotContractTest {
                 "requestMeta.token should exist and map to token snapshot");
     }
 
+    @Test
+    void refreshTokenShouldWaitForCapturedTokenUpdateBeforeForcedUpload() throws IOException {
+        String src = Files.readString(HELPER_SOURCE, StandardCharsets.UTF_8);
+        String body = methodBody(src, "refreshToken");
+        assertTrue(
+                body.contains("waitFor1faTokenUpdate("),
+                "refreshToken should wait for updated token capture after trigger");
+        assertTrue(
+                body.contains("publishTokenUpdateIfNeeded(true)"),
+                "refreshToken should still force one upload after refresh");
+    }
+
     private static String methodBody(String source, String methodName) {
         int signature = source.indexOf(" " + methodName + "(");
         if (signature < 0) {

@@ -72,3 +72,18 @@ def test_heartbeat_bridge_contract_mentions_async_send_and_scheduler() -> None:
     assert "HeartbeatPayloadBuilder.build" in sender
     assert "HeartbeatProtocol.FIELD_ANDROID_ID" not in sender
     assert not legacy_sender.exists()
+
+
+def test_heartbeat_bridge_contract_mentions_deterministic_sharding_and_bounded_jitter() -> None:
+    schedule_policy = (MODULE_ROOT / "src/main/java/com/heartbeatbridge/core/HeartbeatSchedulePolicy.java").read_text(encoding="utf-8")
+    scheduler = (MODULE_ROOT / "src/main/java/com/heartbeatbridge/HeartbeatScheduler.java").read_text(encoding="utf-8")
+
+    assert "HEARTBEAT_INTERVAL_MS = 30_000L" in schedule_policy
+    assert "HEARTBEAT_JITTER_MS = 2_000L" in schedule_policy
+    assert "initialDelayMs(String androidId, long nowMs)" in schedule_policy
+    assert "nextHeartbeatJitterMs()" in schedule_policy
+    assert "stableOffsetMs" in schedule_policy
+
+    assert "resolveAndroidId" in scheduler
+    assert "initialDelayMs(resolveAndroidId" in scheduler
+    assert "nextHeartbeatJitterMs()" in scheduler
