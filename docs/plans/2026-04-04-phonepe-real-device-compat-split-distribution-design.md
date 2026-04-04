@@ -166,3 +166,41 @@
 ## 11. 最终结论
 
 该方案在“网页分发前提下”兼顾了兼容覆盖、可维护性和用户体验，优于继续推进单 APK 合并路径。建议进入实施计划阶段，按模块拆分开发与验证任务。
+
+## 12. 实施约束补充（2026-04-04 二次确认）
+
+基于后续评审，本设计补充以下约束，作为实施阶段强制条件：
+
+1. 数据模型策略：一次性替换旧模型（不保留双轨兼容）
+- 旧 `payment_apps` 单表“单版本 + downloadUrl”语义下线。
+- 新模型统一采用 `app -> release -> artifact` 分层：
+  - `payment_apps`（应用主档）
+  - `payment_app_releases`（版本与发布状态）
+  - `payment_app_release_artifacts`（base/abi/density/installer 文件）
+  - `payment_app_release_events`（发布/回滚/配置变更历史）
+
+2. 文件存储策略：本地磁盘优先
+- 首版使用本地文件存储（如 `public/uploads/payment-apps/...`）。
+- 数据库仅保存文件相对路径、SHA-256、大小、类型等元信息。
+- 不在本阶段引入对象存储，后续如需迁移再抽象存储层。
+
+3. API 约束：统一走 `/api/personal`
+- 保留 `GET /api/personal/payment-apps` 作为客户端应用列表入口，但返回“应用 + active release 摘要 + manifest 入口”。
+- 新增 manifest 与 artifact 下载接口用于 installer 安装链路：
+  - `GET /api/personal/payment-apps/:appId/releases/:releaseId/manifest`
+  - `GET /api/personal/payment-apps/:appId/releases/:releaseId/artifacts/:artifactId/download`
+- 新增安装事件上报：
+  - `POST /api/personal/payment-apps/install-events`
+
+4. Android 安装流程约束
+- `Install Payment App` 入口改为 manifest 驱动，不再直接跳转 `downloadUrl`。
+- 强制流程：拉取 manifest -> 设备选包 -> 下载 + hash 校验 -> `PackageInstaller.Session` 一次提交。
+- required split 缺失必须 fail-fast。
+
+5. 管理台能力约束
+- `admin/ops/settings?tab=payment_apps` 需支持：
+  - 版本列表（含状态）
+  - 每版本 manifest 配置可视化
+  - artifacts 文件明细
+  - 发布历史事件追溯
+- 激活 release 前必须通过发布门禁校验（base、ABI、density、sha256、包名一致性）。
