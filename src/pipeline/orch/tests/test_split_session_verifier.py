@@ -169,3 +169,11 @@ def test_main_missing_required_split_fails_with_select_split_failed(monkeypatch,
                 "com.phonepe.app/.MainActivity",
             ]
         )
+
+
+def test_normalize_activity_component_rewrites_redundant_prefix():
+    verifier = _load_verifier_module()
+    normalized = verifier.normalize_activity_component(
+        "com.phonepe.app", "com.phonepe.app/com.phonepe.app.ui.activity.SplashScreenActivity"
+    )
+    assert normalized == "com.phonepe.app/.ui.activity.SplashScreenActivity"

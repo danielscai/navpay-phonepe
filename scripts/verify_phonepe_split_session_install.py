@@ -93,6 +93,18 @@ def _density_to_bucket(density: int) -> str:
     return "xxxhdpi"
 
 
+def normalize_activity_component(package: str, activity: str) -> str:
+    if "/" not in activity:
+        return activity
+    pkg, cls = activity.split("/", 1)
+    if pkg != package:
+        return activity
+    full_prefix = f"{package}."
+    if cls.startswith(full_prefix):
+        return f"{package}/.{cls[len(full_prefix):]}"
+    return activity
+
+
 def get_density_bucket(adb: str, serial: str) -> str:
     output = _run_adb_capture(adb, serial, ["shell", "wm", "density"])
     match = re.search(r"(\d+)", output)
@@ -139,7 +151,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     selected_apks = [base_apk, abi_split, density_split]
     install_out = install_multiple(args.adb, args.serial, selected_apks)
-    launch_out = verify_launch(args.adb, args.serial, args.package, args.activity, args.timeout_sec)
+    launch_component = normalize_activity_component(args.package, args.activity)
+    launch_out = verify_launch(args.adb, args.serial, args.package, launch_component, args.timeout_sec)
     print(f"selected_apks={','.join(str(apk) for apk in selected_apks)}")
     print(f"install={install_out}")
     print(f"launch={launch_out}")
