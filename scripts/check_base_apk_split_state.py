@@ -5,20 +5,20 @@ from pathlib import Path
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Check whether base.apk embeds split APK files")
-    parser.add_argument("--base-apk", required=True)
+    parser = argparse.ArgumentParser(description="Check whether target APK embeds split APK files")
+    parser.add_argument("--apk", required=True)
     args = parser.parse_args()
 
-    base_apk = Path(args.base_apk)
-    if not base_apk.exists():
-        print(f"[BASE-APK-CHECK] FAIL: base apk not found: {base_apk}")
+    target_apk = Path(args.apk)
+    if not target_apk.exists():
+        print(f"[APK-SPLIT-CHECK] FAIL: apk not found: {target_apk}")
         return 2
 
     try:
-        with zipfile.ZipFile(base_apk, "r") as zf:
+        with zipfile.ZipFile(target_apk, "r") as zf:
             names = zf.namelist()
     except zipfile.BadZipFile:
-        print(f"[BASE-APK-CHECK] FAIL: invalid apk/zip: {base_apk}")
+        print(f"[APK-SPLIT-CHECK] FAIL: invalid apk/zip: {target_apk}")
         return 2
 
     embedded_split_apks = [
@@ -27,13 +27,13 @@ def main() -> int:
     ]
 
     if embedded_split_apks:
-        print("[BASE-APK-CHECK] FAIL: base.apk contains embedded split APK entries")
+        print("[APK-SPLIT-CHECK] FAIL: target APK contains embedded split APK entries")
         for item in embedded_split_apks:
             print(f"  - {item}")
         return 1
 
-    print(f"[BASE-APK-CHECK] PASS: {base_apk}")
-    print("[BASE-APK-CHECK] split APK entries inside base.apk: NONE")
+    print(f"[APK-SPLIT-CHECK] PASS: {target_apk}")
+    print("[APK-SPLIT-CHECK] split APK entries inside target APK: NONE")
     return 0
 
 
