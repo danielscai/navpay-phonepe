@@ -29,6 +29,7 @@ type PublisherApi = {
 type CliDeps = {
   readApkMetadata: (apkPath: string) => Promise<ApkMetadata>;
   sha256File: (apkPath: string) => Promise<string>;
+  readApkSigningDigest: (apkPath: string) => Promise<string>;
 };
 
 type RunResult = {
@@ -108,10 +109,28 @@ function readApkMetadataDefault(apkPath: string): ApkMetadata {
   }
 }
 
+function normalizeDigest(raw: string): string {
+  return raw.replace(/:/g, "").trim().toLowerCase();
+}
+
+function readApkSigningDigestDefault(apkPath: string): string {
+  const out = execFileSync("apksigner", ["verify", "--print-certs", apkPath], { encoding: "utf8" });
+  const match = out.match(/certificate SHA-256 digest:\s*([A-Fa-f0-9:\s]+)/);
+  if (!match?.[1]) {
+    throw new Error(`apk_signing_digest_parse_failed:${apkPath}`);
+  }
+  const digest = normalizeDigest(match[1]);
+  if (!digest) {
+    throw new Error(`apk_signing_digest_empty:${apkPath}`);
+  }
+  return digest;
+}
+
 function defaultDeps(): CliDeps {
   return {
     readApkMetadata: async (apkPath) => readApkMetadataDefault(apkPath),
     sha256File: sha256FileDefault,
+    readApkSigningDigest: async (apkPath) => readApkSigningDigestDefault(apkPath),
   };
 }
 
@@ -198,6 +217,17 @@ export async function runReleaseCli(
     if (!token) throw new Error("release_token_required");
     return buildHttpApi(baseUrl, token);
   })();
+
+  const signatureDigests = {
+    base: await useDeps.readApkSigningDigest(baseApkPath),
+    abi: await useDeps.readApkSigningDigest(abiApkPath),
+    density: await useDeps.readApkSigningDigest(densityApkPath),
+  };
+  if (signatureDigests.base !== signatureDigests.abi || signatureDigests.base !== signatureDigests.density) {
+    throw new Error(
+      `apk_signatures_inconsistent base=${signatureDigests.base} abi=${signatureDigests.abi} density=${signatureDigests.density}`,
+    );
+  }
 
   const metadataFromApk = await useDeps.readApkMetadata(baseApkPath);
   const metadata: ApkMetadata = {

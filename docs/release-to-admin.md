@@ -29,6 +29,13 @@ yarn release:to-admin \
 ## 行为
 
 - 默认目标环境是 `local`。
+- 上传前会执行签名一致性预检（`apksigner verify --print-certs`）：
+  - `base/abi/density` 三个 APK 的签名 digest 必须完全一致。
+  - 不一致时会直接失败并抛出 `apk_signatures_inconsistent`，不会创建/上传 release。
 - 会先读取当前 active release 做幂等预检。
 - 若命中幂等（版本一致且校验匹配）则直接跳过。
 - 未命中时按 `create -> upload(base/abi/density) -> activate` 执行发布。
+
+## 依赖
+
+- 需要系统可执行 `apksigner`（Android build-tools 自带），用于读取 APK 签名摘要。
