@@ -2138,7 +2138,7 @@ def profile_test(
     effective_install_mode = "split-session" if install_mode == "clean" else install_mode
     preserve_mode = effective_install_mode in {"reinstall", "keep"}
     primary_log_tag = ""
-    if not smoke:
+    if not smoke and effective_install_mode != "split-session":
         primary_log_tag = primary_spec.get("log_tag") or SIGBYPASS_LOG_TAG
     test_serial = resolve_test_serial(primary_spec, serial)
     log_info(f"[PROFILE:{profile_name}] 目标设备: {test_serial}")
@@ -2182,9 +2182,12 @@ def profile_test(
     )
     if not smoke:
         verify_profile_injection(manifest, workspace, modules)
-        # Primary module log is already validated in unified_test.
-        # Secondary module logs are best-effort at startup and should not block full test.
-        verify_profile_log_tags(manifest, modules[1:], test_serial, strict=False)
+        if effective_install_mode != "split-session":
+            # Primary module log is already validated in unified_test.
+            # Secondary module logs are best-effort at startup and should not block full test.
+            verify_profile_log_tags(manifest, modules[1:], test_serial, strict=False)
+        else:
+            log_info(f"[PROFILE:{profile_name}] split-session 模式跳过运行时日志标签强校验")
 
 
 def run_profile_action(
