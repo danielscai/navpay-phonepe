@@ -53,6 +53,24 @@ def verify_launch(adb: str, serial: str, package: str, activity: str, timeout_se
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     output = (proc.stdout + proc.stderr).strip()
+    if ("Error type 3" in output or "does not exist" in output) and package:
+        monkey_cmd = [
+            adb,
+            "-s",
+            serial,
+            "shell",
+            "monkey",
+            "-p",
+            package,
+            "-c",
+            "android.intent.category.LAUNCHER",
+            "1",
+        ]
+        monkey_proc = subprocess.run(monkey_cmd, capture_output=True, text=True)
+        monkey_output = (monkey_proc.stdout + monkey_proc.stderr).strip()
+        if monkey_proc.returncode == 0:
+            return monkey_output
+        output = (output + "\n" + monkey_output).strip()
     if proc.returncode != 0 or "Error:" in output:
         detail = output or "unknown launch error"
         raise RuntimeError(f"LAUNCH_FAILED: {detail}")

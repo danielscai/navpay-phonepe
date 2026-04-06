@@ -177,3 +177,30 @@ def test_normalize_activity_component_rewrites_redundant_prefix():
         "com.phonepe.app", "com.phonepe.app/com.phonepe.app.ui.activity.SplashScreenActivity"
     )
     assert normalized == "com.phonepe.app/.ui.activity.SplashScreenActivity"
+
+
+def test_verify_launch_falls_back_to_monkey_when_activity_missing(monkeypatch):
+    verifier = _load_verifier_module()
+    calls = []
+
+    def fake_run(cmd, capture_output, text):
+        calls.append(cmd)
+        if "am" in cmd:
+            return subprocess.CompletedProcess(
+                cmd,
+                1,
+                stdout="Starting: Intent { cmp=com.phonepe.app/.Missing }\nError type 3\n",
+                stderr="Error: Activity class does not exist.\n",
+            )
+        return subprocess.CompletedProcess(cmd, 0, stdout="Events injected: 1\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    out = verifier.verify_launch(
+        "adb",
+        "emulator-5554",
+        "com.phonepe.app",
+        "com.phonepe.app/.Missing",
+        30,
+    )
+    assert "Events injected: 1" in out
+    assert any("monkey" in cmd for cmd in calls)
