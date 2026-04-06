@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import argparse
+import subprocess
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Sequence
 
 
 def _normalize_abi_token(abi: str) -> str:
@@ -25,6 +26,38 @@ def select_density_split(files: Iterable[Path], density_bucket: str) -> Optional
         if path.name == target:
             return path
     return None
+
+
+def install_multiple(adb: str, serial: str, apks: Sequence[Path]) -> str:
+    cmd = [adb, "-s", serial, "install-multiple", "--no-incremental", *[str(path) for path in apks]]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    output = (proc.stdout + proc.stderr).strip()
+    if proc.returncode != 0 or "Failure" in output:
+        detail = output or "unknown adb install error"
+        raise RuntimeError(f"INSTALL_MULTIPLE_FAILED: {detail}")
+    return output
+
+
+def verify_launch(adb: str, serial: str, package: str, activity: str, timeout_sec: int) -> str:
+    cmd = [
+        adb,
+        "-s",
+        serial,
+        "shell",
+        "am",
+        "start",
+        "-W",
+        "-n",
+        activity,
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    output = (proc.stdout + proc.stderr).strip()
+    if proc.returncode != 0 or "Error:" in output:
+        detail = output or "unknown launch error"
+        raise RuntimeError(f"LAUNCH_FAILED: {detail}")
+    if package not in output and "Status: ok" not in output:
+        raise RuntimeError(f"LAUNCH_FAILED: unexpected launch output: {output}")
+    return output
 
 
 def main() -> int:

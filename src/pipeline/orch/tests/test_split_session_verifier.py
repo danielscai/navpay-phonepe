@@ -2,6 +2,8 @@ import importlib.util
 import subprocess
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 VERIFIER_PATH = REPO_ROOT / "scripts/verify_phonepe_split_session_install.py"
@@ -50,3 +52,42 @@ def test_select_required_density_split_exact_match(tmp_path):
 
     selected = verifier.select_density_split(files, "xxhdpi")
     assert selected and selected.name == "split_config.xxhdpi.apk"
+
+
+def test_install_multiple_uses_three_apks_in_single_call(monkeypatch, tmp_path):
+    verifier = _load_verifier_module()
+    base = tmp_path / "base.apk"
+    abi = tmp_path / "split_config.arm64_v8a.apk"
+    density = tmp_path / "split_config.xxhdpi.apk"
+    for path in (base, abi, density):
+        path.write_text("x")
+
+    called = {}
+
+    def fake_run(cmd, capture_output, text):
+        called["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout="Success\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    verifier.install_multiple("adb", "emulator-5554", [base, abi, density])
+
+    assert called["cmd"][:5] == ["adb", "-s", "emulator-5554", "install-multiple", "--no-incremental"]
+    assert called["cmd"][5:] == [str(base), str(abi), str(density)]
+
+
+def test_install_failure_maps_to_install_multiple_failed(monkeypatch, tmp_path):
+    verifier = _load_verifier_module()
+    base = tmp_path / "base.apk"
+    base.write_text("x")
+
+    def fake_run(cmd, capture_output, text):
+        return subprocess.CompletedProcess(
+            cmd,
+            1,
+            stdout="Failure [INSTALL_FAILED_MISSING_SHARED_LIBRARY]\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with pytest.raises(RuntimeError, match="INSTALL_MULTIPLE_FAILED"):
+        verifier.install_multiple("adb", "emulator-5554", [base])
