@@ -3,6 +3,7 @@ import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { existsSync, readdirSync } from "node:fs";
 
 type ApkMetadata = {
   versionName: string;
@@ -120,8 +121,45 @@ function normalizeDigest(raw: string): string {
   return raw.replace(/:/g, "").trim().toLowerCase();
 }
 
+function compareVersionDesc(a: string, b: string): number {
+  const pa = a.split(".").map((x) => Number(x));
+  const pb = b.split(".").map((x) => Number(x));
+  const n = Math.max(pa.length, pb.length);
+  for (let i = 0; i < n; i += 1) {
+    const da = pa[i] ?? 0;
+    const db = pb[i] ?? 0;
+    if (da !== db) return db - da;
+  }
+  return 0;
+}
+
+function resolveApkSignerPath(): string {
+  const fromEnv = String(process.env.APKSIGNER_PATH ?? "").trim();
+  if (fromEnv) return fromEnv;
+
+  const sdkRoot = String(process.env.ANDROID_SDK_ROOT ?? process.env.ANDROID_HOME ?? "").trim();
+  const candidateRoots = [sdkRoot, "/Users/danielscai/Library/Android/sdk"].filter(Boolean);
+  for (const root of candidateRoots) {
+    const buildToolsDir = join(root, "build-tools");
+    try {
+      const versions = readdirSync(buildToolsDir, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => d.name)
+        .sort(compareVersionDesc);
+      for (const version of versions) {
+        const candidate = join(buildToolsDir, version, "apksigner");
+        if (existsSync(candidate)) return candidate;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return "apksigner";
+}
+
 function readApkSigningDigestDefault(apkPath: string): string {
-  const out = execFileSync("apksigner", ["verify", "--print-certs", apkPath], { encoding: "utf8" });
+  const apksigner = resolveApkSignerPath();
+  const out = execFileSync(apksigner, ["verify", "--print-certs", apkPath], { encoding: "utf8" });
   const match = out.match(/certificate SHA-256 digest:\s*([A-Fa-f0-9:\s]+)/);
   if (!match?.[1]) {
     throw new Error(`apk_signing_digest_parse_failed:${apkPath}`);
