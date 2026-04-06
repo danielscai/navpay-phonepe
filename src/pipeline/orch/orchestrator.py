@@ -1170,12 +1170,41 @@ def sigbypass_compile(cache_path: Path, work_dir: Path, unsigned_apk: str, align
     if env.get("JAVA_HOME"):
         env["PATH"] = f"{env['JAVA_HOME']}/bin:" + env.get("PATH", "")
 
+    enforce_dex_compression(cache_path)
     build_jobs = max(1, os.cpu_count() or 1)
     run(["apktool", "b", "-j", str(build_jobs), "-nc", str(cache_path), "-o", str(unsigned)], env=env)
     ensure_primary_dex_first(unsigned)
     run([str(zipalign), "-f", "4", str(unsigned), str(aligned)], env=env)
     run([str(apksigner), "sign", "--ks", str(keystore), "--ks-pass", "pass:android", "--out", str(signed), str(aligned)], env=env)
     run([str(apksigner), "verify", "-v", str(signed)], env=env)
+
+
+def enforce_dex_compression(cache_path: Path):
+    apktool_yml = cache_path / "apktool.yml"
+    if not apktool_yml.exists():
+        return
+
+    lines = apktool_yml.read_text(encoding="utf-8").splitlines(keepends=True)
+    in_do_not_compress = False
+    changed = False
+    out = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "doNotCompress:":
+            in_do_not_compress = True
+            out.append(line)
+            continue
+        if in_do_not_compress and line and not line[0].isspace() and stripped.endswith(":"):
+            in_do_not_compress = False
+        if in_do_not_compress and stripped == "- dex":
+            changed = True
+            continue
+        out.append(line)
+
+    if changed:
+        apktool_yml.write_text("".join(out), encoding="utf-8")
+        log_info("Removed doNotCompress:dex from apktool.yml to keep dex entries compressed")
 
 
 def ensure_primary_dex_first(apk_path: Path):
