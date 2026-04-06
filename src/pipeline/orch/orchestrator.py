@@ -2145,6 +2145,8 @@ def profile_test(
     timeout_sec = SMOKE_TIMEOUT_SEC if smoke else DEFAULT_TIMEOUT_SEC
     if preserve_mode:
         timeout_sec = 25 if smoke else 30
+    if effective_install_mode == "split-session":
+        timeout_sec = 25 if smoke else 30
     # preserve-data modes are more sensitive to historical app state; retry activity launch up to 3 times.
     if preserve_mode:
         start_retries = 3

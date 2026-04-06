@@ -101,3 +101,30 @@ def test_split_session_mode_requires_base_and_selected_splits(monkeypatch, tmp_p
             "emulator-5554",
             install_mode="split-session",
         )
+
+
+def test_profile_test_clean_uses_split_session_with_extended_timeout(monkeypatch, tmp_path):
+    manifest = {}
+    work_dir = tmp_path / "build"
+    workspace = tmp_path / "workspace"
+    work_dir.mkdir()
+    workspace.mkdir()
+    (work_dir / "patched_signed.apk").write_text("x", encoding="utf-8")
+    primary_spec = {"name": "phonepe_sigbypass", "log_tag": "SigBypass"}
+
+    with monkeypatch.context() as m:
+        m.setattr(cache_manager, "resolve_profile_modules", lambda _m, _p: ["phonepe_sigbypass"])
+        m.setattr(cache_manager, "profile_build_modules", lambda _m, _p: None)
+        m.setattr(cache_manager, "profile_apk", lambda _m, _p, fresh=False: work_dir)
+        m.setattr(cache_manager, "resolve_module_spec", lambda _m, _n: primary_spec)
+        m.setattr(cache_manager, "resolve_profile_workspace", lambda _p: workspace)
+        m.setattr(cache_manager, "resolve_test_serial", lambda _spec, _serial: "emulator-5554")
+        m.setattr(cache_manager, "verify_profile_injection", lambda *_args, **_kwargs: None)
+        m.setattr(cache_manager, "verify_profile_log_tags", lambda *_args, **_kwargs: None)
+
+        def fake_unified_test(*args, **kwargs):
+            assert kwargs["install_mode"] == "split-session"
+            assert args[5] == 30
+
+        m.setattr(cache_manager, "unified_test", fake_unified_test)
+        cache_manager.profile_test(manifest, "full", "emulator-5554", smoke=False, install_mode="clean")
