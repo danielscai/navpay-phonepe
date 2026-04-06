@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -48,6 +49,8 @@ DEFAULT_TEST_MODE = "sigbypass"
 DEFAULT_EMULATOR_BOOT_TIMEOUT = 20
 REUSE_STATE_FILE = "reuse_artifacts_state.json"
 MERGE_STATE_FILE = "profile_merge_state.json"
+DEFAULT_SPLIT_SOURCE_DIR = "cache/phonepe/from_device"
+DEFAULT_SPLIT_BASE_APK = "base.apk"
 ARTIFACT_INJECT_MODULES = {
     "phonepe_sigbypass",
     "phonepe_https_interceptor",
@@ -1225,6 +1228,8 @@ def unified_test(
     start_retries: int = 3,
     check_interval: int = 1,
     install_mode: str = "clean",
+    split_base_apk: Optional[Path] = None,
+    split_apks_dir: Optional[Path] = None,
 ):
     if not signed_apk.exists():
         raise RuntimeError(f"Signed APK not found: {signed_apk}")
@@ -1287,9 +1292,59 @@ def unified_test(
             ):
                 lines.append(line)
                 continue
-            if "FATAL EXCEPTION" in upper:
-                lines.append(line)
+                if "FATAL EXCEPTION" in upper:
+                    lines.append(line)
         return lines
+
+    def _normalize_abi_token(abi: str) -> str:
+        return abi.replace("-", "_")
+
+    def select_abi_split(files, supported_abis):
+        split_files = [Path(path) for path in files]
+        for abi in supported_abis:
+            token = f"split_config.{_normalize_abi_token(abi)}.apk"
+            for file_path in split_files:
+                if file_path.name == token:
+                    return file_path
+        return None
+
+    def select_density_split(files, density_bucket):
+        target = f"split_config.{density_bucket}.apk"
+        for file_path in files:
+            path = Path(file_path)
+            if path.name == target:
+                return path
+        return None
+
+    def get_supported_abis(adb_bin: str, device_serial: str):
+        out = run_capture([adb_bin, "-s", device_serial, "shell", "getprop", "ro.product.cpu.abilist"], check=False).strip()
+        if out:
+            return [item.strip() for item in out.split(",") if item.strip()]
+        out = run_capture([adb_bin, "-s", device_serial, "shell", "getprop", "ro.product.cpu.abi"], check=False).strip()
+        return [out] if out else []
+
+    def density_to_bucket(density: int) -> str:
+        if density <= 120:
+            return "ldpi"
+        if density <= 160:
+            return "mdpi"
+        if density <= 240:
+            return "hdpi"
+        if density <= 320:
+            return "xhdpi"
+        if density <= 480:
+            return "xxhdpi"
+        return "xxxhdpi"
+
+    def get_density_bucket(adb_bin: str, device_serial: str):
+        out = run_capture([adb_bin, "-s", device_serial, "shell", "wm", "density"], check=False)
+        match = re.search(r"(\d+)", out)
+        if not match:
+            out = run_capture([adb_bin, "-s", device_serial, "shell", "getprop", "ro.sf.lcd_density"], check=False)
+            match = re.search(r"(\d+)", out)
+        if not match:
+            raise RuntimeError("split-session failed: unable to read device density")
+        return density_to_bucket(int(match.group(1)))
 
     log_info("准备安装环境：停止旧进程并清理 logcat")
     ensure_process_stopped()
@@ -1301,6 +1356,36 @@ def unified_test(
         log_info("安装前清理：卸载旧版本应用")
         run([adb, "-s", device, "uninstall", package], check=False, concise=True)
         install_cmd = [*base_install_cmd, str(signed_apk)]
+    elif install_mode == "split-session":
+        if split_base_apk is None or split_apks_dir is None:
+            raise RuntimeError("split-session requires --base-apk and --splits-dir")
+        base_apk = Path(split_base_apk)
+        splits_dir = Path(split_apks_dir)
+        if not base_apk.exists():
+            raise RuntimeError(f"split-session base apk not found: {base_apk}")
+        split_files = sorted(splits_dir.glob("split_config.*.apk"))
+        supported_abis = get_supported_abis(adb, device)
+        density_bucket = get_density_bucket(adb, device)
+        abi_split = select_abi_split(split_files, supported_abis)
+        density_split = select_density_split(split_files, density_bucket)
+        if abi_split is None:
+            raise RuntimeError(f"split-session missing ABI split for {supported_abis}")
+        if density_split is None:
+            raise RuntimeError(f"split-session missing density split for {density_bucket}")
+        log_info(f"split-session 选择 ABI split: {abi_split.name}")
+        log_info(f"split-session 选择 density split: {density_split.name}")
+        log_info("安装前清理：卸载旧版本应用")
+        run([adb, "-s", device, "uninstall", package], check=False, concise=True)
+        install_cmd = [
+            adb,
+            "-s",
+            device,
+            "install-multiple",
+            "--no-incremental",
+            str(base_apk),
+            str(abi_split),
+            str(density_split),
+        ]
     elif install_mode == "keep":
         log_info("安装前执行 keep 模式：卸载程序但保留数据（pm uninstall -k --user 0）")
         run([adb, "-s", device, "shell", "pm", "uninstall", "-k", "--user", "0", package], check=False, concise=True)
@@ -1326,6 +1411,10 @@ def unified_test(
             time.sleep(1)
     if last_install_error:
         raise RuntimeError(f"APK 安装失败（重试后仍失败）: {last_install_error}")
+    if install_mode == "split-session":
+        install_output = run_capture([adb, "-s", device, "shell", "pm", "path", package], check=False)
+        if "package:" not in install_output:
+            raise RuntimeError("split-session install verification failed: pm path returned empty")
     log_info("尝试拉起应用并等待进入目标页面")
     last_start_out = ""
     total_start_retries = max(1, start_retries)
@@ -2046,7 +2135,8 @@ def profile_test(
     workspace = resolve_profile_workspace(profile_name)
     signed_apk = work_dir / DEFAULT_SIGNED_APK
     primary_spec = resolve_module_spec(manifest, modules[0])
-    preserve_mode = install_mode in {"reinstall", "keep"}
+    effective_install_mode = "split-session" if install_mode == "clean" else install_mode
+    preserve_mode = effective_install_mode in {"reinstall", "keep"}
     primary_log_tag = ""
     if not smoke:
         primary_log_tag = primary_spec.get("log_tag") or SIGBYPASS_LOG_TAG
@@ -2061,13 +2151,15 @@ def profile_test(
     else:
         start_retries = 1 if smoke else 3
     if install_mode == "clean":
-        mode_desc = "全新安装（先卸载，确保环境干净）"
-    elif install_mode == "reinstall":
+        mode_desc = "clean（先卸载，再执行 split-session install-multiple）"
+    elif effective_install_mode == "split-session":
+        mode_desc = "split-session（base.apk + required splits 单会话安装）"
+    elif effective_install_mode == "reinstall":
         mode_desc = "reinstall（不卸载，直接 install -r）"
-    elif install_mode == "keep":
+    elif effective_install_mode == "keep":
         mode_desc = "keep（pm uninstall -k --user 0 后 fresh install）"
     else:
-        raise RuntimeError(f"Unknown install mode: {install_mode}")
+        raise RuntimeError(f"Unknown install mode: {effective_install_mode}")
     log_info(f"[PROFILE:{profile_name}] 安装策略: {mode_desc}")
     log_info(f"[PROFILE:{profile_name}] 拉起重试次数: {start_retries}")
     if preserve_mode:
@@ -2082,7 +2174,9 @@ def profile_test(
         timeout_sec,
         test_serial,
         start_retries=start_retries,
-        install_mode=install_mode,
+        install_mode=effective_install_mode,
+        split_base_apk=resolve_cache_path(DEFAULT_SPLIT_SOURCE_DIR) / DEFAULT_SPLIT_BASE_APK,
+        split_apks_dir=resolve_cache_path(DEFAULT_SPLIT_SOURCE_DIR),
     )
     if not smoke:
         verify_profile_injection(manifest, workspace, modules)
@@ -2138,7 +2232,7 @@ def parse_test_mode_tokens(tokens, smoke: bool, install_mode: str, serial: str):
 
     if idx < len(items):
         token = items[idx]
-        if token in ("clean", "keep", "reinstall", "preserve"):
+        if token in ("clean", "keep", "reinstall", "split-session", "preserve"):
             if token == "preserve":
                 mode_install = "reinstall"
             else:
@@ -2150,7 +2244,7 @@ def parse_test_mode_tokens(tokens, smoke: bool, install_mode: str, serial: str):
         idx += 1
 
     if idx < len(items):
-        raise RuntimeError("Too many test mode arguments. Use: test [smoke] [reinstall|clean|keep] [serial]")
+        raise RuntimeError("Too many test mode arguments. Use: test [smoke] [reinstall|clean|keep|split-session] [serial]")
 
     return mode_smoke, mode_install, mode_serial
 
@@ -2179,14 +2273,14 @@ def build_parser() -> argparse.ArgumentParser:
     add_profile_args(test_parser, allow_serial=True, allow_smoke=True)
     test_parser.add_argument(
         "--install-mode",
-        choices=("reinstall", "clean", "keep"),
-        default="reinstall",
-        help="reinstall: keep app and install -r; clean: uninstall then install; keep: pm uninstall -k --user 0 then install",
+        choices=("reinstall", "clean", "keep", "split-session"),
+        default="split-session",
+        help="split-session: install-multiple base+splits; reinstall: keep app and install -r; clean: uninstall then split-session; keep: pm uninstall -k --user 0 then install",
     )
     test_parser.add_argument(
         "test_mode",
         nargs="*",
-        help="Shorthand: test [smoke] [reinstall|clean|keep] [serial]",
+        help="Shorthand: test [smoke] [reinstall|clean|keep|split-session] [serial]",
     )
 
     sub.add_parser("graph")

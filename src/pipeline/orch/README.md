@@ -16,14 +16,16 @@ This directory contains the unified build orchestrator for composed PhonePe APK 
   - `python3 src/pipeline/orch/orchestrator.py apk`
 - Force full APK rebuild:
   - `python3 src/pipeline/orch/orchestrator.py apk --fresh`
-- Run the full integration test:
-  - `python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554 --install-mode reinstall`
+- Run the full integration test (default split-session strategy):
+  - `python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554`
+- Run the full integration test with explicit split-session install:
+  - `python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554 --install-mode split-session`
 - Run the full integration test with clean reinstall:
   - `python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554 --install-mode clean`
 - Run the full integration test with keep-data reinstall (`pm uninstall -k --user 0`):
   - `python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554 --install-mode keep`
-- Run the smoke test:
-  - `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554 --install-mode reinstall`
+- Run the smoke test (default split-session strategy):
+  - `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554`
 - Run the smoke test with clean reinstall:
   - `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554 --install-mode clean`
 - Run the smoke test with keep-data reinstall:
@@ -47,7 +49,7 @@ Top-level workflow supports only `full` profile to enforce composed testing.
 5. `test`
    - Ensures module artifacts exist.
    - Uses the same APK cache-reuse logic as `apk`.
-   - Installs the APK and validates startup on device.
+   - By default uses split-session install (`base.apk + required splits` in one `install-multiple` session), then validates startup on device.
 
 Current artifact-backed modules:
 
@@ -98,11 +100,11 @@ Run these commands in order if you want to inspect the real build behavior.
 6. `python3 src/pipeline/orch/orchestrator.py apk --fresh`
    Meaning: force full rebuild for the final APK packaging.
 
-7. `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554 --install-mode reinstall`
-   Meaning: runs the fastest real device validation path. It uses the built artifacts, reuses the final APK if possible, installs it, and verifies the app reaches the expected activity.
+7. `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554`
+   Meaning: runs the fastest real device validation path. It uses the built artifacts, reuses the final APK if possible, performs split-session install, and verifies the app reaches the expected activity.
 
 8. Run the same smoke command again:
-   `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554 --install-mode reinstall`
+   `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554`
    Meaning: validates incremental speedup. The second run should show artifact reuse and final APK reuse if no inputs changed.
 
 9. `python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554 --install-mode keep`
@@ -122,12 +124,15 @@ See root [`package.json`](/Users/danielscai/Documents/workspace/navpay/navpay-ph
 - `yarn log`
 - `yarn logd`
 - `yarn test` (default: reinstall mode, 不卸载直接 `install -r`)
+- `yarn test` (default: split-session mode, one-session `install-multiple`)
 - `yarn test reinstall` (full test + reinstall)
 - `yarn test clean` (full test + clean install)
 - `yarn test keep` (full test + `pm uninstall -k --user 0` + fresh install)
+- `yarn test split-session` (full test + explicit split-session install)
 - `yarn test smoke` (smoke + reinstall)
 - `yarn test smoke clean` (smoke + clean install)
 - `yarn test smoke keep` (smoke + keep-data reinstall)
+- `yarn test smoke split-session` (smoke + explicit split-session install)
 
 Keep-data mode note:
 - `reinstall` 与 `keep` 都是保留数据语义模式，都会在拉起阶段使用更长等待窗口与重试策略。

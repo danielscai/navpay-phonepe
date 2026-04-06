@@ -43,6 +43,15 @@ class ReuseArtifactsTest(unittest.TestCase):
         self.assertIs(args.fresh, True)
         self.assertEqual(args.profile, "full")
 
+    def test_profile_test_parser_accepts_split_session_install_mode(self) -> None:
+        args = cache_manager.build_parser().parse_args([
+            "test",
+            "--install-mode",
+            "split-session",
+        ])
+        self.assertEqual(args.cmd, "test")
+        self.assertEqual(args.install_mode, "split-session")
+
     def test_profile_apk_reuse_cache_hit_skips_rebuild(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             root = Path(tempdir)
