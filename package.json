@@ -2,6 +2,9 @@
   "name": "indipay-apk-research",
   "private": true,
   "packageManager": "yarn@4.0.0",
+  "devDependencies": {
+    "tsx": "^4.21.0"
+  },
   "scripts": {
     "logs:crash": "adb logcat | grep -i -E \"(FATAL EXCEPTION|AndroidRuntime|SIGABRT|SIGSEGV|CRASH)\"",
     "log": "cd src/services/log_server && ./start.sh",
@@ -19,7 +22,8 @@
     "merge": "yarn orch merge",
     "apk": "yarn orch apk",
     "apk:fresh": "yarn orch apk --fresh",
-    "test": "yarn orch test",
+    "test": "bash scripts/run_test.sh",
+    "release:to-admin": "node --import tsx scripts/release_to_admin.ts",
     "verify:tests": "python3 -m pytest src/pipeline/orch/tests/test_split_session_verifier.py -q && python3 -m pytest src/pipeline/orch/tests/test_split_session_install_mode.py -q && python3 -m pytest src/pipeline/orch/tests/test_reuse_artifacts.py -q && python3 -m pytest src/pipeline/orch/tests/test_smoke_mode.py -q",
     "verify:phasea": "bash -lc 'set -euo pipefail; cmd=\"python3 scripts/verify_phonepe_split_session_install.py --serial emulator-5554 --base-apk cache/phonepe/from_device/base.apk --splits-dir cache/phonepe/from_device --target-apk cache/profiles/full/build/patched_signed.apk --package com.phonepe.app --activity com.phonepe.app/com.phonepe.app.ui.activity.SplashScreenActivity\"; eval \"$cmd\"; eval \"$cmd\"; eval \"$cmd\"; tmpdir=$(mktemp -d); cp cache/phonepe/from_device/base.apk \"$tmpdir/\"; cp cache/phonepe/from_device/split_config.arm64_v8a.apk \"$tmpdir/\"; python3 scripts/verify_phonepe_split_session_install.py --serial emulator-5554 --base-apk \"$tmpdir/base.apk\" --splits-dir \"$tmpdir\" --target-apk cache/profiles/full/build/patched_signed.apk --package com.phonepe.app --activity com.phonepe.app/com.phonepe.app.ui.activity.SplashScreenActivity && { echo \"negative case unexpectedly passed\"; exit 1; } || echo \"negative case failed as expected\"'",
     "verify:baseapk": "python3 scripts/check_base_apk_split_state.py --apk cache/profiles/full/build/patched_signed.apk",
