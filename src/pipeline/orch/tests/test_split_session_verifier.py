@@ -91,3 +91,81 @@ def test_install_failure_maps_to_install_multiple_failed(monkeypatch, tmp_path):
     monkeypatch.setattr(subprocess, "run", fake_run)
     with pytest.raises(RuntimeError, match="INSTALL_MULTIPLE_FAILED"):
         verifier.install_multiple("adb", "emulator-5554", [base])
+
+
+def test_main_accepts_extended_args_and_runs_flow(monkeypatch, tmp_path):
+    verifier = _load_verifier_module()
+
+    base = tmp_path / "base.apk"
+    target = tmp_path / "patched_signed.apk"
+    split_abi = tmp_path / "split_config.arm64_v8a.apk"
+    split_density = tmp_path / "split_config.xxhdpi.apk"
+    for path in (base, target, split_abi, split_density):
+        path.write_text("x")
+
+    called = {}
+
+    monkeypatch.setattr(verifier, "get_supported_abis", lambda adb, serial: ["arm64-v8a"])
+    monkeypatch.setattr(verifier, "get_density_bucket", lambda adb, serial: "xxhdpi")
+
+    def fake_install(adb, serial, apks):
+        called["install"] = [str(apk) for apk in apks]
+        return "Success"
+
+    def fake_launch(adb, serial, package, activity, timeout_sec):
+        called["launch"] = [adb, serial, package, activity, timeout_sec]
+        return "Status: ok"
+
+    monkeypatch.setattr(verifier, "install_multiple", fake_install)
+    monkeypatch.setattr(verifier, "verify_launch", fake_launch)
+
+    rc = verifier.main(
+        [
+            "--serial",
+            "emulator-5554",
+            "--base-apk",
+            str(base),
+            "--splits-dir",
+            str(tmp_path),
+            "--target-apk",
+            str(target),
+            "--package",
+            "com.phonepe.app",
+            "--activity",
+            "com.phonepe.app/.MainActivity",
+        ]
+    )
+    assert rc == 0
+    assert called["install"] == [str(base), str(split_abi), str(split_density)]
+    assert called["launch"] == ["adb", "emulator-5554", "com.phonepe.app", "com.phonepe.app/.MainActivity", 30]
+
+
+def test_main_missing_required_split_fails_with_select_split_failed(monkeypatch, tmp_path):
+    verifier = _load_verifier_module()
+
+    base = tmp_path / "base.apk"
+    target = tmp_path / "patched_signed.apk"
+    split_abi = tmp_path / "split_config.arm64_v8a.apk"
+    for path in (base, target, split_abi):
+        path.write_text("x")
+
+    monkeypatch.setattr(verifier, "get_supported_abis", lambda adb, serial: ["arm64-v8a"])
+    monkeypatch.setattr(verifier, "get_density_bucket", lambda adb, serial: "xxhdpi")
+
+    with pytest.raises(SystemExit, match="SELECT_SPLIT_FAILED"):
+        verifier.main(
+            [
+                "--serial",
+                "emulator-5554",
+                "--base-apk",
+                str(base),
+                "--splits-dir",
+                str(tmp_path),
+                "--target-apk",
+                str(target),
+                "--package",
+                "com.phonepe.app",
+                "--activity",
+                "com.phonepe.app/.MainActivity",
+            ]
+        )
