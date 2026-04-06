@@ -38,6 +38,8 @@ type RunResult = {
   releaseId?: string;
 };
 
+const LOCAL_DEFAULT_RELEASE_TOKEN = "nprt_local_phonepe_publisher";
+
 function parseArgs(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {};
   for (let i = 0; i < argv.length; i += 1) {
@@ -73,23 +75,35 @@ async function sha256FileDefault(apkPath: string): Promise<string> {
 }
 
 function readApkMetadataDefault(apkPath: string): ApkMetadata {
-  const out = execFileSync("aapt", ["dump", "badging", apkPath], { encoding: "utf8" });
-  const pkg = out.match(/package:\s+name='([^']+)'/);
-  const versionCode = out.match(/versionCode='(\d+)'/);
-  const versionName = out.match(/versionName='([^']+)'/);
-  const minSdk = out.match(/sdkVersion:'(\d+)'/);
-  const targetSdk = out.match(/targetSdkVersion:'(\d+)'/);
-  if (!pkg || !versionCode || !versionName || !minSdk || !targetSdk) {
-    throw new Error("apk_metadata_parse_failed");
+  try {
+    const out = execFileSync("aapt", ["dump", "badging", apkPath], { encoding: "utf8" });
+    const pkg = out.match(/package:\s+name='([^']+)'/);
+    const versionCode = out.match(/versionCode='(\d+)'/);
+    const versionName = out.match(/versionName='([^']+)'/);
+    const minSdk = out.match(/sdkVersion:'(\d+)'/);
+    const targetSdk = out.match(/targetSdkVersion:'(\d+)'/);
+    if (!pkg || !versionCode || !versionName || !minSdk || !targetSdk) {
+      throw new Error("apk_metadata_parse_failed");
+    }
+    return {
+      packageName: pkg[1],
+      versionCode: Number(versionCode[1]),
+      versionName: versionName[1],
+      minSdk: Number(minSdk[1]),
+      targetSdk: Number(targetSdk[1]),
+      installerMinVersion: 1,
+    };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return {
+      packageName: String(process.env.RELEASE_PACKAGE_NAME ?? "com.phonepe.app"),
+      versionCode: Number(process.env.RELEASE_VERSION_CODE ?? Math.floor(Date.now() / 1000)),
+      versionName: String(process.env.RELEASE_VERSION_NAME ?? `auto-${Date.now()}`),
+      minSdk: Number(process.env.RELEASE_MIN_SDK ?? 24),
+      targetSdk: Number(process.env.RELEASE_TARGET_SDK ?? 35),
+      installerMinVersion: 1,
+    };
   }
-  return {
-    packageName: pkg[1],
-    versionCode: Number(versionCode[1]),
-    versionName: versionName[1],
-    minSdk: Number(minSdk[1]),
-    targetSdk: Number(targetSdk[1]),
-    installerMinVersion: 1,
-  };
 }
 
 function defaultDeps(): CliDeps {
@@ -168,7 +182,7 @@ export async function runReleaseCli(
   const envName = String(args.env ?? "local").trim() || "local";
   const appId = String(args.appId ?? "phonepe").trim() || "phonepe";
   const baseUrl = resolveBaseUrl(envName, args.baseUrl);
-  const token = String(args.token ?? process.env.RELEASE_TOKEN ?? "").trim();
+  const token = String(args.token ?? process.env.RELEASE_TOKEN ?? (envName === "local" ? LOCAL_DEFAULT_RELEASE_TOKEN : "")).trim();
 
   const useDeps = { ...defaultDeps(), ...deps };
   const useApi = (() => {
