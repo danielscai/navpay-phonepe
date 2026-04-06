@@ -22,7 +22,14 @@ type ActiveRelease = {
 type PublisherApi = {
   getActiveRelease: (appId: string) => Promise<ActiveRelease | null>;
   createRelease: (appId: string, payload: ApkMetadata) => Promise<{ id: string }>;
-  uploadArtifact: (appId: string, releaseId: string, artifactType: "base" | "abi" | "density", name: string, apkPath: string) => Promise<void>;
+  uploadArtifact: (
+    appId: string,
+    releaseId: string,
+    artifactType: "base" | "abi" | "density",
+    name: string,
+    apkPath: string,
+    signingDigest: string,
+  ) => Promise<void>;
   activateRelease: (appId: string, releaseId: string) => Promise<{ status: string }>;
 };
 
@@ -164,12 +171,20 @@ function buildHttpApi(baseUrl: string, token: string): PublisherApi {
       const j: any = await r.json();
       return { id: String(j?.row?.id) };
     },
-    async uploadArtifact(appId: string, releaseId: string, artifactType: "base" | "abi" | "density", name: string, apkPath: string) {
+    async uploadArtifact(
+      appId: string,
+      releaseId: string,
+      artifactType: "base" | "abi" | "density",
+      name: string,
+      apkPath: string,
+      signingDigest: string,
+    ) {
       const bytes = await readFile(apkPath);
       const file = new File([bytes], basename(apkPath), { type: "application/vnd.android.package-archive" });
       const form = new FormData();
       form.set("artifactType", artifactType);
       form.set("name", name);
+      form.set("signingDigest", signingDigest);
       if (artifactType === "abi") form.set("abi", "arm64-v8a");
       if (artifactType === "density") form.set("density", "xxhdpi");
       form.set("file", file);
@@ -245,9 +260,9 @@ export async function runReleaseCli(
   }
 
   const release = await useApi.createRelease(appId, metadata);
-  await useApi.uploadArtifact(appId, release.id, "base", "base.apk", baseApkPath);
-  await useApi.uploadArtifact(appId, release.id, "abi", DEFAULT_ABI_SPLIT_NAME, abiApkPath);
-  await useApi.uploadArtifact(appId, release.id, "density", DEFAULT_DENSITY_SPLIT_NAME, densityApkPath);
+  await useApi.uploadArtifact(appId, release.id, "base", "base.apk", baseApkPath, signatureDigests.base);
+  await useApi.uploadArtifact(appId, release.id, "abi", DEFAULT_ABI_SPLIT_NAME, abiApkPath, signatureDigests.abi);
+  await useApi.uploadArtifact(appId, release.id, "density", DEFAULT_DENSITY_SPLIT_NAME, densityApkPath, signatureDigests.density);
   await useApi.activateRelease(appId, release.id);
 
   return { ok: true, targetEnv: envName, idempotent: false, releaseId: release.id };
