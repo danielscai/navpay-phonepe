@@ -151,6 +151,8 @@ function buildHttpApi(baseUrl: string, token: string): PublisherApi {
       const form = new FormData();
       form.set("artifactType", artifactType);
       form.set("name", name);
+      if (artifactType === "abi") form.set("abi", "arm64-v8a");
+      if (artifactType === "density") form.set("density", "xxhdpi");
       form.set("file", file);
       const r = await fetch(`${origin}/api/publisher/payment-apps/${appId}/releases/${releaseId}/artifacts`, {
         method: "POST",
@@ -177,10 +179,8 @@ export async function runReleaseCli(
   deps?: Partial<CliDeps>,
 ): Promise<RunResult> {
   const args = parseArgs(argv);
-  const apkPath = String(args.apk ?? "").trim();
-  if (!apkPath) throw new Error("apk_required");
-  await stat(apkPath);
-  const baseApkPath = String(args["base-apk"] ?? apkPath).trim() || apkPath;
+  const baseApkPath = String(args["base-apk"] ?? args.apk ?? "").trim();
+  if (!baseApkPath) throw new Error("base_apk_required");
   const abiApkPath = String(args["abi-apk"] ?? join(dirname(baseApkPath), DEFAULT_ABI_SPLIT_NAME)).trim();
   const densityApkPath = String(args["density-apk"] ?? join(dirname(baseApkPath), DEFAULT_DENSITY_SPLIT_NAME)).trim();
   await stat(baseApkPath);

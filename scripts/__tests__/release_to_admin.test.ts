@@ -109,3 +109,60 @@ test("uploads explicit base/abi/density artifacts and applies metadata overrides
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("supports independent artifact paths when only --base-apk is provided", async () => {
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "release-to-admin-test-"));
+  const baseApkPath = path.join(tempDir, "patched_signed.apk");
+  const abiApkPath = path.join(tempDir, "splits", "split_config.arm64_v8a.apk");
+  const densityApkPath = path.join(tempDir, "splits", "split_config.xxhdpi.apk");
+  const splitsDir = path.dirname(abiApkPath);
+  require("node:fs").mkdirSync(splitsDir, { recursive: true });
+  writeFileSync(baseApkPath, Buffer.from("base-bytes"));
+  writeFileSync(abiApkPath, Buffer.from("abi-bytes"));
+  writeFileSync(densityApkPath, Buffer.from("density-bytes"));
+
+  const uploadCalls: Array<{ artifactType: string; apkPath: string }> = [];
+
+  try {
+    const fakeApi = {
+      getActiveRelease: async () => null,
+      createRelease: async () => ({ id: "par_new" }),
+      uploadArtifact: async (_appId: string, _releaseId: string, artifactType: "base" | "abi" | "density", _name: string, apkPath: string) => {
+        uploadCalls.push({ artifactType, apkPath });
+      },
+      activateRelease: async () => ({ status: "active" }),
+    };
+
+    const out = await runReleaseCli(
+      [
+        "--base-apk",
+        baseApkPath,
+        "--abi-apk",
+        abiApkPath,
+        "--density-apk",
+        densityApkPath,
+      ],
+      fakeApi as any,
+      {
+        readApkMetadata: async () => ({
+          versionName: "26.01.02.3",
+          versionCode: 26010208,
+          packageName: "com.phonepe.app",
+          minSdk: 24,
+          targetSdk: 35,
+          installerMinVersion: 3,
+        }),
+        sha256File: async () => "sha_base",
+      },
+    );
+
+    assert.equal(out.ok, true);
+    assert.deepEqual(uploadCalls, [
+      { artifactType: "base", apkPath: baseApkPath },
+      { artifactType: "abi", apkPath: abiApkPath },
+      { artifactType: "density", apkPath: densityApkPath },
+    ]);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});

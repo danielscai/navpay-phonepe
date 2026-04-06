@@ -14,7 +14,7 @@ yarn release:to-admin \
 
 ## 参数
 
-- `--apk`：必填，默认作为 `base.apk` 上传。
+- `--apk`：可选，`--base-apk` 的兼容别名。
 - `--base-apk`：可选，显式指定 `base.apk` 路径（默认等于 `--apk`）。
 - `--abi-apk`：可选，指定 ABI split 路径（默认 `${baseDir}/split_config.arm64_v8a.apk`）。
 - `--density-apk`：可选，指定 density split 路径（默认 `${baseDir}/split_config.xxhdpi.apk`）。
