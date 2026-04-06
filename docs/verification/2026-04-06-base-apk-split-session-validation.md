@@ -44,9 +44,46 @@ Command:
 Result: EXPECTED FAIL
 - error: `SELECT_SPLIT_FAILED: missing density split for xxhdpi`
 
+## Orchestrator E2E Result
+### Smoke
+Command:
+`python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554 --install-mode clean`
+
+Result: PASS
+- install path: split-session (`install-multiple --no-incremental`)
+- selected splits logged:
+  - `split_config.arm64_v8a.apk`
+  - `split_config.xxhdpi.apk`
+- launch evidence:
+  - `Status: ok`
+  - `Activity: com.phonepe.app/.login.ui.Navigator_LoginNavigationActivity`
+  - `测试结果：成功（smoke）`
+
+### Full
+Command:
+`python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554 --install-mode clean`
+
+Result: PASS
+- install path: split-session (`install-multiple --no-incremental`)
+- selected splits logged:
+  - `split_config.arm64_v8a.apk`
+  - `split_config.xxhdpi.apk`
+- launch evidence:
+  - `Status: ok`
+  - `Activity: com.phonepe.app/.login.ui.Navigator_LoginNavigationActivity`
+- static injection evidence:
+  - `[PROFILE] static injection verified: SIGBYPASS, HTTPS, PPHELPER, HEARTBEAT`
+
+## --fresh Workflow Check
+Command:
+`rg -n "apk --fresh|yarn orch apk --fresh" docs src/pipeline/orch -S`
+
+Result:
+- no new required `--fresh` workflow step was introduced by this implementation;
+- existing historical references remain in README/规范/计划文档.
+
 ## Conclusion
-Phase A external verifier is validated for this environment:
-- can resolve required ABI+density splits dynamically;
-- can install base+required splits in one `adb install-multiple --no-incremental` transaction;
-- can validate first-launch success via launcher fallback path when configured activity component is unavailable;
-- can fail fast with explicit `SELECT_SPLIT_FAILED` diagnostics for missing required splits.
+Phase A and Phase B are both verified in this environment.
+- External verifier can deterministically select required splits and validate one-session install + first launch.
+- Orchestrator `test --install-mode clean` now uses split-session path and passes smoke/full e2e.
+- Workflow remains compliant with repository constraint: no `yarn orch apk --fresh` usage was introduced in execution path.
