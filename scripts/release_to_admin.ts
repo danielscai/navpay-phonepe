@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
-import { basename } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { execFileSync } from "node:child_process";
 
 type ApkMetadata = {
@@ -39,6 +39,8 @@ type RunResult = {
 };
 
 const LOCAL_DEFAULT_RELEASE_TOKEN = "nprt_local_phonepe_publisher";
+const DEFAULT_ABI_SPLIT_NAME = "split_config.arm64_v8a.apk";
+const DEFAULT_DENSITY_SPLIT_NAME = "split_config.xxhdpi.apk";
 
 function parseArgs(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {};
@@ -178,6 +180,12 @@ export async function runReleaseCli(
   const apkPath = String(args.apk ?? "").trim();
   if (!apkPath) throw new Error("apk_required");
   await stat(apkPath);
+  const baseApkPath = String(args["base-apk"] ?? apkPath).trim() || apkPath;
+  const abiApkPath = String(args["abi-apk"] ?? join(dirname(baseApkPath), DEFAULT_ABI_SPLIT_NAME)).trim();
+  const densityApkPath = String(args["density-apk"] ?? join(dirname(baseApkPath), DEFAULT_DENSITY_SPLIT_NAME)).trim();
+  await stat(baseApkPath);
+  await stat(abiApkPath);
+  await stat(densityApkPath);
 
   const envName = String(args.env ?? "local").trim() || "local";
   const appId = String(args.appId ?? "phonepe").trim() || "phonepe";
@@ -191,8 +199,14 @@ export async function runReleaseCli(
     return buildHttpApi(baseUrl, token);
   })();
 
-  const metadata = await useDeps.readApkMetadata(apkPath);
-  const checksum = await useDeps.sha256File(apkPath);
+  const metadataFromApk = await useDeps.readApkMetadata(baseApkPath);
+  const metadata: ApkMetadata = {
+    ...metadataFromApk,
+    versionName: String(args["version-name"] ?? metadataFromApk.versionName).trim() || metadataFromApk.versionName,
+    versionCode: Number(args["version-code"] ?? metadataFromApk.versionCode),
+    installerMinVersion: Number(args["installer-min-version"] ?? metadataFromApk.installerMinVersion),
+  };
+  const checksum = await useDeps.sha256File(baseApkPath);
   const active = await useApi.getActiveRelease(appId);
   const sameVersion = active?.versionCode === metadata.versionCode;
   const sameChecksum = !active?.baseSha256 || active.baseSha256 === checksum;
@@ -201,9 +215,9 @@ export async function runReleaseCli(
   }
 
   const release = await useApi.createRelease(appId, metadata);
-  await useApi.uploadArtifact(appId, release.id, "base", "base.apk", apkPath);
-  await useApi.uploadArtifact(appId, release.id, "abi", "abi.apk", apkPath);
-  await useApi.uploadArtifact(appId, release.id, "density", "density.apk", apkPath);
+  await useApi.uploadArtifact(appId, release.id, "base", "base.apk", baseApkPath);
+  await useApi.uploadArtifact(appId, release.id, "abi", DEFAULT_ABI_SPLIT_NAME, abiApkPath);
+  await useApi.uploadArtifact(appId, release.id, "density", DEFAULT_DENSITY_SPLIT_NAME, densityApkPath);
   await useApi.activateRelease(appId, release.id);
 
   return { ok: true, targetEnv: envName, idempotent: false, releaseId: release.id };
