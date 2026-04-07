@@ -17,6 +17,7 @@
     "checksum:test": "src/services/checksum/scripts/test_http_service.sh",
     "emu": "/Users/danielscai/Library/Android/sdk/emulator/emulator @phonepe_nologin",
     "orch": "python3 src/pipeline/orch/orchestrator.py",
+    "device": "yarn orch device",
     "prepare": "yarn orch prepare",
     "smali": "yarn orch smali",
     "merge": "yarn orch merge",

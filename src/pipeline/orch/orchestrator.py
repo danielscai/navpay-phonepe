@@ -590,6 +590,72 @@ def select_device(adb, serial=None):
     raise RuntimeError("Multiple devices found; specify --serial")
 
 
+def normalize_abi_token(abi: str) -> str:
+    return (abi or "").strip().replace("-", "_")
+
+
+def density_to_bucket(density: int) -> str:
+    if density <= 120:
+        return "ldpi"
+    if density <= 160:
+        return "mdpi"
+    if density <= 240:
+        return "hdpi"
+    if density <= 320:
+        return "xhdpi"
+    if density <= 480:
+        return "xxhdpi"
+    return "xxxhdpi"
+
+
+def read_supported_abis(adb: str, serial: str):
+    try:
+        out = subprocess.check_output(
+            [adb, "-s", serial, "shell", "getprop", "ro.product.cpu.abilist"],
+            text=True,
+        ).strip()
+    except Exception:
+        out = ""
+    if out:
+        return [item.strip() for item in out.split(",") if item.strip()]
+    try:
+        out = subprocess.check_output(
+            [adb, "-s", serial, "shell", "getprop", "ro.product.cpu.abi"],
+            text=True,
+        ).strip()
+    except Exception:
+        out = ""
+    return [out] if out else []
+
+
+def read_density_value(adb: str, serial: str) -> int:
+    try:
+        out = subprocess.check_output([adb, "-s", serial, "shell", "wm", "density"], text=True)
+    except Exception:
+        out = ""
+    match = re.search(r"(\d+)", out)
+    if match:
+        return int(match.group(1))
+    try:
+        out = subprocess.check_output(
+            [adb, "-s", serial, "shell", "getprop", "ro.sf.lcd_density"],
+            text=True,
+        ).strip()
+    except Exception:
+        out = ""
+    match = re.search(r"(\d+)", out)
+    if not match:
+        raise RuntimeError("Unable to read device density from wm/getprop")
+    return int(match.group(1))
+
+
+def read_device_prop(adb: str, serial: str, prop: str) -> str:
+    try:
+        return subprocess.check_output([adb, "-s", serial, "shell", "getprop", prop], text=True).strip()
+    except Exception:
+        return ""
+
+
 def get_pkg_version(adb, serial, package):
     try:
         out = subprocess.check_output([adb, "-s", serial, "shell", "dumpsys", "package", package], text=True)
@@ -1723,6 +1789,43 @@ def cmd_status(manifest):
         print(f"{name}: {status}{meta_info} -> {path}")
 
 
+def cmd_device(serial: str):
+    adb = adb_path()
+    serial_alias = normalize_serial_alias(serial or "")
+    device = select_device(adb, serial_alias if serial_alias else None)
+    connected = list_connected_devices(adb)
+    if device not in connected:
+        raise RuntimeError(f"Device not connected: {device}")
+
+    manufacturer = read_device_prop(adb, device, "ro.product.manufacturer")
+    model = read_device_prop(adb, device, "ro.product.model")
+    device_name = read_device_prop(adb, device, "ro.product.device")
+    android_release = read_device_prop(adb, device, "ro.build.version.release")
+    sdk = read_device_prop(adb, device, "ro.build.version.sdk")
+    abis = read_supported_abis(adb, device)
+    density = read_density_value(adb, device)
+    density_bucket = density_to_bucket(density)
+    primary_abi = normalize_abi_token(abis[0]) if abis else ""
+
+    print(f"serial: {device}")
+    if manufacturer or model:
+        print(f"model: {manufacturer} {model}".strip())
+    if device_name:
+        print(f"device: {device_name}")
+    if android_release or sdk:
+        android_display = android_release or "unknown"
+        sdk_display = sdk or "unknown"
+        print(f"android: {android_display} (sdk {sdk_display})")
+    print(f"density: {density} ({density_bucket})")
+    print(f"split_density: {density_bucket}")
+    if abis:
+        print("abis: " + ", ".join(abis))
+        print(f"split_abi: {primary_abi}")
+    else:
+        print("abis: unknown")
+        print("split_abi: unknown")
+
+
 def delete_with_downstream(name, manifest, rev):
     for child in rev.get(name, []):
         delete_with_downstream(child, manifest, rev)
@@ -2414,6 +2517,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("graph")
     sub.add_parser("status")
+    device_parser = sub.add_parser("device")
+    device_parser.add_argument("serial", nargs="?")
 
     reset = sub.add_parser("reset")
     reset.add_argument("--from", dest="target")
@@ -2436,6 +2541,8 @@ def main(argv=None):
         cmd_graph(manifest)
     elif args.cmd == "status":
         cmd_status(manifest)
+    elif args.cmd == "device":
+        cmd_device(getattr(args, "serial", None))
     elif args.cmd == "reset":
         cmd_reset(manifest, args.target)
     elif args.cmd == "rebuild":
