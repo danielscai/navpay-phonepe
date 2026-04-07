@@ -17,11 +17,14 @@ type ApkMetadata = {
 type ActiveRelease = {
   id: string;
   versionCode: number;
+  versionName?: string;
+  status?: string;
   baseSha256?: string | null;
 };
 
 type PublisherApi = {
   getActiveRelease: (appId: string) => Promise<ActiveRelease | null>;
+  listReleases?: (appId: string) => Promise<ActiveRelease[]>;
   createRelease: (appId: string, payload: ApkMetadata) => Promise<{ id: string }>;
   uploadArtifact: (
     appId: string,
@@ -38,6 +41,7 @@ type CliDeps = {
   readApkMetadata: (apkPath: string) => Promise<ApkMetadata>;
   sha256File: (apkPath: string) => Promise<string>;
   readApkSigningDigest: (apkPath: string) => Promise<string>;
+  now: () => Date;
 };
 
 type RunResult = {
@@ -176,26 +180,75 @@ function defaultDeps(): CliDeps {
     readApkMetadata: async (apkPath) => readApkMetadataDefault(apkPath),
     sha256File: sha256FileDefault,
     readApkSigningDigest: async (apkPath) => readApkSigningDigestDefault(apkPath),
+    now: () => new Date(),
   };
+}
+
+function formatDateVersionPrefix(date: Date): string {
+  const yy = String(date.getFullYear() % 100).padStart(2, "0");
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yy}.${mm}.${dd}`;
+}
+
+function parseDateVersion(versionName?: string | null): { prefix: string; sequence: number } | null {
+  if (!versionName) return null;
+  const match = String(versionName).trim().match(/^(\d{2}\.\d{2}\.\d{2})\.(\d+)$/);
+  if (!match) return null;
+  return {
+    prefix: match[1],
+    sequence: Number(match[2]),
+  };
+}
+
+function resolveNextDateVersionName(latestVersionName: string | null | undefined, now: Date): string {
+  const todayPrefix = formatDateVersionPrefix(now);
+  const parsedLatest = parseDateVersion(latestVersionName);
+  if (!parsedLatest || parsedLatest.prefix !== todayPrefix) {
+    return `${todayPrefix}.0`;
+  }
+  return `${todayPrefix}.${parsedLatest.sequence + 1}`;
+}
+
+function versionCodeFromDateVersionName(versionName: string): number | null {
+  const parsed = parseDateVersion(versionName);
+  if (!parsed) return null;
+  const [yy, mm, dd] = parsed.prefix.split(".").map((part) => Number(part));
+  return yy * 1_000_000 + mm * 10_000 + dd * 100 + parsed.sequence + 5;
 }
 
 function buildHttpApi(baseUrl: string, token: string): PublisherApi {
   const origin = baseUrl.replace(/\/$/, "");
   const authHeaders = { authorization: `Bearer ${token}` };
+  const fetchRows = async (appId: string): Promise<any[]> => {
+    const r = await fetch(`${origin}/api/publisher/payment-apps/${appId}/releases`, {
+      method: "GET",
+      headers: authHeaders,
+    });
+    if (!r.ok) throw new Error(`list_failed_${r.status}`);
+    const j: any = await r.json();
+    return Array.isArray(j?.rows) ? j.rows : [];
+  };
   return {
+    async listReleases(appId: string) {
+      const rows = await fetchRows(appId);
+      return rows.map((row: any) => ({
+        id: String(row?.id ?? ""),
+        versionCode: Number(row?.versionCode ?? 0),
+        versionName: row?.versionName ? String(row.versionName) : undefined,
+        status: row?.status ? String(row.status) : undefined,
+        baseSha256: row?.baseSha256 ? String(row.baseSha256) : null,
+      }));
+    },
     async getActiveRelease(appId: string) {
-      const r = await fetch(`${origin}/api/publisher/payment-apps/${appId}/releases`, {
-        method: "GET",
-        headers: authHeaders,
-      });
-      if (!r.ok) throw new Error(`list_failed_${r.status}`);
-      const j: any = await r.json();
-      const rows = Array.isArray(j?.rows) ? j.rows : [];
+      const rows = await fetchRows(appId);
       const active = rows.find((row: any) => row?.status === "active");
       if (!active) return null;
       return {
         id: String(active.id),
         versionCode: Number(active.versionCode),
+        versionName: active.versionName ? String(active.versionName) : undefined,
+        status: "active",
         baseSha256: active.baseSha256 ? String(active.baseSha256) : null,
       };
     },
@@ -286,14 +339,30 @@ export async function runReleaseCli(
   }
 
   const metadataFromApk = await useDeps.readApkMetadata(baseApkPath);
+  const now = useDeps.now();
+  const allReleases = useApi.listReleases ? await useApi.listReleases(appId) : null;
+  const latestReleaseByVersionCode = allReleases
+    ? allReleases.reduce<ActiveRelease | null>((acc, item) => {
+        if (!acc) return item;
+        return item.versionCode > acc.versionCode ? item : acc;
+      }, null)
+    : null;
+  const active = allReleases ? allReleases.find((row) => row.status === "active") ?? null : await useApi.getActiveRelease(appId);
+  const explicitVersionName = String(args["version-name"] ?? "").trim();
+  const shouldAutoVersionName = Boolean(allReleases);
+  const resolvedVersionName = explicitVersionName
+    || (shouldAutoVersionName
+      ? resolveNextDateVersionName(latestReleaseByVersionCode?.versionName ?? null, now)
+      : metadataFromApk.versionName);
+  const shouldInferVersionCode = Boolean(explicitVersionName || shouldAutoVersionName);
+  const inferredVersionCode = shouldInferVersionCode ? versionCodeFromDateVersionName(resolvedVersionName) : null;
   const metadata: ApkMetadata = {
     ...metadataFromApk,
-    versionName: String(args["version-name"] ?? metadataFromApk.versionName).trim() || metadataFromApk.versionName,
-    versionCode: Number(args["version-code"] ?? metadataFromApk.versionCode),
+    versionName: resolvedVersionName,
+    versionCode: Number(args["version-code"] ?? inferredVersionCode ?? metadataFromApk.versionCode),
     installerMinVersion: Number(args["installer-min-version"] ?? metadataFromApk.installerMinVersion),
   };
   const checksum = await useDeps.sha256File(baseApkPath);
-  const active = await useApi.getActiveRelease(appId);
   const sameVersion = active?.versionCode === metadata.versionCode;
   const sameChecksum = !active?.baseSha256 || active.baseSha256 === checksum;
   if (sameVersion && sameChecksum) {

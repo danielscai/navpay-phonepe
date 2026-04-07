@@ -112,6 +112,109 @@ test("uploads explicit base/abi/density artifacts and applies metadata overrides
   }
 });
 
+test("auto bumps version to YY.MM.DD.N using latest release on same day", async () => {
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "release-to-admin-test-"));
+  const baseApkPath = path.join(tempDir, "base.apk");
+  const abiApkPath = path.join(tempDir, "split_config.arm64_v8a.apk");
+  const densityApkPath = path.join(tempDir, "split_config.xxhdpi.apk");
+  writeFileSync(baseApkPath, Buffer.from("base-bytes"));
+  writeFileSync(abiApkPath, Buffer.from("abi-bytes"));
+  writeFileSync(densityApkPath, Buffer.from("density-bytes"));
+
+  let createPayload: any = null;
+
+  try {
+    const fakeApi = {
+      listReleases: async () => [
+        { id: "r1", versionCode: 26010206, versionName: "26.01.02.1", status: "draft", baseSha256: "sha_old" },
+        { id: "r0", versionCode: 26010205, versionName: "26.01.02.0", status: "active", baseSha256: "sha_active" },
+      ],
+      getActiveRelease: async () => ({ id: "r0", versionCode: 26010205, versionName: "26.01.02.0", status: "active", baseSha256: "sha_active" }),
+      createRelease: async (_appId: string, payload: any) => {
+        createPayload = payload;
+        return { id: "par_new" };
+      },
+      uploadArtifact: async () => ({ ok: true }),
+      activateRelease: async () => ({ status: "active" }),
+    };
+
+    await runReleaseCli(["--base-apk", baseApkPath], fakeApi as any, {
+      readApkMetadata: async () => ({
+        versionName: "from-aapt",
+        versionCode: 1,
+        packageName: "com.phonepe.app",
+        minSdk: 24,
+        targetSdk: 35,
+        installerMinVersion: 1,
+      }),
+      sha256File: async () => "sha_new",
+      readApkSigningDigest: async () => "digest_same",
+      now: () =>
+        ({
+          getFullYear: () => 2026,
+          getMonth: () => 0,
+          getDate: () => 2,
+        }) as Date,
+    });
+
+    assert.equal(createPayload.versionName, "26.01.02.2");
+    assert.equal(createPayload.versionCode, 26010207);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("auto resets daily sequence when latest release is from a previous day", async () => {
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "release-to-admin-test-"));
+  const baseApkPath = path.join(tempDir, "base.apk");
+  const abiApkPath = path.join(tempDir, "split_config.arm64_v8a.apk");
+  const densityApkPath = path.join(tempDir, "split_config.xxhdpi.apk");
+  writeFileSync(baseApkPath, Buffer.from("base-bytes"));
+  writeFileSync(abiApkPath, Buffer.from("abi-bytes"));
+  writeFileSync(densityApkPath, Buffer.from("density-bytes"));
+
+  let createPayload: any = null;
+
+  try {
+    const fakeApi = {
+      listReleases: async () => [
+        { id: "r1", versionCode: 26010114, versionName: "26.01.01.9", status: "active", baseSha256: "sha_old" },
+      ],
+      getActiveRelease: async () => ({ id: "r1", versionCode: 26010114, versionName: "26.01.01.9", status: "active", baseSha256: "sha_old" }),
+      createRelease: async (_appId: string, payload: any) => {
+        createPayload = payload;
+        return { id: "par_new" };
+      },
+      uploadArtifact: async () => ({ ok: true }),
+      activateRelease: async () => ({ status: "active" }),
+    };
+
+    await runReleaseCli(["--base-apk", baseApkPath], fakeApi as any, {
+      readApkMetadata: async () => ({
+        versionName: "from-aapt",
+        versionCode: 1,
+        packageName: "com.phonepe.app",
+        minSdk: 24,
+        targetSdk: 35,
+        installerMinVersion: 1,
+      }),
+      sha256File: async () => "sha_new",
+      readApkSigningDigest: async () => "digest_same",
+      now: () =>
+        ({
+          getFullYear: () => 2026,
+          getMonth: () => 0,
+          getDate: () => 2,
+        }) as Date,
+    });
+
+    assert.equal(createPayload.versionName, "26.01.02.0");
+    assert.equal(createPayload.versionCode, 26010205);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("supports independent artifact paths when only --base-apk is provided", async () => {
   const tempDir = mkdtempSync(path.join(os.tmpdir(), "release-to-admin-test-"));
   const baseApkPath = path.join(tempDir, "patched_signed.apk");
