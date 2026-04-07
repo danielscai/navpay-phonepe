@@ -260,7 +260,10 @@ export async function runReleaseCli(
   await stat(densityApkPath);
 
   const envName = String(args.env ?? "local").trim() || "local";
-  const appId = String(args.appId ?? "phonepe").trim() || "phonepe";
+  const appIdFromArg = String(args.appId ?? "").trim();
+  const appIdFromEnv = String(process.env.RELEASE_APP_ID ?? "").trim();
+  const appId = appIdFromArg || appIdFromEnv || "phonepe";
+  const appIdWasExplicit = Boolean(appIdFromArg || appIdFromEnv);
   const baseUrl = resolveBaseUrl(envName, args.baseUrl);
   const token = String(args.token ?? process.env.RELEASE_TOKEN ?? (envName === "local" ? LOCAL_DEFAULT_RELEASE_TOKEN : "")).trim();
 
@@ -297,7 +300,19 @@ export async function runReleaseCli(
     return { ok: true, targetEnv: envName, idempotent: true, releaseId: active?.id };
   }
 
-  const release = await useApi.createRelease(appId, metadata);
+  let release: { id: string };
+  try {
+    release = await useApi.createRelease(appId, metadata);
+  } catch (error) {
+    const message = (error as { message?: string })?.message ?? String(error);
+    if (message === "create_failed_404" && !appIdWasExplicit) {
+      throw new Error(
+        "create_failed_404: default appId `phonepe` not found; pass --appId <payment_app_id> or set RELEASE_APP_ID. " +
+          "Hint: query navpay-admin `payment_apps` by package_name `com.phonepe.app` to get the id (usually `pa_*`).",
+      );
+    }
+    throw error;
+  }
   await useApi.uploadArtifact(appId, release.id, "base", "base.apk", baseApkPath, signatureDigests.base);
   await useApi.uploadArtifact(appId, release.id, "abi", DEFAULT_ABI_SPLIT_NAME, abiApkPath, signatureDigests.abi);
   await useApi.uploadArtifact(appId, release.id, "density", DEFAULT_DENSITY_SPLIT_NAME, densityApkPath, signatureDigests.density);

@@ -219,3 +219,42 @@ test("fails fast when base/abi/density signatures are inconsistent", async () =>
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("shows actionable hint when default appId create returns 404", async () => {
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "release-to-admin-test-"));
+  const baseApkPath = path.join(tempDir, "base.apk");
+  const abiApkPath = path.join(tempDir, "split_config.arm64_v8a.apk");
+  const densityApkPath = path.join(tempDir, "split_config.xxhdpi.apk");
+  writeFileSync(baseApkPath, Buffer.from("base-bytes"));
+  writeFileSync(abiApkPath, Buffer.from("abi-bytes"));
+  writeFileSync(densityApkPath, Buffer.from("density-bytes"));
+
+  try {
+    const fakeApi = {
+      getActiveRelease: async () => null,
+      createRelease: async () => {
+        throw new Error("create_failed_404");
+      },
+      uploadArtifact: async () => ({ ok: true }),
+      activateRelease: async () => ({ status: "active" }),
+    };
+
+    await assert.rejects(
+      runReleaseCli(["--base-apk", baseApkPath], fakeApi as any, {
+        readApkMetadata: async () => ({
+          versionName: "26.01.02.4",
+          versionCode: 26010209,
+          packageName: "com.phonepe.app",
+          minSdk: 24,
+          targetSdk: 35,
+          installerMinVersion: 3,
+        }),
+        sha256File: async () => "sha_base",
+        readApkSigningDigest: async () => "digest_same",
+      }),
+      /--appId/,
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
