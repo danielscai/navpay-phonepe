@@ -58,7 +58,7 @@ def _patch_runtime_for_unified_test(monkeypatch, activity: str, package: str):
 
 def test_unified_test_uses_install_multiple_when_mode_split_session(monkeypatch, tmp_path):
     signed_apk = tmp_path / "patched_signed.apk"
-    base_apk = tmp_path / "base.apk"
+    base_apk = tmp_path / "patched_signed.apk"
     abi_split = tmp_path / "split_config.arm64_v8a.apk"
     density_split = tmp_path / "split_config.xxhdpi.apk"
     for path in (signed_apk, base_apk, abi_split, density_split):
@@ -125,6 +125,8 @@ def test_profile_test_clean_uses_split_session_with_extended_timeout(monkeypatch
         def fake_unified_test(*args, **kwargs):
             assert kwargs["install_mode"] == "split-session"
             assert args[5] == 30
+            assert kwargs["split_base_apk"] == work_dir / "patched_signed.apk"
+            assert kwargs["split_apks_dir"] == work_dir
 
         m.setattr(cache_manager, "unified_test", fake_unified_test)
         cache_manager.profile_test(manifest, "full", "emulator-5554", smoke=False, install_mode="clean")
@@ -157,8 +159,47 @@ def test_profile_test_clean_split_session_skips_primary_runtime_log_requirement(
         def fake_unified_test(*args, **kwargs):
             assert kwargs["install_mode"] == "split-session"
             assert args[4] == ""
+            assert kwargs["split_base_apk"] == work_dir / "patched_signed.apk"
+            assert kwargs["split_apks_dir"] == work_dir
 
         m.setattr(cache_manager, "unified_test", fake_unified_test)
         cache_manager.profile_test(manifest, "full", "emulator-5554", smoke=False, install_mode="clean")
 
     assert calls["verify_logs"] == 0
+
+
+def test_profile_test_split_session_uses_profile_build_apk_as_base(monkeypatch, tmp_path):
+    manifest = {}
+    work_dir = tmp_path / "build"
+    workspace = tmp_path / "workspace"
+    work_dir.mkdir()
+    workspace.mkdir()
+    signed_apk = work_dir / "patched_signed.apk"
+    signed_apk.write_text("x", encoding="utf-8")
+    primary_spec = {"name": "phonepe_sigbypass", "log_tag": "SigBypass"}
+
+    captured = {}
+
+    with monkeypatch.context() as m:
+        m.setattr(cache_manager, "resolve_profile_modules", lambda _m, _p: ["phonepe_sigbypass"])
+        m.setattr(cache_manager, "profile_build_modules", lambda _m, _p: None)
+        m.setattr(cache_manager, "profile_apk", lambda _m, _p, fresh=False: work_dir)
+        m.setattr(cache_manager, "resolve_module_spec", lambda _m, _n: primary_spec)
+        m.setattr(cache_manager, "resolve_profile_workspace", lambda _p: workspace)
+        m.setattr(cache_manager, "resolve_test_serial", lambda _spec, _serial: "emulator-5554")
+        m.setattr(cache_manager, "verify_profile_injection", lambda *_args, **_kwargs: None)
+        m.setattr(cache_manager, "verify_profile_log_tags", lambda *_args, **_kwargs: None)
+
+        def fake_unified_test(*args, **kwargs):
+            captured["split_base_apk"] = kwargs["split_base_apk"]
+            captured["split_apks_dir"] = kwargs["split_apks_dir"]
+            captured["signed_apk"] = args[0]
+            captured["install_mode"] = kwargs["install_mode"]
+
+        m.setattr(cache_manager, "unified_test", fake_unified_test)
+        cache_manager.profile_test(manifest, "full", "emulator-5554", smoke=False, install_mode="clean")
+
+    assert captured["install_mode"] == "split-session"
+    assert captured["signed_apk"] == signed_apk
+    assert captured["split_base_apk"] == signed_apk
+    assert captured["split_apks_dir"] == work_dir

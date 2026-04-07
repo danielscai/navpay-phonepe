@@ -49,8 +49,11 @@ DEFAULT_TEST_MODE = "sigbypass"
 DEFAULT_EMULATOR_BOOT_TIMEOUT = 20
 REUSE_STATE_FILE = "reuse_artifacts_state.json"
 MERGE_STATE_FILE = "profile_merge_state.json"
-DEFAULT_SPLIT_SOURCE_DIR = "cache/phonepe/from_device"
-DEFAULT_SPLIT_BASE_APK = "base.apk"
+DEFAULT_SPLIT_SEED_DIR = "cache/phonepe/from_device"
+DEFAULT_REQUIRED_SPLITS = (
+    "split_config.arm64_v8a.apk",
+    "split_config.xxhdpi.apk",
+)
 ARTIFACT_INJECT_MODULES = {
     "phonepe_sigbypass",
     "phonepe_https_interceptor",
@@ -495,6 +498,81 @@ def find_build_tool(name: str) -> Path:
         if candidate.exists():
             return candidate
     return Path(name)
+
+
+def normalize_signing_digest(raw: str) -> str:
+    return raw.replace(":", "").strip().lower()
+
+
+def read_apk_signing_digest(apksigner: Path, apk_path: Path) -> str:
+    out = subprocess.check_output(
+        [str(apksigner), "verify", "--print-certs", str(apk_path)],
+        text=True,
+    )
+    match = re.search(r"Signer #1 certificate SHA-256 digest:\s*([A-Fa-f0-9:\s]+)", out)
+    if not match or not match.group(1).strip():
+        raise RuntimeError(f"Unable to parse signing digest for {apk_path}")
+    return normalize_signing_digest(match.group(1))
+
+
+def ensure_profile_release_splits_signed(work_dir: Path, source_dir: Path, base_apk: Path):
+    if not base_apk.exists():
+        raise RuntimeError(f"Base APK not found for release split prep: {base_apk}")
+    if not source_dir.exists():
+        raise RuntimeError(f"Split source directory not found: {source_dir}")
+
+    apksigner = find_build_tool("apksigner")
+    if not Path(apksigner).exists():
+        raise RuntimeError(f"apksigner not found: {apksigner}")
+    keystore = Path.home() / ".android" / "debug.keystore"
+    if not keystore.exists():
+        raise RuntimeError(f"debug.keystore not found: {keystore}")
+
+    env = os.environ.copy()
+    if not env.get("JAVA_HOME"):
+        candidate = "/opt/homebrew/opt/openjdk"
+        if Path(candidate).exists():
+            env["JAVA_HOME"] = candidate
+    if env.get("JAVA_HOME"):
+        env["PATH"] = f"{env['JAVA_HOME']}/bin:" + env.get("PATH", "")
+
+    base_digest = read_apk_signing_digest(Path(apksigner), base_apk)
+    for split_name in DEFAULT_REQUIRED_SPLITS:
+        source_split = source_dir / split_name
+        target_split = work_dir / split_name
+        if not source_split.exists():
+            raise RuntimeError(f"Required split not found: {source_split}")
+
+        source_digest = read_apk_signing_digest(Path(apksigner), source_split)
+        if source_digest == base_digest:
+            shutil.copy2(source_split, target_split)
+        else:
+            run(
+                [
+                    str(apksigner),
+                    "sign",
+                    "--ks",
+                    str(keystore),
+                    "--ks-pass",
+                    "pass:android",
+                    "--out",
+                    str(target_split),
+                    str(source_split),
+                ],
+                env=env,
+            )
+
+        target_digest = read_apk_signing_digest(Path(apksigner), target_split)
+        if target_digest != base_digest:
+            raise RuntimeError(
+                f"Prepared split signature mismatch for {target_split}: "
+                f"base={base_digest} split={target_digest}"
+            )
+
+    log_info(
+        "[PROFILE] release split signatures aligned with base APK: "
+        + ", ".join(DEFAULT_REQUIRED_SPLITS)
+    )
 
 
 def select_device(adb, serial=None):
@@ -2005,6 +2083,8 @@ def profile_apk(manifest, profile_name: str, fresh: bool = False):
     reuse_artifacts = not fresh
     work_dir = profile_build_path(profile_name)
     work_dir.mkdir(parents=True, exist_ok=True)
+    split_seed_dir = resolve_cache_path(DEFAULT_SPLIT_SEED_DIR)
+    signed_apk_path = work_dir / DEFAULT_SIGNED_APK
     workspace = None
     if reuse_artifacts:
         try:
@@ -2012,6 +2092,7 @@ def profile_apk(manifest, profile_name: str, fresh: bool = False):
         except RuntimeError:
             workspace = None
         if workspace is not None and maybe_reuse_profile_artifacts(manifest, profile_name, workspace, work_dir):
+            ensure_profile_release_splits_signed(work_dir, split_seed_dir, signed_apk_path)
             return work_dir
     if workspace is not None and reuse_artifacts:
         modules = resolve_profile_modules(manifest, profile_name)
@@ -2028,6 +2109,7 @@ def profile_apk(manifest, profile_name: str, fresh: bool = False):
         DEFAULT_ALIGNED_APK,
         DEFAULT_SIGNED_APK,
     )
+    ensure_profile_release_splits_signed(work_dir, split_seed_dir, signed_apk_path)
     if reuse_artifacts:
         write_reuse_state(manifest, profile_name, workspace, work_dir)
     return work_dir
@@ -2206,8 +2288,8 @@ def profile_test(
         test_serial,
         start_retries=start_retries,
         install_mode=effective_install_mode,
-        split_base_apk=resolve_cache_path(DEFAULT_SPLIT_SOURCE_DIR) / DEFAULT_SPLIT_BASE_APK,
-        split_apks_dir=resolve_cache_path(DEFAULT_SPLIT_SOURCE_DIR),
+        split_base_apk=signed_apk,
+        split_apks_dir=work_dir,
     )
     if not smoke:
         verify_profile_injection(manifest, workspace, modules)

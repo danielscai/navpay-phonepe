@@ -72,11 +72,13 @@ class ReuseArtifactsTest(unittest.TestCase):
                 mock.patch.object(cache_manager, "profile_merge", return_value=workspace), \
                 mock.patch.object(cache_manager, "profile_build_path", return_value=work_dir), \
                 mock.patch.object(cache_manager, "compute_profile_reuse_fingerprint", return_value="fp1"), \
+                mock.patch.object(cache_manager, "ensure_profile_release_splits_signed") as ensure_splits_mock, \
                 mock.patch.object(cache_manager, "sigbypass_compile") as compile_mock:
                 out_dir = cache_manager.profile_apk({}, "full", fresh=False)
 
             self.assertEqual(out_dir, work_dir)
             compile_mock.assert_not_called()
+            ensure_splits_mock.assert_called_once()
 
     def test_profile_apk_reuse_cache_miss_runs_rebuild(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
@@ -98,11 +100,13 @@ class ReuseArtifactsTest(unittest.TestCase):
                 mock.patch.object(cache_manager, "profile_merge", return_value=workspace), \
                 mock.patch.object(cache_manager, "profile_build_path", return_value=work_dir), \
                 mock.patch.object(cache_manager, "compute_profile_reuse_fingerprint", return_value="fresh"), \
+                mock.patch.object(cache_manager, "ensure_profile_release_splits_signed") as ensure_splits_mock, \
                 mock.patch.object(cache_manager, "sigbypass_compile") as compile_mock:
                 out_dir = cache_manager.profile_apk({}, "full", fresh=False)
 
             self.assertEqual(out_dir, work_dir)
             compile_mock.assert_called_once()
+            ensure_splits_mock.assert_called_once()
             state = json.loads(state_path.read_text(encoding="utf-8"))
             self.assertEqual(state["fingerprint"], "fresh")
 
@@ -126,11 +130,13 @@ class ReuseArtifactsTest(unittest.TestCase):
                 mock.patch.object(cache_manager, "profile_merge", return_value=workspace) as merge_mock, \
                 mock.patch.object(cache_manager, "profile_build_path", return_value=work_dir), \
                 mock.patch.object(cache_manager, "compute_profile_reuse_fingerprint", return_value="fresh"), \
+                mock.patch.object(cache_manager, "ensure_profile_release_splits_signed") as ensure_splits_mock, \
                 mock.patch.object(cache_manager, "sigbypass_compile") as compile_mock:
                 out_dir = cache_manager.profile_apk({}, "full", fresh=False)
 
             self.assertEqual(out_dir, work_dir)
             compile_mock.assert_called_once()
+            ensure_splits_mock.assert_called_once()
             merged_workspace_mock.assert_called_once_with({}, "full", workspace, ["phonepe_sigbypass"])
             merge_mock.assert_not_called()
 
