@@ -122,18 +122,18 @@ function readApkMetadataDefault(apkPath: string): ApkMetadata {
   const parseBadging = (out: string): ApkMetadata | null => {
     const pkg = out.match(/package:\s+name='([^']+)'/);
     const versionCode = out.match(/versionCode='(\d+)'/);
-    const versionName = out.match(/versionName='([^']+)'/);
+    const versionName = out.match(/versionName='([^']*)'/);
     const minSdk = out.match(/sdkVersion:'(\d+)'/);
     const targetSdk = out.match(/targetSdkVersion:'(\d+)'/);
-    if (!pkg || !versionCode || !versionName || !minSdk || !targetSdk) {
+    if (!pkg || !versionCode) {
       return null;
     }
     return {
       packageName: pkg[1],
       versionCode: Number(versionCode[1]),
-      versionName: versionName[1],
-      minSdk: Number(minSdk[1]),
-      targetSdk: Number(targetSdk[1]),
+      versionName: versionName ? versionName[1] : "",
+      minSdk: Number(minSdk?.[1] ?? process.env.RELEASE_MIN_SDK ?? 24),
+      targetSdk: Number(targetSdk?.[1] ?? process.env.RELEASE_TARGET_SDK ?? 35),
       installerMinVersion: 1,
     };
   };
@@ -334,18 +334,6 @@ function versionCodeFromDateVersionName(versionName: string): number | null {
   if (!parsed) return null;
   const compact = parsed.prefix.replace(/\./g, "");
   return Number(`${compact}${parsed.sequence}`);
-}
-
-function compactVersionName(versionName: string): string {
-  return String(versionName).replace(/\./g, "").trim();
-}
-
-function assertVersionLinked(versionName: string, versionCode: number): void {
-  const compact = compactVersionName(versionName);
-  const code = String(versionCode).trim();
-  if (!compact || !code || compact !== code) {
-    throw new Error(`version_name_code_mismatch:${versionName}:${versionCode}`);
-  }
 }
 
 function upsertManifestAttribute(xml: string, attributeName: string, value: string): string {
@@ -572,76 +560,52 @@ export async function runReleaseCli(
     || (shouldAutoVersionName
       ? resolveNextDateVersionName(latestDateVersionName, now)
       : metadataFromApk.versionName);
-  const shouldInferVersionCode = Boolean(explicitVersionName || shouldAutoVersionName);
-  const inferredVersionCode = shouldInferVersionCode ? versionCodeFromDateVersionName(resolvedVersionName) : null;
   const metadata: ApkMetadata = {
     ...metadataFromApk,
     versionName: resolvedVersionName,
-    versionCode: Number(args["version-code"] ?? inferredVersionCode ?? metadataFromApk.versionCode),
+    versionCode: Number(args["version-code"] ?? metadataFromApk.versionCode),
     installerMinVersion: Number(args["installer-min-version"] ?? metadataFromApk.installerMinVersion),
   };
-  assertVersionLinked(metadata.versionName, metadata.versionCode);
+  const artifacts = defaultArtifacts;
 
-  let artifacts = defaultArtifacts;
-  let cleanupArtifacts: (() => Promise<void>) | null = null;
-  try {
-    if (shouldRebuild) {
-      const repacked = await useDeps.repackArtifactsWithVersion(
-        defaultArtifacts,
-        metadata.versionName,
-        metadata.versionCode,
-      );
-      artifacts = {
-        baseApkPath: repacked.baseApkPath,
-        abiApkPath: repacked.abiApkPath,
-        densityApkPath: repacked.densityApkPath,
-      };
-      cleanupArtifacts = repacked.cleanup;
-    }
-
-    const signedMetadata = await useDeps.readApkMetadata(artifacts.baseApkPath);
-    if (
-      signedMetadata.versionCode !== metadata.versionCode
-      || signedMetadata.versionName !== metadata.versionName
-    ) {
+  const signedMetadata = await useDeps.readApkMetadata(artifacts.baseApkPath);
+  if (signedMetadata.versionCode !== metadata.versionCode) {
+    throw new Error(
+      `base_apk_version_code_mismatch expected=${metadata.versionCode} actual=${signedMetadata.versionCode}`,
+    );
+  }
+  const splitArtifacts = [
+    { kind: "abi", apkPath: artifacts.abiApkPath },
+    { kind: "density", apkPath: artifacts.densityApkPath },
+  ] as const;
+  for (const split of splitArtifacts) {
+    const splitMetadata = await useDeps.readApkMetadata(split.apkPath);
+    if (splitMetadata.versionCode !== metadata.versionCode) {
       throw new Error(
-        `repacked_apk_version_mismatch expected=${metadata.versionName}/${metadata.versionCode} actual=${signedMetadata.versionName}/${signedMetadata.versionCode}`,
+        `split_version_code_mismatch split=${split.kind} expected=${metadata.versionCode} actual=${splitMetadata.versionCode}`,
       );
     }
-    const splitArtifacts = [
-      { kind: "abi", apkPath: artifacts.abiApkPath },
-      { kind: "density", apkPath: artifacts.densityApkPath },
-    ] as const;
-    for (const split of splitArtifacts) {
-      const splitMetadata = await useDeps.readApkMetadata(split.apkPath);
-      if (
-        splitMetadata.versionCode !== metadata.versionCode
-        || splitMetadata.versionName !== metadata.versionName
-      ) {
-        throw new Error(
-          `repacked_split_version_mismatch split=${split.kind} expected=${metadata.versionName}/${metadata.versionCode} actual=${splitMetadata.versionName}/${splitMetadata.versionCode}`,
-        );
-      }
-      if (splitMetadata.packageName !== metadata.packageName) {
-        throw new Error(
-          `repacked_split_package_mismatch split=${split.kind} expected=${metadata.packageName} actual=${splitMetadata.packageName}`,
-        );
-      }
-    }
-
-    const signatureDigests = {
-      base: await useDeps.readApkSigningDigest(artifacts.baseApkPath),
-      abi: await useDeps.readApkSigningDigest(artifacts.abiApkPath),
-      density: await useDeps.readApkSigningDigest(artifacts.densityApkPath),
-    };
-    if (signatureDigests.base !== signatureDigests.abi || signatureDigests.base !== signatureDigests.density) {
+    if (splitMetadata.packageName !== metadata.packageName) {
       throw new Error(
-        `apk_signatures_inconsistent base=${signatureDigests.base} abi=${signatureDigests.abi} density=${signatureDigests.density}`,
+        `split_package_mismatch split=${split.kind} expected=${metadata.packageName} actual=${splitMetadata.packageName}`,
       );
     }
+  }
 
-    const checksum = await useDeps.sha256File(artifacts.baseApkPath);
-  const sameVersion = active?.versionCode === metadata.versionCode;
+  const signatureDigests = {
+    base: await useDeps.readApkSigningDigest(artifacts.baseApkPath),
+    abi: await useDeps.readApkSigningDigest(artifacts.abiApkPath),
+    density: await useDeps.readApkSigningDigest(artifacts.densityApkPath),
+  };
+  if (signatureDigests.base !== signatureDigests.abi || signatureDigests.base !== signatureDigests.density) {
+    throw new Error(
+      `apk_signatures_inconsistent base=${signatureDigests.base} abi=${signatureDigests.abi} density=${signatureDigests.density}`,
+    );
+  }
+
+  const checksum = await useDeps.sha256File(artifacts.baseApkPath);
+  const sameVersion = active?.versionCode === metadata.versionCode
+    && String(active?.versionName ?? "") === metadata.versionName;
   const sameChecksum = !active?.baseSha256 || active.baseSha256 === checksum;
   if (sameVersion && sameChecksum) {
     return { ok: true, targetEnv: envName, idempotent: true, releaseId: active?.id };
@@ -666,17 +630,12 @@ export async function runReleaseCli(
     }
     throw error;
   }
-    await useApi.uploadArtifact(appId, release.id, "base", "base.apk", artifacts.baseApkPath, signatureDigests.base);
-    await useApi.uploadArtifact(appId, release.id, "abi", DEFAULT_ABI_SPLIT_NAME, artifacts.abiApkPath, signatureDigests.abi);
-    await useApi.uploadArtifact(appId, release.id, "density", DEFAULT_DENSITY_SPLIT_NAME, artifacts.densityApkPath, signatureDigests.density);
-    await useApi.activateRelease(appId, release.id);
+  await useApi.uploadArtifact(appId, release.id, "base", "base.apk", artifacts.baseApkPath, signatureDigests.base);
+  await useApi.uploadArtifact(appId, release.id, "abi", DEFAULT_ABI_SPLIT_NAME, artifacts.abiApkPath, signatureDigests.abi);
+  await useApi.uploadArtifact(appId, release.id, "density", DEFAULT_DENSITY_SPLIT_NAME, artifacts.densityApkPath, signatureDigests.density);
+  await useApi.activateRelease(appId, release.id);
 
-    return { ok: true, targetEnv: envName, idempotent: false, releaseId: release.id };
-  } finally {
-    if (cleanupArtifacts) {
-      await cleanupArtifacts().catch(() => {});
-    }
-  }
+  return { ok: true, targetEnv: envName, idempotent: false, releaseId: release.id };
 }
 
 async function main() {

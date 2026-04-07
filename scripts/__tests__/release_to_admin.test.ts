@@ -16,7 +16,12 @@ test("uses local env by default and skips duplicate active release", async () =>
 
   try {
     const fakeApi = {
-      getActiveRelease: async () => ({ id: "par_active", versionCode: 100, baseSha256: "sha_same" }),
+      getActiveRelease: async () => ({
+        id: "par_active",
+        versionCode: 100,
+        versionName: "1.0.0",
+        baseSha256: "sha_same",
+      }),
       createRelease: async () => ({ id: "par_new" }),
       uploadArtifact: async () => ({ ok: true }),
       activateRelease: async () => ({ status: "active" }),
@@ -368,7 +373,7 @@ test("shows actionable hint using stable app name when default phonepe create re
   }
 });
 
-test("fails when rebuilt split artifacts do not match target version metadata", async () => {
+test("fails when split artifacts do not match base versionCode", async () => {
   const tempDir = mkdtempSync(path.join(os.tmpdir(), "release-to-admin-test-"));
   const baseApkPath = path.join(tempDir, "base.apk");
   const abiApkPath = path.join(tempDir, "split_config.arm64_v8a.apk");
@@ -392,12 +397,6 @@ test("fails when rebuilt split artifacts do not match target version metadata", 
         fakeApi as any,
         {
           runLatestBuild: async () => {},
-          repackArtifactsWithVersion: async () => ({
-            baseApkPath,
-            abiApkPath,
-            densityApkPath,
-            cleanup: async () => {},
-          }),
           readApkMetadata: async (apkPath: string) => {
             if (apkPath === abiApkPath || apkPath === densityApkPath) {
               return {
@@ -428,8 +427,106 @@ test("fails when rebuilt split artifacts do not match target version metadata", 
             }) as Date,
         } as any,
       ),
-      /repacked_split_version_mismatch/,
+      /split_version_code_mismatch/,
     );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("rebuild mode skips repack and allows versionName-only release with same versionCode", async () => {
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "release-to-admin-test-"));
+  const baseApkPath = path.join(tempDir, "base.apk");
+  const abiApkPath = path.join(tempDir, "split_config.arm64_v8a.apk");
+  const densityApkPath = path.join(tempDir, "split_config.xxhdpi.apk");
+  writeFileSync(baseApkPath, Buffer.from("base-bytes"));
+  writeFileSync(abiApkPath, Buffer.from("abi-bytes"));
+  writeFileSync(densityApkPath, Buffer.from("density-bytes"));
+
+  let createPayload: any = null;
+  let repackCalled = false;
+
+  try {
+    const fakeApi = {
+      listReleases: async () => [
+        {
+          id: "par_active",
+          status: "active",
+          versionCode: 26010205,
+          versionName: "26.01.02.0",
+          baseSha256: "sha_same",
+        },
+      ],
+      getActiveRelease: async () => ({
+        id: "par_active",
+        status: "active",
+        versionCode: 26010205,
+        versionName: "26.01.02.0",
+        baseSha256: "sha_same",
+      }),
+      createRelease: async (_appId: string, payload: any) => {
+        createPayload = payload;
+        return { id: "par_new" };
+      },
+      uploadArtifact: async () => ({ ok: true }),
+      activateRelease: async () => ({ status: "active" }),
+    };
+
+    const out = await runReleaseCli(
+      [
+        "--base-apk",
+        baseApkPath,
+        "--abi-apk",
+        abiApkPath,
+        "--density-apk",
+        densityApkPath,
+        "--version-name",
+        "26.01.02.99",
+        "--rebuild",
+        "true",
+      ],
+      fakeApi as any,
+      {
+        runLatestBuild: async () => {},
+        repackArtifactsWithVersion: async () => {
+          repackCalled = true;
+          return {
+            baseApkPath,
+            abiApkPath,
+            densityApkPath,
+            cleanup: async () => {},
+          };
+        },
+        readApkMetadata: async (apkPath: string) => {
+          if (apkPath === abiApkPath || apkPath === densityApkPath) {
+            return {
+              versionName: "26.01.02.0",
+              versionCode: 26010205,
+              packageName: "com.phonepe.app",
+              minSdk: 24,
+              targetSdk: 35,
+              installerMinVersion: 3,
+            };
+          }
+          return {
+            versionName: "26.01.02.0",
+            versionCode: 26010205,
+            packageName: "com.phonepe.app",
+            minSdk: 24,
+            targetSdk: 35,
+            installerMinVersion: 3,
+          };
+        },
+        sha256File: async () => "sha_same",
+        readApkSigningDigest: async () => "digest_same",
+      },
+    );
+
+    assert.equal(out.ok, true);
+    assert.equal(out.idempotent, false);
+    assert.equal(repackCalled, false);
+    assert.equal(createPayload.versionName, "26.01.02.99");
+    assert.equal(createPayload.versionCode, 26010205);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
