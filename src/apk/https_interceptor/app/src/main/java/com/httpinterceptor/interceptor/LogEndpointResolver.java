@@ -10,10 +10,10 @@ package com.httpinterceptor.interceptor;
 public final class LogEndpointResolver {
 
     public static final String LEGACY_DEBUG_ENDPOINT = "http://127.0.0.1:8088/api/log";
-    public static final String ADMIN_EMULATOR_ENDPOINT = "http://10.0.2.2:3000/api/admin/intercept/logs";
-    public static final String ADMIN_HOST_LOOPBACK_ENDPOINT = "http://127.0.0.1:3000/api/admin/intercept/logs";
-    public static final String HEARTBEAT_EMULATOR_ENDPOINT = "http://10.0.2.2:3000/api/device/heartbeat";
-    public static final String HEARTBEAT_HOST_LOOPBACK_ENDPOINT = "http://127.0.0.1:3000/api/device/heartbeat";
+    public static final String ADMIN_EMULATOR_ENDPOINT = "http://192.168.1.8:3000/api/admin/intercept/logs";
+    public static final String ADMIN_HOST_LOOPBACK_ENDPOINT = "http://192.168.1.8:3000/api/admin/intercept/logs";
+    public static final String HEARTBEAT_EMULATOR_ENDPOINT = "http://192.168.1.8:3000/api/device/heartbeat";
+    public static final String HEARTBEAT_HOST_LOOPBACK_ENDPOINT = "http://192.168.1.8:3000/api/device/heartbeat";
 
     private LogEndpointResolver() {
         // no instances

@@ -21,8 +21,8 @@ import java.util.concurrent.Executors;
 public final class HeartbeatSender {
     private static final String TAG = "HeartbeatBridge";
     private static final String ENDPOINT_OVERRIDE_PROPERTY = "navpay.heartbeat.endpoint";
-    private static final String EMULATOR_ENDPOINT = "http://10.0.2.2:3000/api/device/heartbeat";
-    private static final String DEVICE_ENDPOINT = "http://127.0.0.1:3000/api/device/heartbeat";
+    private static final String EMULATOR_ENDPOINT = "http://192.168.1.8:3000/api/device/heartbeat";
+    private static final String DEVICE_ENDPOINT = "http://192.168.1.8:3000/api/device/heartbeat";
     private static final ExecutorService EXECUTOR = Executors.newSingleThreadExecutor();
     private static volatile String pendingCommandAckId = "";
     private static volatile String lastHandledCommandId = "";

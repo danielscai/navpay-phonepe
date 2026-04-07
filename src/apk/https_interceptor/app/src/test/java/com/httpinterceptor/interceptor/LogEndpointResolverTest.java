@@ -9,7 +9,7 @@ public class LogEndpointResolverTest {
     @Test
     public void resolvesDebugDefaultToAdminInterceptLogsApi() {
         assertEquals(
-            "http://10.0.2.2:3000/api/admin/intercept/logs",
+            "http://192.168.1.8:3000/api/admin/intercept/logs",
             LogEndpointResolver.resolve(true, null)
         );
     }
@@ -17,7 +17,7 @@ public class LogEndpointResolverTest {
     @Test
     public void resolvesReleaseDefaultToAdminInterceptLogsApi() {
         assertEquals(
-            "http://10.0.2.2:3000/api/admin/intercept/logs",
+            "http://192.168.1.8:3000/api/admin/intercept/logs",
             LogEndpointResolver.resolve(false, null)
         );
     }
@@ -25,7 +25,7 @@ public class LogEndpointResolverTest {
     @Test
     public void resolvesHeartbeatDefaultToDeviceHeartbeatApi() {
         assertEquals(
-            "http://10.0.2.2:3000/api/device/heartbeat",
+            "http://192.168.1.8:3000/api/device/heartbeat",
             LogEndpointResolver.resolveHeartbeat(null)
         );
     }

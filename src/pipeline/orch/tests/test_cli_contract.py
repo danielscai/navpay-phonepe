@@ -27,6 +27,16 @@ class CliContractTest(unittest.TestCase):
             orch.main(["plan", "--smoke"])
         self.assertEqual(exc.exception.code, 2)
 
+    def test_device_command_accepts_optional_serial(self) -> None:
+        parser = orch.build_parser()
+        args = parser.parse_args(["device"])
+        self.assertEqual(args.cmd, "device")
+        self.assertIsNone(args.serial)
+
+        args_with_serial = parser.parse_args(["device", "21359de40707"])
+        self.assertEqual(args_with_serial.cmd, "device")
+        self.assertEqual(args_with_serial.serial, "21359de40707")
+
 
 if __name__ == "__main__":
     unittest.main()
