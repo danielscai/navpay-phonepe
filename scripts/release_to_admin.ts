@@ -118,15 +118,15 @@ async function sha256FileDefault(apkPath: string): Promise<string> {
 }
 
 function readApkMetadataDefault(apkPath: string): ApkMetadata {
-  try {
-    const out = execFileSync("aapt", ["dump", "badging", apkPath], { encoding: "utf8" });
+  const aaptPath = resolveAaptPath();
+  const parseBadging = (out: string): ApkMetadata | null => {
     const pkg = out.match(/package:\s+name='([^']+)'/);
     const versionCode = out.match(/versionCode='(\d+)'/);
     const versionName = out.match(/versionName='([^']+)'/);
     const minSdk = out.match(/sdkVersion:'(\d+)'/);
     const targetSdk = out.match(/targetSdkVersion:'(\d+)'/);
     if (!pkg || !versionCode || !versionName || !minSdk || !targetSdk) {
-      throw new Error("apk_metadata_parse_failed");
+      return null;
     }
     return {
       packageName: pkg[1],
@@ -136,8 +136,22 @@ function readApkMetadataDefault(apkPath: string): ApkMetadata {
       targetSdk: Number(targetSdk[1]),
       installerMinVersion: 1,
     };
+  };
+  try {
+    const out = execFileSync(aaptPath, ["dump", "badging", apkPath], { encoding: "utf8" });
+    const parsed = parseBadging(out);
+    if (!parsed) {
+      throw new Error("apk_metadata_parse_failed");
+    }
+    return parsed;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    const err = error as NodeJS.ErrnoException & { stdout?: string | Buffer };
+    const stdout = typeof err.stdout === "string" ? err.stdout : err.stdout?.toString("utf8");
+    if (stdout) {
+      const parsed = parseBadging(stdout);
+      if (parsed) return parsed;
+    }
+    if (err.code !== "ENOENT") throw error;
     return {
       packageName: String(process.env.RELEASE_PACKAGE_NAME ?? "com.phonepe.app"),
       versionCode: Number(process.env.RELEASE_VERSION_CODE ?? Math.floor(Date.now() / 1000)),
@@ -194,6 +208,30 @@ function resolveApkSignerPath(): string {
     }
   }
   return "apksigner";
+}
+
+function resolveAaptPath(): string {
+  const fromEnv = String(process.env.AAPT_PATH ?? "").trim();
+  if (fromEnv) return fromEnv;
+
+  const sdkRoot = String(process.env.ANDROID_SDK_ROOT ?? process.env.ANDROID_HOME ?? "").trim();
+  const candidateRoots = [sdkRoot, "/Users/danielscai/Library/Android/sdk"].filter(Boolean);
+  for (const root of candidateRoots) {
+    const buildToolsDir = join(root, "build-tools");
+    try {
+      const versions = readdirSync(buildToolsDir, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => d.name)
+        .sort(compareVersionDesc);
+      for (const version of versions) {
+        const candidate = join(buildToolsDir, version, "aapt");
+        if (existsSync(candidate)) return candidate;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return "aapt";
 }
 
 function resolveZipAlignPath(): string {
@@ -269,6 +307,26 @@ function resolveNextDateVersionName(latestVersionName: string | null | undefined
     return `${todayPrefix}.0`;
   }
   return `${todayPrefix}.${parsedLatest.sequence + 1}`;
+}
+
+function resolveLatestDateVersionNameFromReleases(
+  releases: ActiveRelease[] | null,
+): string | null {
+  if (!releases?.length) return null;
+  let best: { yyMMdd: number; sequence: number; versionName: string } | null = null;
+  for (const row of releases) {
+    const versionName = String(row.versionName ?? "").trim();
+    const parsed = parseDateVersion(versionName);
+    if (!parsed) continue;
+    const linkedCode = versionCodeFromDateVersionName(versionName);
+    if (linkedCode == null || Number(row.versionCode) !== linkedCode) continue;
+    const yyMMdd = Number(parsed.prefix.replace(/\./g, ""));
+    const candidate = { yyMMdd, sequence: parsed.sequence, versionName };
+    if (!best || candidate.yyMMdd > best.yyMMdd || (candidate.yyMMdd === best.yyMMdd && candidate.sequence > best.sequence)) {
+      best = candidate;
+    }
+  }
+  return best?.versionName ?? null;
 }
 
 function versionCodeFromDateVersionName(versionName: string): number | null {
@@ -365,12 +423,10 @@ async function repackArtifactsWithVersionDefault(
 
   try {
     const baseApkPath = await repackOne(artifacts.baseApkPath, "base");
-    const abiApkPath = await repackOne(artifacts.abiApkPath, "abi");
-    const densityApkPath = await repackOne(artifacts.densityApkPath, "density");
     return {
       baseApkPath,
-      abiApkPath,
-      densityApkPath,
+      abiApkPath: artifacts.abiApkPath,
+      densityApkPath: artifacts.densityApkPath,
       cleanup: async () => {
         await rm(staging, { recursive: true, force: true });
       },
@@ -422,7 +478,13 @@ function buildHttpApi(baseUrl: string, token: string): PublisherApi {
         headers: { ...authHeaders, "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
-      if (!r.ok) throw new Error(`create_failed_${r.status}`);
+      if (!r.ok) {
+        const errorCode = await r.json().then((x: any) => String(x?.error ?? "")).catch(() => "");
+        if (r.status === 409 && errorCode === "duplicate_version_code") {
+          throw new Error("duplicate_version_code");
+        }
+        throw new Error(`create_failed_${r.status}`);
+      }
       const j: any = await r.json();
       return { id: String(j?.row?.id) };
     },
@@ -502,18 +564,13 @@ export async function runReleaseCli(
   const metadataFromApk = await useDeps.readApkMetadata(defaultArtifacts.baseApkPath);
   const now = useDeps.now();
   const allReleases = useApi.listReleases ? await useApi.listReleases(appId) : null;
-  const latestReleaseByVersionCode = allReleases
-    ? allReleases.reduce<ActiveRelease | null>((acc, item) => {
-        if (!acc) return item;
-        return item.versionCode > acc.versionCode ? item : acc;
-      }, null)
-    : null;
+  const latestDateVersionName = resolveLatestDateVersionNameFromReleases(allReleases);
   const active = allReleases ? allReleases.find((row) => row.status === "active") ?? null : await useApi.getActiveRelease(appId);
   const explicitVersionName = String(args["version-name"] ?? "").trim();
   const shouldAutoVersionName = Boolean(allReleases);
   const resolvedVersionName = explicitVersionName
     || (shouldAutoVersionName
-      ? resolveNextDateVersionName(latestReleaseByVersionCode?.versionName ?? null, now)
+      ? resolveNextDateVersionName(latestDateVersionName, now)
       : metadataFromApk.versionName);
   const shouldInferVersionCode = Boolean(explicitVersionName || shouldAutoVersionName);
   const inferredVersionCode = shouldInferVersionCode ? versionCodeFromDateVersionName(resolvedVersionName) : null;
@@ -575,6 +632,12 @@ export async function runReleaseCli(
     release = await useApi.createRelease(appId, metadata);
   } catch (error) {
     const message = (error as { message?: string })?.message ?? String(error);
+    if (message === "duplicate_version_code") {
+      throw new Error(
+        `duplicate_version_code: app=${appId} versionName=${metadata.versionName} versionCode=${metadata.versionCode}; ` +
+          "server already has this version and no new release was created.",
+      );
+    }
     if (message === "create_failed_404" && !appIdWasExplicit) {
       throw new Error(
         "create_failed_404: default app reference `phonepe` not found. " +

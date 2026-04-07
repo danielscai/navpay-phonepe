@@ -126,6 +126,8 @@ test("auto bumps version to YY.MM.DD.N using latest release on same day", async 
   try {
     const fakeApi = {
       listReleases: async () => [
+        { id: "legacy-auto", versionCode: 1775522727, versionName: "auto-1775522727354", status: "inactive", baseSha256: "sha_auto" },
+        { id: "legacy-mismatch", versionCode: 26010205, versionName: "26.01.02.0", status: "superseded", baseSha256: "sha_legacy" },
         { id: "r1", versionCode: 2601021, versionName: "26.01.02.1", status: "draft", baseSha256: "sha_old" },
         { id: "r0", versionCode: 2601020, versionName: "26.01.02.0", status: "active", baseSha256: "sha_active" },
       ],
