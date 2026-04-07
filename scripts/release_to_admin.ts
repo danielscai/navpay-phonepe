@@ -608,6 +608,26 @@ export async function runReleaseCli(
         `repacked_apk_version_mismatch expected=${metadata.versionName}/${metadata.versionCode} actual=${signedMetadata.versionName}/${signedMetadata.versionCode}`,
       );
     }
+    const splitArtifacts = [
+      { kind: "abi", apkPath: artifacts.abiApkPath },
+      { kind: "density", apkPath: artifacts.densityApkPath },
+    ] as const;
+    for (const split of splitArtifacts) {
+      const splitMetadata = await useDeps.readApkMetadata(split.apkPath);
+      if (
+        splitMetadata.versionCode !== metadata.versionCode
+        || splitMetadata.versionName !== metadata.versionName
+      ) {
+        throw new Error(
+          `repacked_split_version_mismatch split=${split.kind} expected=${metadata.versionName}/${metadata.versionCode} actual=${splitMetadata.versionName}/${splitMetadata.versionCode}`,
+        );
+      }
+      if (splitMetadata.packageName !== metadata.packageName) {
+        throw new Error(
+          `repacked_split_package_mismatch split=${split.kind} expected=${metadata.packageName} actual=${splitMetadata.packageName}`,
+        );
+      }
+    }
 
     const signatureDigests = {
       base: await useDeps.readApkSigningDigest(artifacts.baseApkPath),

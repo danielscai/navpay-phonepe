@@ -367,3 +367,70 @@ test("shows actionable hint using stable app name when default phonepe create re
     rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test("fails when rebuilt split artifacts do not match target version metadata", async () => {
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "release-to-admin-test-"));
+  const baseApkPath = path.join(tempDir, "base.apk");
+  const abiApkPath = path.join(tempDir, "split_config.arm64_v8a.apk");
+  const densityApkPath = path.join(tempDir, "split_config.xxhdpi.apk");
+  writeFileSync(baseApkPath, Buffer.from("base-bytes"));
+  writeFileSync(abiApkPath, Buffer.from("abi-bytes"));
+  writeFileSync(densityApkPath, Buffer.from("density-bytes"));
+
+  try {
+    const fakeApi = {
+      listReleases: async () => [],
+      getActiveRelease: async () => null,
+      createRelease: async () => ({ id: "par_new" }),
+      uploadArtifact: async () => ({ ok: true }),
+      activateRelease: async () => ({ status: "active" }),
+    };
+
+    await assert.rejects(
+      runReleaseCli(
+        ["--base-apk", baseApkPath, "--rebuild", "true"],
+        fakeApi as any,
+        {
+          runLatestBuild: async () => {},
+          repackArtifactsWithVersion: async () => ({
+            baseApkPath,
+            abiApkPath,
+            densityApkPath,
+            cleanup: async () => {},
+          }),
+          readApkMetadata: async (apkPath: string) => {
+            if (apkPath === abiApkPath || apkPath === densityApkPath) {
+              return {
+                versionName: "26.04.07.1",
+                versionCode: 2604071,
+                packageName: "com.phonepe.app",
+                minSdk: 24,
+                targetSdk: 35,
+                installerMinVersion: 3,
+              };
+            }
+            return {
+              versionName: "26.04.07.0",
+              versionCode: 2604070,
+              packageName: "com.phonepe.app",
+              minSdk: 24,
+              targetSdk: 35,
+              installerMinVersion: 3,
+            };
+          },
+          sha256File: async () => "sha_new",
+          readApkSigningDigest: async () => "digest_same",
+          now: () =>
+            ({
+              getFullYear: () => 2026,
+              getMonth: () => 3,
+              getDate: () => 7,
+            }) as Date,
+        } as any,
+      ),
+      /repacked_split_version_mismatch/,
+    );
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
