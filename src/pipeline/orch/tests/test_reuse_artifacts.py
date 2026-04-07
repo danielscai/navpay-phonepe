@@ -52,6 +52,23 @@ class ReuseArtifactsTest(unittest.TestCase):
         self.assertEqual(args.cmd, "test")
         self.assertEqual(args.install_mode, "split-session")
 
+    def test_parse_test_mode_tokens_maps_numeric_serial_port(self) -> None:
+        smoke, install_mode, serial = cache_manager.parse_test_mode_tokens(
+            ["smoke", "clean", "5554"],
+            smoke=False,
+            install_mode="reinstall",
+            serial="",
+        )
+        self.assertTrue(smoke)
+        self.assertEqual(install_mode, "clean")
+        self.assertEqual(serial, "emulator-5554")
+
+    def test_normalize_serial_alias_maps_huawei_to_default_physical_device(self) -> None:
+        self.assertEqual(
+            cache_manager.normalize_serial_alias("huawei"),
+            "GSLDU18106001520",
+        )
+
     def test_profile_apk_reuse_cache_hit_skips_rebuild(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             root = Path(tempdir)

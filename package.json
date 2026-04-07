@@ -22,6 +22,7 @@
     "merge": "yarn orch merge",
     "apk": "yarn orch apk",
     "apk:fresh": "yarn orch apk --fresh",
+    "ins": "bash scripts/install_to_emulator.sh",
     "test": "bash scripts/run_test.sh",
     "release": "yarn release:build && yarn release:cache && yarn release:check && yarn release:publish",
     "verify:tests": "python3 -m pytest src/pipeline/orch/tests/test_split_session_verifier.py -q && python3 -m pytest src/pipeline/orch/tests/test_split_session_install_mode.py -q && python3 -m pytest src/pipeline/orch/tests/test_reuse_artifacts.py -q && python3 -m pytest src/pipeline/orch/tests/test_smoke_mode.py -q",

@@ -2356,13 +2356,26 @@ def parse_test_mode_tokens(tokens, smoke: bool, install_mode: str, serial: str):
             idx += 1
 
     if idx < len(items):
-        mode_serial = items[idx]
+        mode_serial = normalize_serial_alias(items[idx])
         idx += 1
 
     if idx < len(items):
         raise RuntimeError("Too many test mode arguments. Use: test [smoke] [reinstall|clean|keep|split-session] [serial]")
 
     return mode_smoke, mode_install, mode_serial
+
+
+def normalize_serial_alias(serial: str) -> str:
+    token = (serial or "").strip()
+    aliases = {
+        "huawei": "GSLDU18106001520",
+    }
+    mapped = aliases.get(token.lower())
+    if mapped:
+        return mapped
+    if token.isdigit():
+        return f"emulator-{token}"
+    return token
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -2430,7 +2443,7 @@ def main(argv=None):
     elif args.cmd in TOP_LEVEL_PROFILE_ACTIONS:
         smoke = getattr(args, "smoke", False)
         install_mode = getattr(args, "install_mode", "reinstall")
-        serial = getattr(args, "serial", "") or ""
+        serial = normalize_serial_alias(getattr(args, "serial", "") or "")
         if args.cmd == "test":
             smoke, install_mode, serial = parse_test_mode_tokens(
                 getattr(args, "test_mode", []),
