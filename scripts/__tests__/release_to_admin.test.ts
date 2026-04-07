@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { runReleaseCli } from "../release_to_admin";
+import { runReleaseCli } from "../release_to_admin.ts";
 
 test("uses local env by default and skips duplicate active release", async () => {
   const tempDir = mkdtempSync(path.join(os.tmpdir(), "release-to-admin-test-"));
@@ -77,15 +77,15 @@ test("uploads explicit base/abi/density artifacts and applies metadata overrides
         "--version-name",
         "26.01.02.2",
         "--version-code",
-        "26010207",
+        "2601022",
         "--installer-min-version",
         "3",
       ],
       fakeApi as any,
       {
         readApkMetadata: async () => ({
-          versionName: "from-aapt",
-          versionCode: 26010206,
+          versionName: "26.01.02.2",
+          versionCode: 2601022,
           packageName: "com.phonepe.app",
           minSdk: 24,
           targetSdk: 35,
@@ -100,7 +100,7 @@ test("uploads explicit base/abi/density artifacts and applies metadata overrides
     assert.equal(out.idempotent, false);
     assert.equal(out.releaseId, "par_new");
     assert.equal(createPayload.versionName, "26.01.02.2");
-    assert.equal(createPayload.versionCode, 26010207);
+    assert.equal(createPayload.versionCode, 2601022);
     assert.equal(createPayload.installerMinVersion, 3);
     assert.deepEqual(uploadCalls, [
       { artifactType: "base", name: "base.apk", apkPath: baseApkPath },
@@ -126,10 +126,10 @@ test("auto bumps version to YY.MM.DD.N using latest release on same day", async 
   try {
     const fakeApi = {
       listReleases: async () => [
-        { id: "r1", versionCode: 26010206, versionName: "26.01.02.1", status: "draft", baseSha256: "sha_old" },
-        { id: "r0", versionCode: 26010205, versionName: "26.01.02.0", status: "active", baseSha256: "sha_active" },
+        { id: "r1", versionCode: 2601021, versionName: "26.01.02.1", status: "draft", baseSha256: "sha_old" },
+        { id: "r0", versionCode: 2601020, versionName: "26.01.02.0", status: "active", baseSha256: "sha_active" },
       ],
-      getActiveRelease: async () => ({ id: "r0", versionCode: 26010205, versionName: "26.01.02.0", status: "active", baseSha256: "sha_active" }),
+      getActiveRelease: async () => ({ id: "r0", versionCode: 2601020, versionName: "26.01.02.0", status: "active", baseSha256: "sha_active" }),
       createRelease: async (_appId: string, payload: any) => {
         createPayload = payload;
         return { id: "par_new" };
@@ -140,8 +140,8 @@ test("auto bumps version to YY.MM.DD.N using latest release on same day", async 
 
     await runReleaseCli(["--base-apk", baseApkPath], fakeApi as any, {
       readApkMetadata: async () => ({
-        versionName: "from-aapt",
-        versionCode: 1,
+        versionName: "26.01.02.2",
+        versionCode: 2601022,
         packageName: "com.phonepe.app",
         minSdk: 24,
         targetSdk: 35,
@@ -158,7 +158,7 @@ test("auto bumps version to YY.MM.DD.N using latest release on same day", async 
     });
 
     assert.equal(createPayload.versionName, "26.01.02.2");
-    assert.equal(createPayload.versionCode, 26010207);
+    assert.equal(createPayload.versionCode, 2601022);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -178,9 +178,9 @@ test("auto resets daily sequence when latest release is from a previous day", as
   try {
     const fakeApi = {
       listReleases: async () => [
-        { id: "r1", versionCode: 26010114, versionName: "26.01.01.9", status: "active", baseSha256: "sha_old" },
+        { id: "r1", versionCode: 2601019, versionName: "26.01.01.9", status: "active", baseSha256: "sha_old" },
       ],
-      getActiveRelease: async () => ({ id: "r1", versionCode: 26010114, versionName: "26.01.01.9", status: "active", baseSha256: "sha_old" }),
+      getActiveRelease: async () => ({ id: "r1", versionCode: 2601019, versionName: "26.01.01.9", status: "active", baseSha256: "sha_old" }),
       createRelease: async (_appId: string, payload: any) => {
         createPayload = payload;
         return { id: "par_new" };
@@ -191,8 +191,8 @@ test("auto resets daily sequence when latest release is from a previous day", as
 
     await runReleaseCli(["--base-apk", baseApkPath], fakeApi as any, {
       readApkMetadata: async () => ({
-        versionName: "from-aapt",
-        versionCode: 1,
+        versionName: "26.01.02.0",
+        versionCode: 2601020,
         packageName: "com.phonepe.app",
         minSdk: 24,
         targetSdk: 35,
@@ -209,7 +209,7 @@ test("auto resets daily sequence when latest release is from a previous day", as
     });
 
     assert.equal(createPayload.versionName, "26.01.02.0");
-    assert.equal(createPayload.versionCode, 26010205);
+    assert.equal(createPayload.versionCode, 2601020);
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }
@@ -221,7 +221,7 @@ test("supports independent artifact paths when only --base-apk is provided", asy
   const abiApkPath = path.join(tempDir, "splits", "split_config.arm64_v8a.apk");
   const densityApkPath = path.join(tempDir, "splits", "split_config.xxhdpi.apk");
   const splitsDir = path.dirname(abiApkPath);
-  require("node:fs").mkdirSync(splitsDir, { recursive: true });
+  mkdirSync(splitsDir, { recursive: true });
   writeFileSync(baseApkPath, Buffer.from("base-bytes"));
   writeFileSync(abiApkPath, Buffer.from("abi-bytes"));
   writeFileSync(densityApkPath, Buffer.from("density-bytes"));
@@ -251,7 +251,7 @@ test("supports independent artifact paths when only --base-apk is provided", asy
       {
         readApkMetadata: async () => ({
           versionName: "26.01.02.3",
-          versionCode: 26010208,
+          versionCode: 2601023,
           packageName: "com.phonepe.app",
           minSdk: 24,
           targetSdk: 35,
@@ -301,7 +301,7 @@ test("fails fast when base/abi/density signatures are inconsistent", async () =>
         {
           readApkMetadata: async () => ({
             versionName: "26.01.02.4",
-            versionCode: 26010209,
+            versionCode: 2601024,
             packageName: "com.phonepe.app",
             minSdk: 24,
             targetSdk: 35,
@@ -346,7 +346,7 @@ test("shows actionable hint using stable app name when default phonepe create re
       await runReleaseCli(["--base-apk", baseApkPath], fakeApi as any, {
         readApkMetadata: async () => ({
           versionName: "26.01.02.4",
-          versionCode: 26010209,
+          versionCode: 2601024,
           packageName: "com.phonepe.app",
           minSdk: 24,
           targetSdk: 35,

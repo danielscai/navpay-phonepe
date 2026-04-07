@@ -9,7 +9,7 @@ yarn release:to-admin \
   --abi-apk cache/phonepe/from_device/split_config.arm64_v8a.apk \
   --density-apk cache/phonepe/from_device/split_config.xxhdpi.apk \
   --version-name 26.01.02.2 \
-  --version-code 26010207
+  --version-code 2601022
 ```
 
 ## 参数
@@ -32,7 +32,9 @@ yarn release:to-admin \
 - 若未传 `--version-name`，CLI 会查询服务端最新 release（按 `versionCode` 最大值）并自动生成版本号，格式固定为 `YY.MM.DD.N`：
   - 若最新版本日期等于当天：`N + 1`（如 `26.01.02.1` 后自动变为 `26.01.02.2`）。
   - 若最新版本不是当天：从当天 `.0` 开始（如 `26.01.02.0`）。
-- 若未传 `--version-code` 且版本名符合 `YY.MM.DD.N`，CLI 会自动推导 `versionCode = YYMMDD00 + N + 5`（例如 `26.01.02.0 -> 26010205`）。
+- 若未传 `--version-code` 且版本名符合 `YY.MM.DD.N`，CLI 会自动推导 `versionCode = YYMMDDN`（例如 `26.01.02.0 -> 2601020`）。
+- CLI 会强校验：`versionName` 去掉 `.` 后必须等于 `versionCode`，不一致会直接失败。
+- 默认发布会先构建最新代码，再把新版本号注入 `base/abi/density` 三个 APK 后上传。
 - 若默认 `phonepe` 返回 `create_failed_404`，通常表示服务端 `payment_apps` 中不存在可解析为 `phonepe` 的应用记录（名称不存在或被禁用）。
 - 上传前会执行签名一致性预检（`apksigner verify --print-certs`）：
   - `base/abi/density` 三个 APK 的签名 digest 必须完全一致。
