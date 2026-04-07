@@ -9,6 +9,21 @@ PACKAGE_NAME = "com.phonepe.app"
 DUMP_REMOTE_PATH = "/sdcard/navpay_release_check.xml"
 DUMP_LOCAL_PATH = "/tmp/navpay_release_check.xml"
 
+TECHNICAL_ISSUE_MARKERS = [
+    "unable to proceed",
+    "we're currently facing a technical issue",
+    "please try again later",
+    "contact support",
+    "retry",
+]
+
+LOGIN_MARKERS = [
+    "login",
+    "log in",
+    "sign in",
+    "signin",
+]
+
 
 def run_capture(cmd: Sequence[str], allow_fail: bool = False) -> str:
     proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -69,14 +84,39 @@ def dump_ui_text(adb: str, serial: str) -> str:
     return xml.lower()
 
 
+def detect_screen_state(ui_text: str) -> str:
+    # Match the real error page shown in screenshot:
+    # "Unable to proceed" + technical issue/support/retry copy.
+    if "unable to proceed" in ui_text:
+        if any(
+            marker in ui_text
+            for marker in [
+                "we're currently facing a technical issue",
+                "please try again later",
+                "contact support",
+                "retry",
+                "technical issue",
+            ]
+        ):
+            return "technical_issue"
+
+    technical_hits = sum(1 for marker in TECHNICAL_ISSUE_MARKERS if marker in ui_text)
+    if technical_hits >= 2:
+        return "technical_issue"
+
+    if any(marker in ui_text for marker in LOGIN_MARKERS):
+        return "login"
+
+    return "unknown"
+
+
 def wait_for_result(adb: str, serial: str, interval_sec: int, timeout_sec: int) -> str:
     deadline = time.time() + timeout_sec
     while time.time() < deadline:
         ui = dump_ui_text(adb, serial)
-        if "technical issue" in ui:
-            return "technical_issue"
-        if "login" in ui or "log in" in ui or "sign in" in ui or "signin" in ui:
-            return "login"
+        state = detect_screen_state(ui)
+        if state in ("technical_issue", "login"):
+            return state
         time.sleep(interval_sec)
     return "timeout"
 
