@@ -220,7 +220,7 @@ test("fails fast when base/abi/density signatures are inconsistent", async () =>
   }
 });
 
-test("shows actionable hint when default appId create returns 404", async () => {
+test("shows actionable hint using stable app name when default phonepe create returns 404", async () => {
   const tempDir = mkdtempSync(path.join(os.tmpdir(), "release-to-admin-test-"));
   const baseApkPath = path.join(tempDir, "base.apk");
   const abiApkPath = path.join(tempDir, "split_config.arm64_v8a.apk");
@@ -239,8 +239,8 @@ test("shows actionable hint when default appId create returns 404", async () => 
       activateRelease: async () => ({ status: "active" }),
     };
 
-    await assert.rejects(
-      runReleaseCli(["--base-apk", baseApkPath], fakeApi as any, {
+    await assert.rejects(async () => {
+      await runReleaseCli(["--base-apk", baseApkPath], fakeApi as any, {
         readApkMetadata: async () => ({
           versionName: "26.01.02.4",
           versionCode: 26010209,
@@ -251,9 +251,13 @@ test("shows actionable hint when default appId create returns 404", async () => 
         }),
         sha256File: async () => "sha_base",
         readApkSigningDigest: async () => "digest_same",
-      }),
-      /--appId/,
-    );
+      });
+    }, (error: any) => {
+      const message = String(error?.message ?? "");
+      assert.equal(message.includes("phonepe"), true);
+      assert.equal(message.includes("--appId"), false);
+      return true;
+    });
   } finally {
     rmSync(tempDir, { recursive: true, force: true });
   }

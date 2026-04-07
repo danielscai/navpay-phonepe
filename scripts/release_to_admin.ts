@@ -307,8 +307,8 @@ export async function runReleaseCli(
     const message = (error as { message?: string })?.message ?? String(error);
     if (message === "create_failed_404" && !appIdWasExplicit) {
       throw new Error(
-        "create_failed_404: default appId `phonepe` not found; pass --appId <payment_app_id> or set RELEASE_APP_ID. " +
-          "Hint: query navpay-admin `payment_apps` by package_name `com.phonepe.app` to get the id (usually `pa_*`).",
+        "create_failed_404: default app reference `phonepe` not found. " +
+          "This CLI publishes by stable app name; ensure navpay-admin payment app name `phonepe` exists and is enabled.",
       );
     }
     throw error;

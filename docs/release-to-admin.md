@@ -21,7 +21,7 @@ yarn release:to-admin \
 - `--env`：可选，默认 `local`。
 - `--baseUrl`：可选，覆盖目标 admin 地址。
 - `--token`：可选，覆盖 `RELEASE_TOKEN` 环境变量。
-- `--appId`：可选，默认 `phonepe`。
+- `--appId`：可选，发布目标应用引用（推荐使用稳定名称，如 `phonepe`）；未设置时会尝试 `RELEASE_APP_ID`，再回退到 `phonepe`。
 - `--version-name`：可选，覆盖从 APK 读取的版本名。
 - `--version-code`：可选，覆盖从 APK 读取的版本码。
 - `--installer-min-version`：可选，覆盖安装器最低版本。
@@ -29,6 +29,7 @@ yarn release:to-admin \
 ## 行为
 
 - 默认目标环境是 `local`。
+- 若默认 `phonepe` 返回 `create_failed_404`，通常表示服务端 `payment_apps` 中不存在可解析为 `phonepe` 的应用记录（名称不存在或被禁用）。
 - 上传前会执行签名一致性预检（`apksigner verify --print-certs`）：
   - `base/abi/density` 三个 APK 的签名 digest 必须完全一致。
   - 不一致时会直接失败并抛出 `apk_signatures_inconsistent`，不会创建/上传 release。
