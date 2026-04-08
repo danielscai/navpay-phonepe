@@ -332,6 +332,7 @@ def collect_bootstrap_anchor(matrix, run_state, run_dir: Path):
     if status != "done":
         raise RuntimeError(f"Bootstrap target failed: {bootstrap_target_id}")
     anchor = validate_anchor_payload((result or {}).get("anchor"), bootstrap_target_id)
+    run_state["_bootstrap_result"] = result
     run_state["version_anchor"] = anchor
     if bootstrap_target_id not in run_state.setdefault("completed_targets", []):
         run_state["completed_targets"].append(bootstrap_target_id)
@@ -345,6 +346,62 @@ def ensure_collect_anchor_match(version_anchor, result_anchor, target_id: str):
             raise RuntimeError(
                 f"Anchor mismatch for {target_id}: {key} expected={version_anchor[key]} got={anchor[key]}"
             )
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fp:
+        while True:
+            chunk = fp.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def archive_collect_target_artifacts(snapshots_root: Path, version_anchor, target, result):
+    target_id = target["target_id"]
+    package_name = version_anchor["packageName"]
+    version_code = version_anchor["versionCode"]
+    signing_digest = normalize_signing_digest(version_anchor["signingDigest"])
+    capture_dir = snapshots_root / package_name / version_code / signing_digest / "captures" / target_id
+    capture_dir.mkdir(parents=True, exist_ok=True)
+
+    artifacts = (result or {}).get("artifacts") or {}
+    artifact_specs = (
+        ("base_apk", "base.apk"),
+        ("abi_split_apk", "split_config.arm64_v8a.apk"),
+        ("density_split_apk", "split_config.xxhdpi.apk"),
+    )
+    files_meta = []
+    for key, dest_name in artifact_specs:
+        src = Path(artifacts.get(key, ""))
+        if not src.exists():
+            raise RuntimeError(f"Missing artifact for {target_id}: {key}")
+        dst = capture_dir / dest_name
+        shutil.copy2(src, dst)
+        files_meta.append(
+            {
+                "key": key,
+                "file": dst.name,
+                "source_path": str(src),
+                "sha256": sha256_file(dst),
+            }
+        )
+
+    device_meta = dict((result or {}).get("device_meta") or {})
+    device_meta.setdefault("target_id", target_id)
+    device_meta.setdefault("serial_alias", target.get("serial_alias", ""))
+    write_meta(capture_dir / "device_meta.json", device_meta)
+    write_meta(
+        capture_dir / "capture_meta.json",
+        {
+            "target_id": target_id,
+            "captured_at": datetime.now().isoformat(),
+            "anchor": version_anchor,
+            "files": files_meta,
+        },
+    )
 
 
 def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, snapshots_root: Optional[Path] = None) -> int:
@@ -369,6 +426,10 @@ def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, sn
     version_anchor = run_state.get("version_anchor")
     if not version_anchor:
         version_anchor = collect_bootstrap_anchor(matrix, run_state, run_dir)
+        bootstrap_target = find_collect_target(matrix, matrix.get("bootstrap_target_id", ""))
+        bootstrap_result = run_state.get("_bootstrap_result")
+        if bootstrap_target and bootstrap_result:
+            archive_collect_target_artifacts(snapshots_path, version_anchor, bootstrap_target, bootstrap_result)
         write_collect_run_state(run_dir, run_state)
 
     for target in pending_collect_targets(matrix, run_state):
@@ -378,6 +439,7 @@ def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, sn
         if status == "done":
             ensure_collect_anchor_match(version_anchor, (result or {}).get("anchor"), target_id)
             run_state.setdefault("completed_targets", []).append(target_id)
+            archive_collect_target_artifacts(snapshots_path, version_anchor, target, result)
             run_state["status"] = "running"
         else:
             run_state.setdefault("failed_targets", []).append(target_id)
