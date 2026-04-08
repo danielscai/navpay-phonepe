@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Standardize `orch` into a multi-app CLI (`phonepe`, `paytm`) with default help, unified subcommands (`collect/info/decompiled/build/install/test`), and yarn top-level shortcuts.
+**Goal:** Standardize `orch` into a multi-app CLI (`phonepe`, `paytm`) with default help, unified subcommands (`collect/info/decompiled/build/install/test`), and a `yarn install:orch` setup path that makes `orch <subcommand>` the primary entry.
 
-**Architecture:** Introduce an app registry (`apps_manifest.json`) and route command behavior by `app_id` instead of hardcoded PhonePe-only assumptions. Keep existing snapshot/decompiled/build internals reusable by wrapping them in app-aware adapters, then add new top-level command aliases while preserving backward compatibility (`apk` alias to `build`, old collect options). Enforce serial collection order per emulator and per app.
+**Architecture:** Introduce an app registry (`apps_manifest.json`) and route command behavior by `app_id` instead of hardcoded PhonePe-only assumptions. Keep existing snapshot/decompiled/build internals reusable by wrapping them in app-aware adapters, then expose `orch` as the primary command surface while preserving backward compatibility (`apk` alias to `build`, old collect options). `yarn info` and `yarn install` remain Yarn-reserved collisions, so docs and wrappers should point to `orch info` / `orch install`. Enforce serial collection order per emulator and per app.
 
 **Tech Stack:** Python 3 (`argparse`, `json`, `pathlib`, `subprocess`), existing `orchestrator.py`, pytest test suite under `src/pipeline/orch/tests`, Yarn scripts in root `package.json`, Markdown docs.
 
@@ -357,7 +357,7 @@ git commit -m "feat(orch): add app-scoped test command"
 
 ### Task 9: Add Yarn top-level shortcuts for all orch subcommands
 
-> Note (minimal runtime adjustment): for Yarn v4 argument forwarding and reserved command behavior, define shortcuts as direct `python3 src/pipeline/orch/orchestrator.py <subcommand>` scripts; for `install`, verification should use `yarn run install ...` or `yarn orch install ...` because bare `yarn install` is reserved by Yarn itself.
+> Note (minimal runtime adjustment): `yarn install:orch` installs the CLI, after which `orch <subcommand>` is the primary entry. If Yarn wrappers are still needed, they should forward to `python3 src/pipeline/orch/orchestrator.py <subcommand>`. For `info` and `install`, documentation should use `orch info` / `orch install` because bare `yarn info` and `yarn install` are reserved by Yarn itself.
 
 **Files:**
 - Modify: `package.json`
@@ -381,10 +381,10 @@ Expected: FAIL (missing shortcuts).
 {
   "scripts": {
     "collect": "yarn orch collect",
-    "info": "yarn orch info",
+    "info": "orch info",
     "decompiled": "yarn orch decompiled",
     "build": "yarn orch build",
-    "install": "yarn orch install"
+    "install": "orch install"
   }
 }
 ```
@@ -415,7 +415,7 @@ git commit -m "chore(scripts): add yarn shortcuts for orch subcommands"
 
 ```python
 def test_docs_reference_standardized_commands_and_multi_app_collect():
-    # assert docs mention: yarn collect, yarn collect phonepe, orch info, orch decompiled phonepe 26022705
+    # assert docs mention: orch collect, orch collect phonepe, orch info, orch decompiled phonepe 26022705
 ```
 
 **Step 2: Run test to verify it fails**
@@ -461,13 +461,13 @@ Expected: exit `0`, prints subcommands + examples + supported apps.
 Run:
 
 ```bash
-yarn collect phonepe
-yarn info
-yarn decompiled phonepe
-yarn decompiled phonepe 26022705
-yarn build phonepe
-yarn install phonepe --serial emulator-5554
-yarn test phonepe --serial emulator-5554
+orch collect phonepe
+orch info
+orch decompiled phonepe
+orch decompiled phonepe 26022705
+orch build phonepe
+orch install phonepe --serial emulator-5554
+orch test phonepe --serial emulator-5554
 ```
 
 Expected: all command routes execute expected handlers; failures only when environment missing (e.g., no emulator online).

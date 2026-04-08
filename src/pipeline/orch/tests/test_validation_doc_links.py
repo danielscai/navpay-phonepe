@@ -9,8 +9,8 @@ class ValidationDocLinksTest(unittest.TestCase):
         policy_doc = Path("docs/编排统一规范.md").read_text(encoding="utf-8")
 
         for text in (design_doc, orch_readme, policy_doc):
-            self.assertIn("yarn collect", text)
-            self.assertIn("yarn collect phonepe", text)
+            self.assertIn("orch collect", text)
+            self.assertIn("orch collect phonepe", text)
             self.assertIn("orch info", text)
             self.assertIn("orch decompiled phonepe 26022705", text)
 

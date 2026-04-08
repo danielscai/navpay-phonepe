@@ -2,6 +2,8 @@
 
 This directory contains the unified build orchestrator for composed PhonePe APK testing. Cached runtime data still lives under the repository root `cache/` directory, with versioned PhonePe APK inputs materialized under `cache/phonepe/snapshot_seed`.
 
+Install the CLI once with `yarn install:orch`, then use `orch <subcommand>` directly.
+
 ## Canonical Commands
 
 - Plan active modules:
@@ -43,10 +45,10 @@ Top-level workflow supports only `full` profile to enforce composed testing.
 
 ## Multi-App Standard Commands
 
-- `yarn collect`
-- `yarn collect phonepe`
-- `yarn orch info`
-- `yarn orch decompiled phonepe 26022705`
+- `orch collect`
+- `orch collect phonepe`
+- `orch info`
+- `orch decompiled phonepe 26022705`
 
 ## Unified Pipeline
 
@@ -129,7 +131,7 @@ Run these commands in order if you want to inspect the real build behavior.
 
 See root [`package.json`](/Users/danielscai/Documents/workspace/navpay/navpay-phonepe/package.json) for shortcuts:
 
-- `yarn orch <subcommand> [options]`
+- `orch <subcommand> [options]`
 - `yarn plan`
 - `yarn prepare`
 - `yarn smali`
@@ -149,6 +151,7 @@ See root [`package.json`](/Users/danielscai/Documents/workspace/navpay/navpay-ph
 - `yarn test smoke clean` (smoke + clean install)
 - `yarn test smoke keep` (smoke + keep-data reinstall)
 - `yarn test smoke split-session` (smoke + explicit split-session install)
+- Yarn 保留命令冲突：`yarn info`、`yarn install` 建议分别改用 `orch info` / `orch install`。
 
 Keep-data mode note:
 - `reinstall` 与 `keep` 都是保留数据语义模式，都会在拉起阶段使用更长等待窗口与重试策略。

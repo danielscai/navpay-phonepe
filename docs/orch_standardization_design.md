@@ -2,7 +2,7 @@
 
 ## 目标
 
-将 `yarn orch` 升级为标准化、多软件可扩展（首批 `phonepe`、`paytm`）的统一编排入口，覆盖帮助输出、采集、反编译、构建、安装、测试、信息查询。
+通过 `yarn install:orch` 安装 `orch` CLI 后，直接以 `orch <subcommand>` 作为主入口，将其升级为标准化、多软件可扩展（首批 `phonepe`、`paytm`）的统一编排入口，覆盖帮助输出、采集、反编译、构建、安装、测试、信息查询。`yarn info`、`yarn install` 属于 Yarn 保留命令，文档中涉及对应动作时统一建议使用 `orch info` / `orch install`。
 
 ## 软件模型
 
@@ -25,19 +25,19 @@
 
 ### 2) 顶层快捷命令
 
-为每个 `yarn orch <subcommand>` 提供 `yarn <subcommand>`：
+安装后直接使用 `orch <subcommand>`；若通过 Yarn 触发，则保留对应脚本包装：
 - `yarn plan/prepare/smali/merge/build/install/test/collect/info/decompiled/device/status/graph/reset/rebuild`
 
 标准示例（必须保持一致）：
-- `yarn collect`
-- `yarn collect phonepe`
-- `yarn orch info`
-- `yarn orch decompiled phonepe 26022705`
+- `orch collect`
+- `orch collect phonepe`
+- `orch info`
+- `orch decompiled phonepe 26022705`
 
 ### 3) collect（多软件）
 
-- `yarn collect`：按软件顺序采集所有受支持软件。
-- `yarn collect phonepe`：仅采集单软件。
+- `orch collect`：按软件顺序采集所有受支持软件。
+- `orch collect phonepe`：仅采集单软件。
 - 串行规则（关键）：
 1. 在单个模拟器会话中，按软件顺序采集全部软件。
 2. 完成后切换下一个模拟器，再按同顺序采集全部软件。
@@ -45,13 +45,14 @@
 
 ### 4) info
 
-- `yarn orch info` / `yarn info`
+- `orch info`
 - 展示：已采集软件、版本列表、signing digest、更新时间、可用 captures 数量。
+- 注：`yarn info` 由 Yarn 保留，文档和脚本建议统一写作 `orch info`。
 
 ### 5) decompiled
 
-- `yarn orch decompiled phonepe`
-- `yarn orch decompiled phonepe 26022705`
+- `orch decompiled phonepe`
+- `orch decompiled phonepe 26022705`
 - 行为：基于最新或指定版本，复用现有 `snapshot -> merged -> base_decompiled_clean` 逻辑，生成对应软件 decompiled 目录。
 
 ### 6) build
@@ -62,9 +63,10 @@
 
 ### 7) install
 
-- `yarn orch install phonepe`
+- `orch install phonepe`
 - 默认安装到当前已开启模拟器（若无模拟器，明确报错）。
-- 支持 `--serial` 指定设备：`yarn orch install phonepe --serial emulator-5554`
+- 支持 `--serial` 指定设备：`orch install phonepe --serial emulator-5554`
+- 注：`yarn install` 由 Yarn 保留，文档和脚本建议统一写作 `orch install`。
 
 ### 8) test
 
