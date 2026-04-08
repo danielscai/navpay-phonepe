@@ -37,6 +37,13 @@ class CliContractTest(unittest.TestCase):
         self.assertEqual(args_with_serial.cmd, "device")
         self.assertEqual(args_with_serial.serial, "21359de40707")
 
+    def test_collect_command_accepts_matrix_and_resume_args(self) -> None:
+        parser = orch.build_parser()
+        args = parser.parse_args(["collect", "--matrix", "a.json", "--resume", "run_1"])
+        self.assertEqual(args.cmd, "collect")
+        self.assertEqual(args.matrix, "a.json")
+        self.assertEqual(args.resume, "run_1")
+
 
 if __name__ == "__main__":
     unittest.main()

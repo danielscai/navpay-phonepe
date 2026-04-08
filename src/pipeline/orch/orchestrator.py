@@ -25,6 +25,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[2]
 MANIFEST_PATH = SCRIPT_DIR / "cache_manifest.json"
 EMULATOR_CONFIG_PATH = SCRIPT_DIR / "emulators.json"
+DEFAULT_DEVICE_MATRIX_PATH = SCRIPT_DIR / "device_matrix.example.json"
 
 DEFAULT_PACKAGE = "com.phonepe.app"
 DEFAULT_SERIAL = "GSLDU18106001520"
@@ -212,6 +213,42 @@ def load_emulators():
     if not isinstance(emulators, list):
         raise ValueError("Invalid emulators config: 'emulators' must be a list")
     return emulators
+
+
+def load_device_matrix(matrix_path: str):
+    matrix_file = Path(matrix_path or DEFAULT_DEVICE_MATRIX_PATH)
+    if not matrix_file.exists():
+        raise FileNotFoundError(f"Missing device matrix: {matrix_file}")
+
+    data = json.loads(matrix_file.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("Invalid device matrix: top-level object must be a JSON object")
+
+    bootstrap_target_id = data.get("bootstrap_target_id")
+    if not isinstance(bootstrap_target_id, str) or not bootstrap_target_id.strip():
+        raise ValueError("Invalid device matrix: 'bootstrap_target_id' is required")
+
+    targets = data.get("targets")
+    if not isinstance(targets, list) or not targets:
+        raise ValueError("Invalid device matrix: 'targets' must be a non-empty list")
+
+    target_ids = set()
+    for idx, target in enumerate(targets):
+        if not isinstance(target, dict):
+            raise ValueError(f"Invalid device matrix: targets[{idx}] must be an object")
+        for field in ("target_id", "serial_alias"):
+            value = target.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"Invalid device matrix: targets[{idx}].{field} is required")
+        target_id = target["target_id"].strip()
+        if target_id in target_ids:
+            raise ValueError(f"Invalid device matrix: duplicate target_id '{target_id}'")
+        target_ids.add(target_id)
+
+    if bootstrap_target_id not in target_ids:
+        raise ValueError("Invalid device matrix: 'bootstrap_target_id' must exist in targets[].target_id")
+
+    return data
 
 
 def emulator_path():
@@ -2529,6 +2566,11 @@ def build_parser() -> argparse.ArgumentParser:
     rebuild.add_argument("--serial")
     rebuild.add_argument("--package")
 
+    collect = sub.add_parser("collect")
+    collect.add_argument("--matrix", default=str(DEFAULT_DEVICE_MATRIX_PATH))
+    collect.add_argument("--package", default=DEFAULT_PACKAGE)
+    collect.add_argument("--resume")
+
     return parser
 
 
@@ -2547,6 +2589,9 @@ def main(argv=None):
         cmd_reset(manifest, args.target)
     elif args.cmd == "rebuild":
         cmd_rebuild(manifest, args.target, args.serial, args.package, args.with_downstream)
+    elif args.cmd == "collect":
+        load_device_matrix(getattr(args, "matrix", str(DEFAULT_DEVICE_MATRIX_PATH)))
+        log_info("collect command schema validation passed")
     elif args.cmd in TOP_LEVEL_PROFILE_ACTIONS:
         smoke = getattr(args, "smoke", False)
         install_mode = getattr(args, "install_mode", "reinstall")
