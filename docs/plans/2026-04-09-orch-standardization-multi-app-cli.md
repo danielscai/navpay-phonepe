@@ -357,6 +357,8 @@ git commit -m "feat(orch): add app-scoped test command"
 
 ### Task 9: Add Yarn top-level shortcuts for all orch subcommands
 
+> Note (minimal runtime adjustment): for Yarn v4 argument forwarding and reserved command behavior, define shortcuts as direct `python3 src/pipeline/orch/orchestrator.py <subcommand>` scripts; for `install`, verification should use `yarn run install ...` or `yarn orch install ...` because bare `yarn install` is reserved by Yarn itself.
+
 **Files:**
 - Modify: `package.json`
 - Create: `src/pipeline/orch/tests/test_package_scripts_contract.py`

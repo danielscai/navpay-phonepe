@@ -3574,7 +3574,14 @@ def run_profile_action(
         raise RuntimeError(f"Unknown profile action: {action}")
 
 
-def parse_test_mode_tokens(app_token: str, tokens, smoke: bool, install_mode: str, serial: str):
+def parse_test_mode_tokens(
+    tokens,
+    smoke: bool,
+    install_mode: str,
+    serial: str,
+    app_token: str = "",
+    include_app: bool = False,
+):
     app = ""
     mode_smoke = smoke
     mode_install = install_mode
@@ -3607,7 +3614,9 @@ def parse_test_mode_tokens(app_token: str, tokens, smoke: bool, install_mode: st
     if idx < len(items):
         raise RuntimeError("Too many test mode arguments. Use: test [smoke] [reinstall|clean|keep|split-session] [serial]")
 
-    return app, mode_smoke, mode_install, mode_serial
+    if include_app:
+        return app, mode_smoke, mode_install, mode_serial
+    return mode_smoke, mode_install, mode_serial
 
 
 def normalize_serial_alias(serial: str) -> str:
@@ -3703,7 +3712,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None):
     parser = build_parser()
-    raw = list(argv or [])
+    raw = list(argv) if argv is not None else sys.argv[1:]
     if not raw:
         parser.print_help()
         return 0
@@ -3767,11 +3776,12 @@ def main(argv=None):
         install_mode = getattr(args, "install_mode", "reinstall")
         serial = normalize_serial_alias(getattr(args, "serial", "") or "")
         app, smoke, install_mode, serial = parse_test_mode_tokens(
-            getattr(args, "app", "") or "",
             getattr(args, "test_mode", []),
             smoke,
             install_mode,
             serial,
+            app_token=getattr(args, "app", "") or "",
+            include_app=True,
         )
         return cmd_test(
             app=app,

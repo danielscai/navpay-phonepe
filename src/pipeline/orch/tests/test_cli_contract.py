@@ -82,3 +82,17 @@ def test_build_command_routes_to_profile_apk(monkeypatch):
     monkeypatch.setattr(orch, "profile_apk", fake_profile_apk)
     orch.main(["build", "phonepe"])
     assert calls == [("full", False, "")]
+
+
+def test_main_without_explicit_argv_uses_process_args(monkeypatch):
+    calls = []
+    monkeypatch.setattr(orch, "load_manifest", lambda: {"dummy": {"deps": []}})
+    monkeypatch.setattr(sys, "argv", ["orchestrator.py", "build", "phonepe"])
+
+    def fake_profile_apk(manifest, profile_name, fresh=False, snapshot_version=""):
+        del manifest
+        calls.append((profile_name, fresh, snapshot_version))
+
+    monkeypatch.setattr(orch, "profile_apk", fake_profile_apk)
+    assert orch.main() == 0
+    assert calls == [("full", False, "")]
