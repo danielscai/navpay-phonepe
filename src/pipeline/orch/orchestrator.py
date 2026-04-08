@@ -3641,6 +3641,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     build = sub.add_parser("build")
     build.add_argument("app", choices=SUPPORTED_APPS)
+    build.add_argument("--snapshot-version", default="")
 
     return parser
 
@@ -3692,6 +3693,14 @@ def main(argv=None):
             matrix_path=matrix_path,
             apps=list(SUPPORTED_APPS),
         )
+    elif args.cmd == "build":
+        profile_apk(
+            manifest,
+            DEFAULT_PROFILE,
+            fresh=False,
+            snapshot_version=getattr(args, "snapshot_version", ""),
+        )
+        return 0
     elif args.cmd in TOP_LEVEL_PROFILE_ACTIONS:
         smoke = getattr(args, "smoke", False)
         install_mode = getattr(args, "install_mode", "reinstall")

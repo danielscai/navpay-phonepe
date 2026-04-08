@@ -69,3 +69,16 @@ def test_main_without_args_prints_help_and_exits_zero(capsys):
     assert code == 0
     assert "collect" in out
     assert "decompiled" in out
+
+
+def test_build_command_routes_to_profile_apk(monkeypatch):
+    calls = []
+    monkeypatch.setattr(orch, "load_manifest", lambda: {"dummy": {"deps": []}})
+
+    def fake_profile_apk(manifest, profile_name, fresh=False, snapshot_version=""):
+        del manifest
+        calls.append((profile_name, fresh, snapshot_version))
+
+    monkeypatch.setattr(orch, "profile_apk", fake_profile_apk)
+    orch.main(["build", "phonepe"])
+    assert calls == [("full", False, "")]
