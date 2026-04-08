@@ -49,6 +49,7 @@ DEFAULT_TIMEOUT_SEC = 12
 SMOKE_TIMEOUT_SEC = 20
 DEFAULT_TEST_MODE = "sigbypass"
 DEFAULT_EMULATOR_BOOT_TIMEOUT = 20
+COLLECT_EMULATOR_SNAPSHOT_NAME = "navpay_collect_last"
 REUSE_STATE_FILE = "reuse_artifacts_state.json"
 MERGE_STATE_FILE = "profile_merge_state.json"
 DEFAULT_SPLIT_SEED_DIR = "cache/phonepe/from_device"
@@ -307,6 +308,18 @@ def remember_collect_serial(run_state, serial: str):
         serials.append(serial_norm)
 
 
+def collect_emulator_args_with_snapshot(emulator_args):
+    if not isinstance(emulator_args, list):
+        return []
+    blocked_flags = {"-no-snapshot-load", "-no-snapshot-save", "-wipe-data"}
+    sanitized = []
+    for arg in emulator_args:
+        if arg in blocked_flags:
+            continue
+        sanitized.append(arg)
+    return sanitized
+
+
 def resolve_collect_target_serial(target, adb: str) -> str:
     target = target or {}
     serial_alias = normalize_serial_alias(target.get("serial_alias", ""))
@@ -314,8 +327,7 @@ def resolve_collect_target_serial(target, adb: str) -> str:
 
     if avd_name:
         emulator_args = target.get("emulator_args", [])
-        if not isinstance(emulator_args, list):
-            emulator_args = []
+        emulator_args = collect_emulator_args_with_snapshot(emulator_args)
         # Keep collection serial: only one emulator target active at a time.
         for device_serial in sorted(list_connected_devices(adb)):
             if not device_serial.startswith("emulator-"):
@@ -858,6 +870,21 @@ def shutdown_collect_emulators(run_state):
         serial_norm = normalize_serial_alias(serial or "")
         if not serial_norm.startswith("emulator-"):
             continue
+        subprocess.run(
+            [
+                adb,
+                "-s",
+                serial_norm,
+                "emu",
+                "avd",
+                "snapshot",
+                "save",
+                COLLECT_EMULATOR_SNAPSHOT_NAME,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
         subprocess.run(
             [adb, "-s", serial_norm, "emu", "kill"],
             stdout=subprocess.DEVNULL,

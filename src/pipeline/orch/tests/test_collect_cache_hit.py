@@ -73,6 +73,5 @@ class CollectCacheHitTest(unittest.TestCase):
             archive_mock.assert_not_called()
             shutdown_mock.assert_called_once()
 
-
 if __name__ == "__main__":
     unittest.main()
