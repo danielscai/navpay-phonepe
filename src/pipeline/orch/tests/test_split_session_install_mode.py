@@ -115,7 +115,7 @@ def test_profile_test_clean_uses_split_session_with_extended_timeout(monkeypatch
     with monkeypatch.context() as m:
         m.setattr(cache_manager, "resolve_profile_modules", lambda _m, _p: ["phonepe_sigbypass"])
         m.setattr(cache_manager, "profile_build_modules", lambda _m, _p: None)
-        m.setattr(cache_manager, "profile_apk", lambda _m, _p, fresh=False: work_dir)
+        m.setattr(cache_manager, "profile_apk", lambda _m, _p, fresh=False, snapshot_version="": work_dir)
         m.setattr(cache_manager, "resolve_module_spec", lambda _m, _n: primary_spec)
         m.setattr(cache_manager, "resolve_profile_workspace", lambda _p: workspace)
         m.setattr(cache_manager, "resolve_test_serial", lambda _spec, _serial: "emulator-5554")
@@ -145,7 +145,7 @@ def test_profile_test_clean_split_session_skips_primary_runtime_log_requirement(
     with monkeypatch.context() as m:
         m.setattr(cache_manager, "resolve_profile_modules", lambda _m, _p: ["phonepe_sigbypass"])
         m.setattr(cache_manager, "profile_build_modules", lambda _m, _p: None)
-        m.setattr(cache_manager, "profile_apk", lambda _m, _p, fresh=False: work_dir)
+        m.setattr(cache_manager, "profile_apk", lambda _m, _p, fresh=False, snapshot_version="": work_dir)
         m.setattr(cache_manager, "resolve_module_spec", lambda _m, _n: primary_spec)
         m.setattr(cache_manager, "resolve_profile_workspace", lambda _p: workspace)
         m.setattr(cache_manager, "resolve_test_serial", lambda _spec, _serial: "emulator-5554")
@@ -183,7 +183,7 @@ def test_profile_test_split_session_uses_profile_build_apk_as_base(monkeypatch, 
     with monkeypatch.context() as m:
         m.setattr(cache_manager, "resolve_profile_modules", lambda _m, _p: ["phonepe_sigbypass"])
         m.setattr(cache_manager, "profile_build_modules", lambda _m, _p: None)
-        m.setattr(cache_manager, "profile_apk", lambda _m, _p, fresh=False: work_dir)
+        m.setattr(cache_manager, "profile_apk", lambda _m, _p, fresh=False, snapshot_version="": work_dir)
         m.setattr(cache_manager, "resolve_module_spec", lambda _m, _n: primary_spec)
         m.setattr(cache_manager, "resolve_profile_workspace", lambda _p: workspace)
         m.setattr(cache_manager, "resolve_test_serial", lambda _spec, _serial: "emulator-5554")
@@ -203,3 +203,40 @@ def test_profile_test_split_session_uses_profile_build_apk_as_base(monkeypatch, 
     assert captured["signed_apk"] == signed_apk
     assert captured["split_base_apk"] == signed_apk
     assert captured["split_apks_dir"] == work_dir
+
+
+def test_profile_test_passes_snapshot_version_to_profile_apk(monkeypatch, tmp_path):
+    manifest = {}
+    work_dir = tmp_path / "build"
+    workspace = tmp_path / "workspace"
+    work_dir.mkdir()
+    workspace.mkdir()
+    (work_dir / "patched_signed.apk").write_text("x", encoding="utf-8")
+    primary_spec = {"name": "phonepe_sigbypass", "log_tag": "SigBypass"}
+    captured = {}
+
+    with monkeypatch.context() as m:
+        m.setattr(cache_manager, "resolve_profile_modules", lambda _m, _p: ["phonepe_sigbypass"])
+        m.setattr(cache_manager, "profile_build_modules", lambda _m, _p: None)
+        m.setattr(cache_manager, "resolve_module_spec", lambda _m, _n: primary_spec)
+        m.setattr(cache_manager, "resolve_profile_workspace", lambda _p: workspace)
+        m.setattr(cache_manager, "resolve_test_serial", lambda _spec, _serial: "emulator-5554")
+        m.setattr(cache_manager, "verify_profile_injection", lambda *_args, **_kwargs: None)
+        m.setattr(cache_manager, "verify_profile_log_tags", lambda *_args, **_kwargs: None)
+
+        def fake_profile_apk(_m, _p, fresh=False, snapshot_version=""):
+            captured["snapshot_version"] = snapshot_version
+            return work_dir
+
+        m.setattr(cache_manager, "profile_apk", fake_profile_apk)
+        m.setattr(cache_manager, "unified_test", lambda *args, **kwargs: None)
+        cache_manager.profile_test(
+            manifest,
+            "full",
+            "emulator-5554",
+            smoke=False,
+            install_mode="clean",
+            snapshot_version="26022705",
+        )
+
+    assert captured["snapshot_version"] == "26022705"

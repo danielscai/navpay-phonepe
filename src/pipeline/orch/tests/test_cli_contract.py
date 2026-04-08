@@ -44,6 +44,14 @@ class CliContractTest(unittest.TestCase):
         self.assertEqual(args.matrix, "a.json")
         self.assertEqual(args.resume, "run_1")
 
+    def test_profile_actions_accept_snapshot_version_arg(self) -> None:
+        parser = orch.build_parser()
+        for cmd in ("plan", "prepare", "smali", "merge", "apk", "test"):
+            with self.subTest(cmd=cmd):
+                args = parser.parse_args([cmd, "--snapshot-version", "26022705"])
+                self.assertEqual(args.cmd, cmd)
+                self.assertEqual(args.snapshot_version, "26022705")
+
 
 if __name__ == "__main__":
     unittest.main()

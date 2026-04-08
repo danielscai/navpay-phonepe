@@ -242,7 +242,7 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
             result = cache_manager.profile_merge(manifest, "full")
 
         self.assertEqual(result, workspace)
-        pre_cache_mock.assert_called_once_with(manifest, "full")
+        pre_cache_mock.assert_called_once_with(manifest, "full", "")
         self.assertEqual(merge_mock.call_args.args[0], workspace)
 
     def test_module_merge_passes_artifact_dir_for_supported_module(self) -> None:

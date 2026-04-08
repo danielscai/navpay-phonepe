@@ -52,7 +52,8 @@ DEFAULT_EMULATOR_BOOT_TIMEOUT = 20
 COLLECT_EMULATOR_SNAPSHOT_NAME = "navpay_collect_last"
 REUSE_STATE_FILE = "reuse_artifacts_state.json"
 MERGE_STATE_FILE = "profile_merge_state.json"
-DEFAULT_SPLIT_SEED_DIR = "cache/phonepe/from_device"
+DEFAULT_SNAPSHOT_SEED_DIR = "cache/phonepe/snapshot_seed"
+DEFAULT_SPLIT_SEED_DIR = DEFAULT_SNAPSHOT_SEED_DIR
 DEFAULT_REQUIRED_SPLITS = (
     "split_config.arm64_v8a.apk",
     "split_config.xxhdpi.apk",
@@ -145,8 +146,8 @@ def log_cmd_output(label: str, line: str):
     print(f"{COLOR_DIM}{label_str}{COLOR_RESET} {line.rstrip()}")
 
 MODULE_DEFAULTS = {
-    "phonepe_from_device": {
-        "path": "cache/phonepe/from_device",
+    "phonepe_snapshot_seed": {
+        "path": "cache/phonepe/snapshot_seed",
     },
     "phonepe_merged": {
         "path": "cache/phonepe/merged",
@@ -1497,47 +1498,163 @@ def write_meta(path: Path, payload: dict):
     path.write_text(json.dumps(payload, ensure_ascii=True, indent=2, sort_keys=True), encoding="utf-8")
 
 
-def build_phonepe_from_device(cache_path: Path, package: str, serial: str):
-    adb = adb_path()
-    device = select_device(adb, serial)
+def read_json_file(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
 
-    # Ensure package exists
-    out = subprocess.check_output([adb, "-s", device, "shell", "pm", "list", "packages"], text=True)
-    if package not in out:
-        raise RuntimeError(f"Package not installed on device: {package}")
+
+def read_cache_meta(cache_path: Path) -> dict:
+    return read_json_file(cache_path / "meta.json")
+
+
+def snapshot_anchor_from_meta(meta: dict) -> dict:
+    anchor = meta.get("snapshot_anchor") if isinstance(meta, dict) else None
+    if isinstance(anchor, dict):
+        return validate_anchor_payload(anchor, "snapshot")
+    if isinstance(meta, dict):
+        fallback = meta.get("anchor")
+        if isinstance(fallback, dict):
+            return validate_anchor_payload(fallback, "snapshot")
+    return {}
+
+
+def snapshot_seed_ready(cache_path: Path, anchor: dict) -> bool:
+    if not cache_path.exists():
+        return False
+    meta = read_cache_meta(cache_path)
+    cached_anchor = snapshot_anchor_from_meta(meta)
+    if not cached_anchor or cached_anchor != anchor:
+        return False
+    for split_name in ("base.apk", *DEFAULT_REQUIRED_SPLITS):
+        split_path = cache_path / split_name
+        if not split_path.exists() or split_path.stat().st_size <= 0:
+            return False
+    return True
+
+
+def resolve_snapshot_index_path() -> Path:
+    return DEFAULT_SNAPSHOTS_ROOT / "index.json"
+
+
+def resolve_snapshot_anchor(index_path: Path, package: str, snapshot_version: str = "") -> dict:
+    if not index_path.exists():
+        raise RuntimeError(f"Missing snapshot index: {index_path}")
+    try:
+        data = json.loads(index_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"Failed to read snapshot index: {index_path}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Invalid snapshot index: {index_path}")
+    snapshots = data.get("snapshots", [])
+    if not isinstance(snapshots, list):
+        raise RuntimeError("Invalid snapshot index: 'snapshots' must be a list")
+
+    version_filter = (snapshot_version or "").strip()
+    candidates = []
+    for item in snapshots:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("package", "")).strip() != package:
+            continue
+        version_code = str(item.get("versionCode", "")).strip()
+        signing_digest = normalize_signing_digest(str(item.get("signingDigest", "")))
+        if not version_code or not signing_digest:
+            continue
+        if version_filter and version_code != version_filter:
+            continue
+        candidates.append(
+            {
+                "packageName": package,
+                "versionCode": version_code,
+                "signingDigest": signing_digest,
+                "updated_at": str(item.get("updated_at", "")).strip(),
+            }
+        )
+
+    if not candidates:
+        wanted = f" versionCode={version_filter}" if version_filter else ""
+        raise RuntimeError(f"Missing snapshot for package={package}{wanted}")
+
+    candidates.sort(key=lambda item: (item.get("updated_at", ""), item["versionCode"], item["signingDigest"]), reverse=True)
+    selected = candidates[0]
+    return {
+        "packageName": selected["packageName"],
+        "versionCode": selected["versionCode"],
+        "signingDigest": selected["signingDigest"],
+    }
+
+
+def resolve_snapshot_capture_dir(snapshots_root: Path, anchor: dict) -> Path:
+    package_name = anchor["packageName"]
+    version_code = anchor["versionCode"]
+    signing_digest = normalize_signing_digest(anchor["signingDigest"])
+    capture_root = snapshots_root / package_name / version_code / signing_digest / "captures"
+    if not capture_root.exists():
+        raise RuntimeError(f"Missing snapshot captures: {capture_root}")
+
+    candidates = sorted([path for path in capture_root.iterdir() if path.is_dir()], key=lambda path: path.name)
+    for capture_dir in candidates:
+        has_all_files = True
+        for split_name in ("base.apk", *DEFAULT_REQUIRED_SPLITS):
+            split_path = capture_dir / split_name
+            if not split_path.exists() or split_path.stat().st_size <= 0:
+                has_all_files = False
+                break
+        if has_all_files:
+            return capture_dir
+    raise RuntimeError(f"Missing required APKs in snapshot captures: {capture_root}")
+
+
+def build_phonepe_snapshot_seed(cache_path: Path, package: str, snapshot_version: str):
+    anchor = resolve_snapshot_anchor(resolve_snapshot_index_path(), package, snapshot_version)
+    capture_dir = resolve_snapshot_capture_dir(DEFAULT_SNAPSHOTS_ROOT, anchor)
 
     delete_cache_dir(cache_path)
     cache_path.mkdir(parents=True, exist_ok=True)
 
-    apk_paths = subprocess.check_output([adb, "-s", device, "shell", "pm", "path", package], text=True)
-    apk_paths = [line.replace("package:", "").strip() for line in apk_paths.splitlines() if line.strip()]
-    if not apk_paths:
-        raise RuntimeError("Unable to resolve APK paths")
+    for split_name in ("base.apk", *DEFAULT_REQUIRED_SPLITS):
+        shutil.copy2(capture_dir / split_name, cache_path / split_name)
 
-    for p in apk_paths:
-        run([adb, "-s", device, "pull", p, str(cache_path)])
+    write_meta(
+        cache_path / "meta.json",
+        {
+            "created_at": datetime.now().isoformat(),
+            "source": "snapshot_capture",
+            "snapshot_anchor": anchor,
+            "snapshot_version": anchor["versionCode"],
+            "snapshot_index": str(resolve_snapshot_index_path()),
+            "capture_dir": str(capture_dir),
+            "capture_target_id": capture_dir.name,
+            "package": package,
+        },
+    )
 
-    required = [
-        cache_path / "base.apk",
-        cache_path / "split_config.arm64_v8a.apk",
-        cache_path / "split_config.xxhdpi.apk",
-    ]
-    for f in required:
-        if not f.exists() or f.stat().st_size <= 0:
-            raise RuntimeError(f"Missing or empty file: {f}")
 
-    version_name, version_code = get_pkg_version(adb, device, package)
-    meta = {
-        "created_at": datetime.now().isoformat(),
-        "source": "adb_pull",
-        "device_serial": device,
-        "package": package,
-        "version_name": version_name,
-        "version_code": version_code,
-        "apk_paths": apk_paths,
-    }
-    write_meta(cache_path / "meta.json", meta)
+def ensure_phonepe_snapshot_seed(cache_path: Path, package: str, snapshot_version: str):
+    anchor = resolve_snapshot_anchor(resolve_snapshot_index_path(), package, snapshot_version)
+    if snapshot_seed_ready(cache_path, anchor):
+        return cache_path, anchor
+    build_phonepe_snapshot_seed(cache_path, package, snapshot_version)
+    return cache_path, anchor
 
+
+def ensure_phonepe_decompiled_snapshot(manifest, snapshot_version: str, package: str = DEFAULT_PACKAGE):
+    seed_path = resolve_cache_path(DEFAULT_SNAPSHOT_SEED_DIR)
+    _, anchor = ensure_phonepe_snapshot_seed(seed_path, package, snapshot_version)
+
+    merged_path = resolve_manifest_path(manifest, "phonepe_merged")
+    decompiled_path = resolve_manifest_path(manifest, "phonepe_decompiled")
+    decompiled_meta = read_cache_meta(decompiled_path)
+    cached_anchor = snapshot_anchor_from_meta(decompiled_meta)
+    if cached_anchor != anchor or not (decompiled_path / "base_decompiled_clean").exists():
+        build_phonepe_merged(merged_path, seed_path, package, "")
+        build_phonepe_decompiled(decompiled_path, merged_path)
+    return decompiled_path, anchor
 
 def build_phonepe_merged(cache_path: Path, input_path: Path, package: str, serial: str):
     merge_script = REPO_ROOT / "tools" / "merge_split_apks.sh"
@@ -1565,6 +1682,15 @@ def build_phonepe_merged(cache_path: Path, input_path: Path, package: str, seria
         "signed_apk": signed[0].name,
         "input_cache": str(input_path),
     }
+    source_meta = read_cache_meta(input_path)
+    source_anchor = snapshot_anchor_from_meta(source_meta)
+    if source_anchor:
+        meta["snapshot_anchor"] = source_anchor
+        meta["source_meta"] = {
+            "snapshot_anchor": source_anchor,
+            "capture_dir": source_meta.get("capture_dir", ""),
+            "capture_target_id": source_meta.get("capture_target_id", ""),
+        }
     write_meta(cache_path / "meta.json", meta)
 
 
@@ -1579,11 +1705,19 @@ def build_phonepe_decompiled(cache_path: Path, merged_cache: Path):
 
     run(["apktool", "d", "-f", str(signed[0]), "-o", str(target)])
 
+    merged_meta = read_cache_meta(merged_cache)
     meta = {
         "created_at": datetime.now().isoformat(),
         "source": signed[0].name,
         "input_cache": str(merged_cache),
     }
+    merged_anchor = snapshot_anchor_from_meta(merged_meta)
+    if merged_anchor:
+        meta["snapshot_anchor"] = merged_anchor
+        meta["source_meta"] = {
+            "snapshot_anchor": merged_anchor,
+            "input_cache": str(merged_cache),
+        }
     write_meta(cache_path / "meta.json", meta)
 
 def has_wildcards(rel: str) -> bool:
@@ -2692,10 +2826,10 @@ def cmd_rebuild(manifest, target=None, serial=None, package=None, with_downstrea
 
     def build_one(name):
         path = resolve_manifest_path(manifest, name)
-        if name == "phonepe_from_device":
-            build_phonepe_from_device(path, package, serial)
+        if name == "phonepe_snapshot_seed":
+            build_phonepe_snapshot_seed(path, package, "")
         elif name == "phonepe_merged":
-            input_path = resolve_manifest_path(manifest, "phonepe_from_device")
+            input_path = resolve_manifest_path(manifest, "phonepe_snapshot_seed")
             build_phonepe_merged(path, input_path, package, serial)
         elif name == "phonepe_decompiled":
             merged_path = resolve_manifest_path(manifest, "phonepe_merged")
@@ -2961,12 +3095,16 @@ def resolve_profile_workspace(profile_name: str) -> Path:
         )
     return workspace
 
-def profile_prepare(manifest, profile_name: str):
+def profile_prepare(manifest, profile_name: str, snapshot_version: str = ""):
     modules = resolve_profile_modules(manifest, profile_name)
     detect_conflicts(manifest, modules)
-    baseline = resolve_manifest_path(manifest, "phonepe_decompiled") / "base_decompiled_clean"
+    decompiled_root, anchor = ensure_phonepe_decompiled_snapshot(manifest, snapshot_version)
+    baseline = decompiled_root / "base_decompiled_clean"
     workspace = refresh_profile_workspace(profile_name, baseline)
-    log_info(f"[PROFILE:{profile_name}] workspace refreshed: {workspace}")
+    log_info(
+        f"[PROFILE:{profile_name}] workspace refreshed: {workspace} "
+        f"(snapshot={anchor['versionCode']} {anchor['signingDigest']})"
+    )
     return modules, workspace
 
 def profile_merge(
@@ -2974,17 +3112,20 @@ def profile_merge(
     profile_name: str,
     reuse_artifacts: bool = False,
     refresh_workspace: bool = True,
+    snapshot_version: str = "",
 ):
     modules = resolve_profile_modules(manifest, profile_name)
     detect_conflicts(manifest, modules)
+    if snapshot_version:
+        refresh_workspace = True
     if refresh_workspace:
-        _, workspace = profile_prepare(manifest, profile_name)
+        _, workspace = profile_prepare(manifest, profile_name, snapshot_version)
     else:
         try:
             workspace = resolve_profile_workspace(profile_name)
             log_info(f"[PROFILE:{profile_name}] workspace reused: {workspace}")
         except RuntimeError:
-            _, workspace = profile_prepare(manifest, profile_name)
+            _, workspace = profile_prepare(manifest, profile_name, snapshot_version)
     for module in modules:
         spec = resolve_module_spec(manifest, module)
         artifact_dir = module_artifact_path(module) if module in ARTIFACT_INJECT_MODULES else None
@@ -3003,29 +3144,32 @@ def profile_merge(
     return workspace
 
 
-def profile_apk(manifest, profile_name: str, fresh: bool = False):
+def profile_apk(manifest, profile_name: str, fresh: bool = False, snapshot_version: str = ""):
     reuse_artifacts = not fresh
     work_dir = profile_build_path(profile_name)
     work_dir.mkdir(parents=True, exist_ok=True)
-    split_seed_dir = resolve_cache_path(DEFAULT_SPLIT_SEED_DIR)
+    split_seed_dir, _ = ensure_phonepe_snapshot_seed(resolve_cache_path(DEFAULT_SNAPSHOT_SEED_DIR), DEFAULT_PACKAGE, snapshot_version)
     signed_apk_path = work_dir / DEFAULT_SIGNED_APK
     workspace = None
     if reuse_artifacts:
-        try:
-            workspace = resolve_profile_workspace(profile_name)
-        except RuntimeError:
-            workspace = None
-        if workspace is not None and maybe_reuse_profile_artifacts(manifest, profile_name, workspace, work_dir):
+        _, workspace = profile_prepare(manifest, profile_name, snapshot_version)
+        if maybe_reuse_profile_artifacts(manifest, profile_name, workspace, work_dir):
             ensure_profile_release_splits_signed(work_dir, split_seed_dir, signed_apk_path)
             return work_dir
-    if workspace is not None and reuse_artifacts:
-        modules = resolve_profile_modules(manifest, profile_name)
-        if has_reusable_merged_workspace(manifest, profile_name, workspace, modules):
-            log_info(f"[PROFILE:{profile_name}] 模块合并结果可复用，跳过 merge")
-        else:
-            workspace = profile_merge(manifest, profile_name, reuse_artifacts=reuse_artifacts)
+        workspace = profile_merge(
+            manifest,
+            profile_name,
+            reuse_artifacts=reuse_artifacts,
+            refresh_workspace=False,
+            snapshot_version=snapshot_version,
+        )
     else:
-        workspace = profile_merge(manifest, profile_name, reuse_artifacts=reuse_artifacts)
+        workspace = profile_merge(
+            manifest,
+            profile_name,
+            reuse_artifacts=reuse_artifacts,
+            snapshot_version=snapshot_version,
+        )
     sigbypass_compile(
         workspace,
         work_dir,
@@ -3159,6 +3303,7 @@ def profile_test(
     serial: str,
     smoke: bool = False,
     install_mode: str = "reinstall",
+    snapshot_version: str = "",
 ):
     log_step(f"[PROFILE:{profile_name}] 准备测试上下文")
     modules = resolve_profile_modules(manifest, profile_name)
@@ -3166,7 +3311,7 @@ def profile_test(
     log_step(f"[PROFILE:{profile_name}] 检查并构建模块产物")
     profile_build_modules(manifest, profile_name)
     log_step(f"[PROFILE:{profile_name}] 组装并获取可测试 APK")
-    work_dir = profile_apk(manifest, profile_name, fresh=False)
+    work_dir = profile_apk(manifest, profile_name, fresh=False, snapshot_version=snapshot_version)
     workspace = resolve_profile_workspace(profile_name)
     signed_apk = work_dir / DEFAULT_SIGNED_APK
     primary_spec = resolve_module_spec(manifest, modules[0])
@@ -3233,6 +3378,7 @@ def run_profile_action(
     smoke: bool,
     fresh: bool,
     install_mode: str,
+    snapshot_version: str,
 ):
     ensure_supported_profile(profile_name)
     if smoke and action != "test":
@@ -3246,15 +3392,22 @@ def run_profile_action(
         modules = resolve_profile_modules(manifest, profile_name)
         print(json.dumps(modules, ensure_ascii=True))
     elif action == "prepare":
-        profile_prepare(manifest, profile_name)
+        profile_prepare(manifest, profile_name, snapshot_version)
     elif action == "smali":
         profile_build_modules(manifest, profile_name)
     elif action == "merge":
-        profile_merge(manifest, profile_name, refresh_workspace=False)
+        profile_merge(manifest, profile_name, refresh_workspace=False, snapshot_version=snapshot_version)
     elif action == "apk":
-        profile_apk(manifest, profile_name, fresh=fresh)
+        profile_apk(manifest, profile_name, fresh=fresh, snapshot_version=snapshot_version)
     elif action == "test":
-        profile_test(manifest, profile_name, serial, smoke=smoke, install_mode=install_mode)
+        profile_test(
+            manifest,
+            profile_name,
+            serial,
+            smoke=smoke,
+            install_mode=install_mode,
+            snapshot_version=snapshot_version,
+        )
     else:
         raise RuntimeError(f"Unknown profile action: {action}")
 
@@ -3306,8 +3459,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build orchestrator")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    def add_profile_args(cmd_parser, *, allow_serial: bool = True, allow_smoke: bool = False, allow_fresh: bool = False):
+    def add_profile_args(
+        cmd_parser,
+        *,
+        allow_serial: bool = True,
+        allow_smoke: bool = False,
+        allow_fresh: bool = False,
+    ):
         cmd_parser.add_argument("--profile", choices=SUPPORTED_TOP_LEVEL_PROFILES, default=DEFAULT_PROFILE)
+        cmd_parser.add_argument("--snapshot-version", default="")
         if allow_serial:
             cmd_parser.add_argument("--serial")
         if allow_smoke:
@@ -3398,6 +3558,7 @@ def main(argv=None):
             smoke,
             getattr(args, "fresh", False),
             install_mode,
+            getattr(args, "snapshot_version", ""),
         )
     else:
         raise RuntimeError("Unknown command")

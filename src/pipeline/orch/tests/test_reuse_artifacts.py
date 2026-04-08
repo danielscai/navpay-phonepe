@@ -74,8 +74,10 @@ class ReuseArtifactsTest(unittest.TestCase):
             root = Path(tempdir)
             workspace = root / "workspace"
             work_dir = root / "build"
+            seed_dir = root / "snapshot_seed"
             workspace.mkdir(parents=True)
             work_dir.mkdir(parents=True)
+            seed_dir.mkdir(parents=True)
 
             signed_apk = work_dir / cache_manager.DEFAULT_SIGNED_APK
             signed_apk.write_text("signed", encoding="utf-8")
@@ -86,15 +88,19 @@ class ReuseArtifactsTest(unittest.TestCase):
             )
 
             with mock.patch.object(cache_manager, "resolve_profile_workspace", return_value=workspace), \
+                mock.patch.object(cache_manager, "profile_prepare", return_value=(["phonepe_sigbypass"], workspace)), \
+                mock.patch.object(cache_manager, "maybe_reuse_profile_artifacts", return_value=True), \
                 mock.patch.object(cache_manager, "profile_merge", return_value=workspace), \
                 mock.patch.object(cache_manager, "profile_build_path", return_value=work_dir), \
                 mock.patch.object(cache_manager, "compute_profile_reuse_fingerprint", return_value="fp1"), \
+                mock.patch.object(cache_manager, "ensure_phonepe_snapshot_seed", return_value=(seed_dir, {"versionCode": "26022705"})) as seed_mock, \
                 mock.patch.object(cache_manager, "ensure_profile_release_splits_signed") as ensure_splits_mock, \
                 mock.patch.object(cache_manager, "sigbypass_compile") as compile_mock:
                 out_dir = cache_manager.profile_apk({}, "full", fresh=False)
 
             self.assertEqual(out_dir, work_dir)
             compile_mock.assert_not_called()
+            seed_mock.assert_called_once()
             ensure_splits_mock.assert_called_once()
 
     def test_profile_apk_reuse_cache_miss_runs_rebuild(self) -> None:
@@ -102,8 +108,10 @@ class ReuseArtifactsTest(unittest.TestCase):
             root = Path(tempdir)
             workspace = root / "workspace"
             work_dir = root / "build"
+            seed_dir = root / "snapshot_seed"
             workspace.mkdir(parents=True)
             work_dir.mkdir(parents=True)
+            seed_dir.mkdir(parents=True)
 
             state_path = work_dir / cache_manager.REUSE_STATE_FILE
             state_path.write_text(
@@ -112,17 +120,21 @@ class ReuseArtifactsTest(unittest.TestCase):
             )
 
             with mock.patch.object(cache_manager, "resolve_profile_workspace", return_value=workspace), \
+                mock.patch.object(cache_manager, "profile_prepare", return_value=(["phonepe_sigbypass"], workspace)), \
+                mock.patch.object(cache_manager, "maybe_reuse_profile_artifacts", return_value=False), \
                 mock.patch.object(cache_manager, "resolve_profile_modules", return_value=["phonepe_sigbypass"]), \
                 mock.patch.object(cache_manager, "has_reusable_merged_workspace", return_value=False), \
                 mock.patch.object(cache_manager, "profile_merge", return_value=workspace), \
                 mock.patch.object(cache_manager, "profile_build_path", return_value=work_dir), \
                 mock.patch.object(cache_manager, "compute_profile_reuse_fingerprint", return_value="fresh"), \
+                mock.patch.object(cache_manager, "ensure_phonepe_snapshot_seed", return_value=(seed_dir, {"versionCode": "26022705"})) as seed_mock, \
                 mock.patch.object(cache_manager, "ensure_profile_release_splits_signed") as ensure_splits_mock, \
                 mock.patch.object(cache_manager, "sigbypass_compile") as compile_mock:
                 out_dir = cache_manager.profile_apk({}, "full", fresh=False)
 
             self.assertEqual(out_dir, work_dir)
             compile_mock.assert_called_once()
+            seed_mock.assert_called_once()
             ensure_splits_mock.assert_called_once()
             state = json.loads(state_path.read_text(encoding="utf-8"))
             self.assertEqual(state["fingerprint"], "fresh")
@@ -132,8 +144,10 @@ class ReuseArtifactsTest(unittest.TestCase):
             root = Path(tempdir)
             workspace = root / "workspace"
             work_dir = root / "build"
+            seed_dir = root / "snapshot_seed"
             workspace.mkdir(parents=True)
             work_dir.mkdir(parents=True)
+            seed_dir.mkdir(parents=True)
 
             state_path = work_dir / cache_manager.REUSE_STATE_FILE
             state_path.write_text(
@@ -142,20 +156,65 @@ class ReuseArtifactsTest(unittest.TestCase):
             )
 
             with mock.patch.object(cache_manager, "resolve_profile_workspace", return_value=workspace), \
+                mock.patch.object(cache_manager, "profile_prepare", return_value=(["phonepe_sigbypass"], workspace)), \
+                mock.patch.object(cache_manager, "maybe_reuse_profile_artifacts", return_value=False), \
                 mock.patch.object(cache_manager, "resolve_profile_modules", return_value=["phonepe_sigbypass"]), \
-                mock.patch.object(cache_manager, "has_reusable_merged_workspace", return_value=True) as merged_workspace_mock, \
                 mock.patch.object(cache_manager, "profile_merge", return_value=workspace) as merge_mock, \
                 mock.patch.object(cache_manager, "profile_build_path", return_value=work_dir), \
                 mock.patch.object(cache_manager, "compute_profile_reuse_fingerprint", return_value="fresh"), \
+                mock.patch.object(cache_manager, "ensure_phonepe_snapshot_seed", return_value=(seed_dir, {"versionCode": "26022705"})) as seed_mock, \
                 mock.patch.object(cache_manager, "ensure_profile_release_splits_signed") as ensure_splits_mock, \
                 mock.patch.object(cache_manager, "sigbypass_compile") as compile_mock:
                 out_dir = cache_manager.profile_apk({}, "full", fresh=False)
 
             self.assertEqual(out_dir, work_dir)
             compile_mock.assert_called_once()
+            seed_mock.assert_called_once()
             ensure_splits_mock.assert_called_once()
-            merged_workspace_mock.assert_called_once_with({}, "full", workspace, ["phonepe_sigbypass"])
-            merge_mock.assert_not_called()
+            merge_mock.assert_called_once()
+
+    def test_profile_apk_uses_snapshot_seed_for_release_splits(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            root = Path(tempdir)
+            workspace = root / "workspace"
+            work_dir = root / "build"
+            seed_dir = root / "snapshot_seed"
+            workspace.mkdir(parents=True)
+            work_dir.mkdir(parents=True)
+            seed_dir.mkdir(parents=True)
+
+            captured = {}
+
+            def fake_resolve_profile_split_seed_dir(package: str, snapshot_version: str) -> Path:
+                captured["package"] = package
+                captured["snapshot_version"] = snapshot_version
+                return seed_dir
+
+            def fake_ensure_profile_release_splits_signed(work_dir_arg: Path, source_dir: Path, base_apk: Path) -> None:
+                captured["work_dir"] = work_dir_arg
+                captured["source_dir"] = source_dir
+                captured["base_apk"] = base_apk
+
+            with mock.patch.object(cache_manager, "resolve_profile_workspace", return_value=workspace), \
+                mock.patch.object(cache_manager, "profile_prepare", return_value=(["phonepe_sigbypass"], workspace)), \
+                mock.patch.object(cache_manager, "maybe_reuse_profile_artifacts", return_value=False), \
+                mock.patch.object(cache_manager, "resolve_profile_modules", return_value=["phonepe_sigbypass"]), \
+                mock.patch.object(cache_manager, "has_reusable_merged_workspace", return_value=False), \
+                mock.patch.object(cache_manager, "profile_merge", return_value=workspace), \
+                mock.patch.object(cache_manager, "profile_build_path", return_value=work_dir), \
+                mock.patch.object(cache_manager, "compute_profile_reuse_fingerprint", return_value="fresh"), \
+                mock.patch.object(cache_manager, "ensure_phonepe_snapshot_seed", side_effect=lambda seed_root, package, snapshot_version: (fake_resolve_profile_split_seed_dir(package, snapshot_version), {"versionCode": snapshot_version or "26022705"})), \
+                mock.patch.object(cache_manager, "ensure_profile_release_splits_signed", side_effect=fake_ensure_profile_release_splits_signed), \
+                mock.patch.object(cache_manager, "sigbypass_compile") as compile_mock:
+                out_dir = cache_manager.profile_apk({}, "full", fresh=False, snapshot_version="26022705")
+
+            self.assertEqual(out_dir, work_dir)
+            compile_mock.assert_called_once()
+            self.assertEqual(captured["package"], "com.phonepe.app")
+            self.assertEqual(captured["snapshot_version"], "26022705")
+            self.assertEqual(captured["work_dir"], work_dir)
+            self.assertEqual(captured["source_dir"], seed_dir)
+            self.assertEqual(captured["base_apk"], work_dir / cache_manager.DEFAULT_SIGNED_APK)
 
     def test_compute_profile_reuse_fingerprint_prefers_merge_state_fast_path(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:

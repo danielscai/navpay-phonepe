@@ -1,6 +1,6 @@
 # Build Orchestrator (`src/pipeline/orch`)
 
-This directory contains the unified build orchestrator for composed PhonePe APK testing. Cached runtime data still lives under the repository root `cache/` directory.
+This directory contains the unified build orchestrator for composed PhonePe APK testing. Cached runtime data still lives under the repository root `cache/` directory, with versioned PhonePe APK inputs materialized under `cache/phonepe/snapshot_seed`.
 
 ## Canonical Commands
 
@@ -14,10 +14,14 @@ This directory contains the unified build orchestrator for composed PhonePe APK 
   - `python3 src/pipeline/orch/orchestrator.py merge`
 - Build and sign the final APK (default reuses cache when inputs have not changed):
   - `python3 src/pipeline/orch/orchestrator.py apk`
+- Build and sign the final APK from a specific snapshot version:
+  - `python3 src/pipeline/orch/orchestrator.py apk --snapshot-version 26022705`
 - Force full APK rebuild:
   - `python3 src/pipeline/orch/orchestrator.py apk --fresh`
 - Run the full integration test (default split-session strategy):
   - `python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554`
+- Run the full integration test against a specific snapshot version:
+  - `python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554 --snapshot-version 26022705`
 - Run the full integration test with explicit split-session install:
   - `python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554 --install-mode split-session`
 - Run the full integration test with clean reinstall:
@@ -40,7 +44,7 @@ Top-level workflow supports only `full` profile to enforce composed testing.
 ## Unified Pipeline
 
 1. `prepare`
-   - Refreshes `cache/profiles/<name>/workspace` from `cache/phonepe/decompiled/base_decompiled_clean`.
+   - Refreshes `cache/profiles/<name>/workspace` from `cache/phonepe/decompiled/base_decompiled_clean`, which is built from the selected `cache/phonepe/snapshot_seed`.
 2. `smali`
    - Builds per-module artifacts into `cache/module_artifacts/<module>/`.
    - Rebuilds only when declared `fingerprint_inputs` change.
@@ -155,5 +159,6 @@ Keep-data mode note:
 - Module mergers are artifact-only and must not compile during merge.
 - Cache reset removes the selected cache and all downstream caches.
 - Snapshot collection (`collect`) runs targets serially and writes run artifacts under `cache/phonepe/snapshots/runs/<run_id>/`.
+- `cache/phonepe/snapshot_seed` is the active split/base seed for profile packaging; it is derived from `cache/phonepe/snapshots/<package>/<versionCode>/<signingDigest>/captures/<target_id>/` and can be pinned with `--snapshot-version`.
 - If Play login is blocked, `collect` returns exit code `20` and writes `blocker-report.json/.md`; complete Play login manually then rerun with `--resume <run_id>`.
 - Collection workflow note: do not use `yarn orch apk --fresh` (or any fresh variant) in collection paths.

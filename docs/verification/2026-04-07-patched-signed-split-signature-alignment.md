@@ -6,14 +6,14 @@
 - 在模拟器上完成 split-session 安装与启动验证。
 
 ## 根因
-- 旧默认链路在测试时使用 `cache/phonepe/from_device/base.apk` 作为 split-session base。
-- `from_device/base.apk` 与 `patched_signed.apk` 签名不同，导致安装阶段可能出现 `INSTALL_FAILED_UPDATE_INCOMPATIBLE` 或 `signatures are inconsistent`。
+- 旧默认链路在测试时直接使用设备拉包目录中的 `base.apk` 作为 split-session base。
+- 该路径与 `patched_signed.apk` 签名不同，导致安装阶段可能出现 `INSTALL_FAILED_UPDATE_INCOMPATIBLE` 或 `signatures are inconsistent`。
 
 ## 固化后流程
 1. 构建：`yarn apk`
-2. 签名对齐：`orchestrator profile_apk()` 自动把 `from_device` 的 required split 准备到 `cache/profiles/full/build/`，并校验与 `patched_signed.apk` 同签名。
+2. 签名对齐：`orchestrator profile_apk()` 自动把 `cache/phonepe/snapshot_seed` 中的 required split 准备到 `cache/profiles/full/build/`，并校验与 `patched_signed.apk` 同签名。
 3. 测试安装：`yarn test --serial emulator-5554`（默认 split-session）
-4. 发布：admin 发布脚本以 `patched_signed.apk` 为 base，默认读取同目录 split（`split_config.arm64_v8a.apk`、`split_config.xxhdpi.apk`）。
+4. 发布：admin 发布脚本以 `patched_signed.apk` 为 base，默认读取 `cache/phonepe/snapshot_seed` 中的 split（`split_config.arm64_v8a.apk`、`split_config.xxhdpi.apk`）。
 
 ## 验证命令与结果
 

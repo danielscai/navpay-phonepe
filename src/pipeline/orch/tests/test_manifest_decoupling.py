@@ -92,6 +92,14 @@ class ManifestDecouplingTest(unittest.TestCase):
                 self.assertNotIn("compile.sh", text)
                 self.assertNotIn('"$SCRIPT_DIR/compile.sh"', text)
 
+    def test_phonepe_snapshot_seed_is_the_versioned_root_cache(self) -> None:
+        manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+        self.assertIn("phonepe_snapshot_seed", manifest)
+        self.assertEqual(manifest["phonepe_snapshot_seed"]["path"], "cache/phonepe/snapshot_seed")
+        self.assertEqual(manifest["phonepe_snapshot_seed"]["deps"], [])
+        self.assertEqual(manifest["phonepe_merged"]["deps"], ["phonepe_snapshot_seed"])
+        self.assertEqual(manifest["phonepe_decompiled"]["deps"], ["phonepe_merged"])
+
 
 if __name__ == "__main__":
     unittest.main()

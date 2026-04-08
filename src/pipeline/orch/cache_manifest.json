@@ -1,11 +1,11 @@
 {
-  "phonepe_from_device": {
-    "path": "cache/phonepe/from_device",
+  "phonepe_snapshot_seed": {
+    "path": "cache/phonepe/snapshot_seed",
     "deps": []
   },
   "phonepe_merged": {
     "path": "cache/phonepe/merged",
-    "deps": ["phonepe_from_device"]
+    "deps": ["phonepe_snapshot_seed"]
   },
   "phonepe_decompiled": {
     "path": "cache/phonepe/decompiled",

@@ -5,9 +5,9 @@
 ```bash
 yarn release:to-admin \
   --env local \
-  --apk cache/phonepe/from_device/base.apk \
-  --abi-apk cache/phonepe/from_device/split_config.arm64_v8a.apk \
-  --density-apk cache/phonepe/from_device/split_config.xxhdpi.apk \
+  --apk cache/phonepe/snapshot_seed/base.apk \
+  --abi-apk cache/phonepe/snapshot_seed/split_config.arm64_v8a.apk \
+  --density-apk cache/phonepe/snapshot_seed/split_config.xxhdpi.apk \
   --version-name 26.01.02.2 \
   --version-code 2601022
 ```
@@ -29,6 +29,7 @@ yarn release:to-admin \
 ## 行为
 
 - 默认目标环境是 `local`。
+- 默认输入应来自 `cache/phonepe/snapshot_seed`，该目录由版本化 snapshot 快照生成，不再直接读取旧的 `from_device` 目录。
 - 若未传 `--version-name`，CLI 会查询服务端最新 release（按 `versionCode` 最大值）并自动生成版本号，格式固定为 `YY.MM.DD.N`：
   - 若最新版本日期等于当天：`N + 1`（如 `26.01.02.1` 后自动变为 `26.01.02.2`）。
   - 若最新版本不是当天：从当天 `.0` 开始（如 `26.01.02.0`）。

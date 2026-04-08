@@ -37,7 +37,7 @@ class SmokeModeTest(unittest.TestCase):
             cache_manager.profile_test(manifest, "full", "", smoke=True)
 
         build_modules_mock.assert_called_once_with(manifest, "full")
-        apk_mock.assert_called_once_with(manifest, "full", fresh=False)
+        apk_mock.assert_called_once_with(manifest, "full", fresh=False, snapshot_version="")
         call = unified_test_mock.call_args
         self.assertEqual(call.args[4], "")
         self.assertEqual(call.args[5], 25)
@@ -62,7 +62,7 @@ class SmokeModeTest(unittest.TestCase):
             cache_manager.profile_test(manifest, "full", "", smoke=False)
 
         build_modules_mock.assert_called_once_with(manifest, "full")
-        apk_mock.assert_called_once_with(manifest, "full", fresh=False)
+        apk_mock.assert_called_once_with(manifest, "full", fresh=False, snapshot_version="")
         call = unified_test_mock.call_args
         self.assertEqual(call.args[4], "SigBypass")
         self.assertEqual(call.args[5], 30)
