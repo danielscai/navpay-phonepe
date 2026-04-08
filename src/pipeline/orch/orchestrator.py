@@ -420,6 +420,85 @@ def write_collect_blocker_reports(run_dir: Path, payload):
     (run_dir / "blocker-report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def write_collect_gap_and_summary_reports(run_dir: Path, matrix, run_state):
+    target_ids = [target.get("target_id") for target in matrix.get("targets", []) if target.get("target_id")]
+    completed = list(run_state.get("completed_targets", []))
+    failed = list(run_state.get("failed_targets", []))
+    completed_set = set(completed)
+    missing = [target_id for target_id in target_ids if target_id not in completed_set]
+
+    gap_report = {
+        "run_id": run_state.get("run_id", ""),
+        "missing": missing,
+        "completed": completed,
+        "failed": failed,
+        "blocked_reason": run_state.get("blocked_reason"),
+    }
+    write_meta(run_dir / "gap-report.json", gap_report)
+    gap_lines = [
+        "# PhonePe Collect Gap Report",
+        "",
+        f"- run_id: {gap_report['run_id']}",
+        f"- missing_count: {len(missing)}",
+        f"- failed_count: {len(failed)}",
+    ]
+    (run_dir / "gap-report.md").write_text("\n".join(gap_lines) + "\n", encoding="utf-8")
+
+    summary = {
+        "run_id": run_state.get("run_id", ""),
+        "status": run_state.get("status", "unknown"),
+        "package": matrix.get("package", DEFAULT_PACKAGE),
+        "targets_total": len(target_ids),
+        "completed_count": len(completed),
+        "failed_count": len(failed),
+        "missing_count": len(missing),
+        "blocked_reason": run_state.get("blocked_reason"),
+    }
+    write_meta(run_dir / "summary.json", summary)
+    summary_lines = [
+        "# PhonePe Collect Summary",
+        "",
+        f"- run_id: {summary['run_id']}",
+        f"- status: {summary['status']}",
+        f"- completed/total: {summary['completed_count']}/{summary['targets_total']}",
+        f"- missing_count: {summary['missing_count']}",
+    ]
+    (run_dir / "summary.md").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+    return summary
+
+
+def update_collect_snapshot_index(snapshots_root: Path, run_state, summary):
+    index_path = snapshots_root / "index.json"
+    if index_path.exists():
+        data = json.loads(index_path.read_text(encoding="utf-8"))
+    else:
+        data = {"runs": []}
+    runs = data.get("runs", [])
+    if not isinstance(runs, list):
+        runs = []
+    run_id = run_state.get("run_id", "")
+    runs = [entry for entry in runs if entry.get("run_id") != run_id]
+    runs.append(
+        {
+            "run_id": run_id,
+            "status": summary.get("status"),
+            "package": summary.get("package"),
+            "completed_count": summary.get("completed_count"),
+            "missing_count": summary.get("missing_count"),
+            "updated_at": datetime.now().isoformat(),
+        }
+    )
+    data["runs"] = runs
+    write_meta(index_path, data)
+
+
+def finalize_collect_run(snapshots_root: Path, run_dir: Path, matrix, run_state, exit_code: int) -> int:
+    write_collect_run_state(run_dir, run_state)
+    summary = write_collect_gap_and_summary_reports(run_dir, matrix, run_state)
+    update_collect_snapshot_index(snapshots_root, run_state, summary)
+    return exit_code
+
+
 def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, snapshots_root: Optional[Path] = None) -> int:
     matrix = load_device_matrix(matrix_path)
     if package:
@@ -452,8 +531,7 @@ def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, sn
             run_state["status"] = "blocked"
             run_state["blocked_reason"] = payload["reason"]
             write_collect_blocker_reports(run_dir, payload)
-            write_collect_run_state(run_dir, run_state)
-            return 20
+            return finalize_collect_run(snapshots_path, run_dir, matrix, run_state, 20)
         version_anchor = collect_bootstrap_anchor(matrix, run_state, run_dir)
         bootstrap_target = find_collect_target(matrix, matrix.get("bootstrap_target_id", ""))
         bootstrap_result = run_state.get("_bootstrap_result")
@@ -473,8 +551,7 @@ def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, sn
             run_state["status"] = "blocked"
             run_state["blocked_reason"] = payload["reason"]
             write_collect_blocker_reports(run_dir, payload)
-            write_collect_run_state(run_dir, run_state)
-            return 20
+            return finalize_collect_run(snapshots_path, run_dir, matrix, run_state, 20)
         result = execute_collect_target(matrix, target, run_state, run_dir)
         status = (result or {}).get("status", "failed")
         if status == "done":
@@ -485,13 +562,11 @@ def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, sn
         else:
             run_state.setdefault("failed_targets", []).append(target_id)
             run_state["status"] = "failed"
-            write_collect_run_state(run_dir, run_state)
-            return 1
+            return finalize_collect_run(snapshots_path, run_dir, matrix, run_state, 1)
         write_collect_run_state(run_dir, run_state)
 
     run_state["status"] = "done"
-    write_collect_run_state(run_dir, run_state)
-    return 0
+    return finalize_collect_run(snapshots_path, run_dir, matrix, run_state, 0)
 
 
 def emulator_path():
