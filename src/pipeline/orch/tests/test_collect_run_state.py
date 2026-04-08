@@ -78,7 +78,8 @@ class CollectRunStateTest(unittest.TestCase):
                     "device_meta": {"serial": target["serial_alias"]},
                 }
 
-            with mock.patch.object(cache_manager, "execute_collect_target", side_effect=fake_execute):
+            with mock.patch.object(cache_manager, "detect_play_login_blocker", return_value={"blocked": False}), \
+                mock.patch.object(cache_manager, "execute_collect_target", side_effect=fake_execute):
                 exit_code = cache_manager.run_collect(
                     matrix_path=str(matrix_path),
                     package="com.phonepe.app",

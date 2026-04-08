@@ -405,6 +405,22 @@ def archive_collect_target_artifacts(snapshots_root: Path, version_anchor, targe
 
 
 def detect_play_login_blocker(_matrix, _target, _run_state, _run_dir):
+    target = _target or {}
+    serial_alias = target.get("serial_alias", "")
+    if not serial_alias:
+        return {"blocked": True, "reason": "serial_alias_missing"}
+    adb = adb_path()
+    try:
+        out = subprocess.check_output(
+            [adb, "-s", serial_alias, "shell", "dumpsys", "account"],
+            text=True,
+            stderr=subprocess.STDOUT,
+            timeout=20,
+        )
+    except Exception:
+        return {"blocked": True, "reason": "play_account_status_unavailable"}
+    if "com.google" not in out:
+        return {"blocked": True, "reason": "play_account_not_logged_in"}
     return {"blocked": False}
 
 
