@@ -24,6 +24,7 @@ from profile_resolver import resolve_profile
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[2]
 MANIFEST_PATH = SCRIPT_DIR / "cache_manifest.json"
+APPS_MANIFEST_PATH = SCRIPT_DIR / "apps_manifest.json"
 EMULATOR_CONFIG_PATH = SCRIPT_DIR / "emulators.json"
 DEFAULT_DEVICE_MATRIX_PATH = SCRIPT_DIR / "device_matrix.example.json"
 DEFAULT_SNAPSHOTS_ROOT = REPO_ROOT / "cache" / "phonepe" / "snapshots"
@@ -196,6 +197,18 @@ MODULE_DEFAULTS = {
 }
 
 TOP_LEVEL_PROFILE_ACTIONS = {"plan", "prepare", "smali", "merge", "apk", "test"}
+
+
+def load_apps_manifest(path: Path = APPS_MANIFEST_PATH) -> dict:
+    if not path.exists():
+        raise FileNotFoundError(f"Missing apps manifest: {path}")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or not data:
+        raise ValueError("Invalid apps manifest: top-level object must be a non-empty JSON object")
+    return data
+
+
+SUPPORTED_APPS = tuple(load_apps_manifest().keys())
 
 
 def load_manifest():
@@ -3514,6 +3527,9 @@ def build_parser() -> argparse.ArgumentParser:
     collect.add_argument("--matrix", default=str(DEFAULT_DEVICE_MATRIX_PATH))
     collect.add_argument("--package", default=DEFAULT_PACKAGE)
     collect.add_argument("--resume")
+
+    build = sub.add_parser("build")
+    build.add_argument("app", choices=SUPPORTED_APPS)
 
     return parser
 

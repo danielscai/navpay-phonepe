@@ -1,0 +1,8 @@
+{
+  "phonepe": {
+    "package": "com.phonepe.app"
+  },
+  "paytm": {
+    "package": "net.one97.paytm"
+  }
+}

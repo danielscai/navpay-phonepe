@@ -9,6 +9,12 @@ import orchestrator as orch  # noqa: E402
 
 
 class CliContractTest(unittest.TestCase):
+    def test_cli_supports_app_scoped_commands_and_default_help(self) -> None:
+        parser = orch.build_parser()
+        args = parser.parse_args(["build", "phonepe"])
+        self.assertEqual(args.cmd, "build")
+        self.assertEqual(args.app, "phonepe")
+
     def test_top_level_profile_actions_exist(self) -> None:
         parser = orch.build_parser()
         for cmd in ("plan", "prepare", "smali", "merge", "apk", "test"):
