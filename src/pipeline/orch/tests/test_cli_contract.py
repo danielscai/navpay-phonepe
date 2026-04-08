@@ -61,3 +61,11 @@ class CliContractTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_main_without_args_prints_help_and_exits_zero(capsys):
+    code = orch.main([])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "collect" in out
+    assert "decompiled" in out

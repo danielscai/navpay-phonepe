@@ -3511,6 +3511,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("graph")
     sub.add_parser("status")
+    sub.add_parser("decompiled")
     device_parser = sub.add_parser("device")
     device_parser.add_argument("serial", nargs="?")
 
@@ -3536,7 +3537,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None):
     parser = build_parser()
-    args = parser.parse_args(argv)
+    raw = list(argv or [])
+    if not raw:
+        parser.print_help()
+        return 0
+    args = parser.parse_args(raw)
     manifest = load_manifest()
 
     if args.cmd == "graph":
