@@ -26,6 +26,7 @@ REPO_ROOT = SCRIPT_DIR.parents[2]
 MANIFEST_PATH = SCRIPT_DIR / "cache_manifest.json"
 EMULATOR_CONFIG_PATH = SCRIPT_DIR / "emulators.json"
 DEFAULT_DEVICE_MATRIX_PATH = SCRIPT_DIR / "device_matrix.example.json"
+DEFAULT_SNAPSHOTS_ROOT = REPO_ROOT / "cache" / "phonepe" / "snapshots"
 
 DEFAULT_PACKAGE = "com.phonepe.app"
 DEFAULT_SERIAL = "GSLDU18106001520"
@@ -249,6 +250,92 @@ def load_device_matrix(matrix_path: str):
         raise ValueError("Invalid device matrix: 'bootstrap_target_id' must exist in targets[].target_id")
 
     return data
+
+
+def collect_run_id() -> str:
+    return datetime.now().strftime("run_%Y%m%d_%H%M%S")
+
+
+def collect_run_dir(snapshots_root: Path, run_id: str) -> Path:
+    return snapshots_root / "runs" / run_id
+
+
+def read_collect_run_state(run_dir: Path):
+    state_path = run_dir / "run_state.json"
+    if not state_path.exists():
+        raise FileNotFoundError(f"Missing run state: {state_path}")
+    return json.loads(state_path.read_text(encoding="utf-8"))
+
+
+def write_collect_run_state(run_dir: Path, state) -> Path:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    state_path = run_dir / "run_state.json"
+    state_path.write_text(json.dumps(state, ensure_ascii=True, indent=2), encoding="utf-8")
+    return state_path
+
+
+def initialize_collect_run_state(matrix, run_id: str):
+    return {
+        "run_id": run_id,
+        "status": "running",
+        "package": matrix.get("package", DEFAULT_PACKAGE),
+        "targets": [t["target_id"] for t in matrix.get("targets", [])],
+        "completed_targets": [],
+        "failed_targets": [],
+        "blocked_reason": None,
+    }
+
+
+def pending_collect_targets(matrix, run_state):
+    completed = set(run_state.get("completed_targets", []))
+    pending = []
+    for target in matrix.get("targets", []):
+        target_id = target.get("target_id")
+        if target_id and target_id not in completed:
+            pending.append(target)
+    return pending
+
+
+def execute_collect_target(_matrix, _target, _run_state, _run_dir):
+    return {"status": "done"}
+
+
+def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, snapshots_root: Optional[Path] = None) -> int:
+    matrix = load_device_matrix(matrix_path)
+    if package:
+        matrix["package"] = package
+
+    snapshots_path = Path(snapshots_root) if snapshots_root else DEFAULT_SNAPSHOTS_ROOT
+    snapshots_path.mkdir(parents=True, exist_ok=True)
+
+    if resume:
+        run_id = resume
+        run_dir = collect_run_dir(snapshots_path, run_id)
+        run_state = read_collect_run_state(run_dir)
+        run_state["status"] = "running"
+    else:
+        run_id = collect_run_id()
+        run_dir = collect_run_dir(snapshots_path, run_id)
+        run_state = initialize_collect_run_state(matrix, run_id)
+        write_collect_run_state(run_dir, run_state)
+
+    for target in pending_collect_targets(matrix, run_state):
+        target_id = target["target_id"]
+        result = execute_collect_target(matrix, target, run_state, run_dir)
+        status = (result or {}).get("status", "failed")
+        if status == "done":
+            run_state.setdefault("completed_targets", []).append(target_id)
+            run_state["status"] = "running"
+        else:
+            run_state.setdefault("failed_targets", []).append(target_id)
+            run_state["status"] = "failed"
+            write_collect_run_state(run_dir, run_state)
+            return 1
+        write_collect_run_state(run_dir, run_state)
+
+    run_state["status"] = "done"
+    write_collect_run_state(run_dir, run_state)
+    return 0
 
 
 def emulator_path():
@@ -2590,8 +2677,11 @@ def main(argv=None):
     elif args.cmd == "rebuild":
         cmd_rebuild(manifest, args.target, args.serial, args.package, args.with_downstream)
     elif args.cmd == "collect":
-        load_device_matrix(getattr(args, "matrix", str(DEFAULT_DEVICE_MATRIX_PATH)))
-        log_info("collect command schema validation passed")
+        return run_collect(
+            matrix_path=getattr(args, "matrix", str(DEFAULT_DEVICE_MATRIX_PATH)),
+            package=getattr(args, "package", DEFAULT_PACKAGE),
+            resume=getattr(args, "resume", None),
+        )
     elif args.cmd in TOP_LEVEL_PROFILE_ACTIONS:
         smoke = getattr(args, "smoke", False)
         install_mode = getattr(args, "install_mode", "reinstall")
@@ -2618,7 +2708,7 @@ def main(argv=None):
 
 if __name__ == "__main__":
     try:
-        main()
+        sys.exit(main())
     except Exception as exc:
         print(f"[FAIL] {exc}")
         sys.exit(1)
