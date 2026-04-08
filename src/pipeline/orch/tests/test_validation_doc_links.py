@@ -3,6 +3,17 @@ from pathlib import Path
 
 
 class ValidationDocLinksTest(unittest.TestCase):
+    def test_docs_reference_standardized_commands_and_multi_app_collect(self) -> None:
+        design_doc = Path("docs/orch_standardization_design.md").read_text(encoding="utf-8")
+        orch_readme = Path("src/pipeline/orch/README.md").read_text(encoding="utf-8")
+        policy_doc = Path("docs/编排统一规范.md").read_text(encoding="utf-8")
+
+        for text in (design_doc, orch_readme, policy_doc):
+            self.assertIn("yarn collect", text)
+            self.assertIn("yarn collect phonepe", text)
+            self.assertIn("orch info", text)
+            self.assertIn("orch decompiled phonepe 26022705", text)
+
     def test_validation_doc_references_new_test_commands(self) -> None:
         validation_doc = Path("docs/plans/2026-03-02-profile-based-build-refactor-validation.md")
         text = validation_doc.read_text(encoding="utf-8")

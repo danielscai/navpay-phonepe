@@ -41,6 +41,13 @@ This directory contains the unified build orchestrator for composed PhonePe APK 
 
 Top-level workflow supports only `full` profile to enforce composed testing.
 
+## Multi-App Standard Commands
+
+- `yarn collect`
+- `yarn collect phonepe`
+- `yarn orch info`
+- `yarn orch decompiled phonepe 26022705`
+
 ## Unified Pipeline
 
 1. `prepare`
