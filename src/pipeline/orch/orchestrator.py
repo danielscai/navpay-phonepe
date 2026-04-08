@@ -404,6 +404,22 @@ def archive_collect_target_artifacts(snapshots_root: Path, version_anchor, targe
     )
 
 
+def detect_play_login_blocker(_matrix, _target, _run_state, _run_dir):
+    return {"blocked": False}
+
+
+def write_collect_blocker_reports(run_dir: Path, payload):
+    write_meta(run_dir / "blocker-report.json", payload)
+    lines = [
+        "# PhonePe Collect Blocker Report",
+        "",
+        f"- reason: {payload.get('reason', '')}",
+        f"- target_id: {payload.get('target_id', '')}",
+        f"- detected_at: {payload.get('detected_at', '')}",
+    ]
+    (run_dir / "blocker-report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, snapshots_root: Optional[Path] = None) -> int:
     matrix = load_device_matrix(matrix_path)
     if package:
@@ -425,6 +441,19 @@ def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, sn
 
     version_anchor = run_state.get("version_anchor")
     if not version_anchor:
+        bootstrap_target = find_collect_target(matrix, matrix.get("bootstrap_target_id", ""))
+        blocker = detect_play_login_blocker(matrix, bootstrap_target, run_state, run_dir)
+        if (blocker or {}).get("blocked"):
+            payload = {
+                "reason": (blocker or {}).get("reason", "play_login_blocked"),
+                "target_id": (bootstrap_target or {}).get("target_id", ""),
+                "detected_at": datetime.now().isoformat(),
+            }
+            run_state["status"] = "blocked"
+            run_state["blocked_reason"] = payload["reason"]
+            write_collect_blocker_reports(run_dir, payload)
+            write_collect_run_state(run_dir, run_state)
+            return 20
         version_anchor = collect_bootstrap_anchor(matrix, run_state, run_dir)
         bootstrap_target = find_collect_target(matrix, matrix.get("bootstrap_target_id", ""))
         bootstrap_result = run_state.get("_bootstrap_result")
@@ -434,6 +463,18 @@ def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, sn
 
     for target in pending_collect_targets(matrix, run_state):
         target_id = target["target_id"]
+        blocker = detect_play_login_blocker(matrix, target, run_state, run_dir)
+        if (blocker or {}).get("blocked"):
+            payload = {
+                "reason": (blocker or {}).get("reason", "play_login_blocked"),
+                "target_id": target_id,
+                "detected_at": datetime.now().isoformat(),
+            }
+            run_state["status"] = "blocked"
+            run_state["blocked_reason"] = payload["reason"]
+            write_collect_blocker_reports(run_dir, payload)
+            write_collect_run_state(run_dir, run_state)
+            return 20
         result = execute_collect_target(matrix, target, run_state, run_dir)
         status = (result or {}).get("status", "failed")
         if status == "done":
