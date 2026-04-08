@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Optional
 from datetime import datetime
@@ -1013,6 +1014,70 @@ def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, sn
         return finalize_collect_run(snapshots_path, run_dir, matrix, run_state, 0)
     finally:
         shutdown_collect_emulators(run_state)
+
+
+def resolve_app_package(app: str) -> str:
+    manifest = load_apps_manifest()
+    cfg = manifest.get(app)
+    if not isinstance(cfg, dict):
+        raise RuntimeError(f"Unsupported app: {app}")
+    package = str(cfg.get("package", "")).strip()
+    if not package:
+        raise RuntimeError(f"App {app} missing package in apps manifest")
+    return package
+
+
+def run_collect_for_app_target(
+    app: str,
+    target,
+    matrix_path: str,
+    resume: Optional[str] = None,
+    snapshots_root: Optional[Path] = None,
+) -> int:
+    matrix = load_device_matrix(matrix_path)
+    target_id = str((target or {}).get("target_id", "")).strip()
+    target_rows = [row for row in matrix.get("targets", []) if row.get("target_id") == target_id]
+    if not target_rows:
+        raise RuntimeError(f"Target not found in matrix: {target_id}")
+
+    single_target_matrix = dict(matrix)
+    single_target_matrix["bootstrap_target_id"] = target_id
+    single_target_matrix["targets"] = target_rows
+
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as handle:
+        json.dump(single_target_matrix, handle, ensure_ascii=False, indent=2)
+        temp_matrix_path = handle.name
+
+    try:
+        return run_collect(
+            matrix_path=temp_matrix_path,
+            package=resolve_app_package(app),
+            resume=resume,
+            snapshots_root=snapshots_root,
+        )
+    finally:
+        Path(temp_matrix_path).unlink(missing_ok=True)
+
+
+def run_collect_all_apps(
+    matrix_path: str,
+    apps: list[str],
+    resume: Optional[str] = None,
+    snapshots_root: Optional[Path] = None,
+) -> int:
+    matrix = load_device_matrix(matrix_path)
+    for target in matrix.get("targets", []):
+        for app in apps:
+            code = run_collect_for_app_target(
+                app=app,
+                target=target,
+                matrix_path=matrix_path,
+                resume=resume,
+                snapshots_root=snapshots_root,
+            )
+            if code != 0:
+                return code
+    return 0
 
 
 def emulator_path():
@@ -3525,6 +3590,7 @@ def build_parser() -> argparse.ArgumentParser:
     rebuild.add_argument("--package")
 
     collect = sub.add_parser("collect")
+    collect.add_argument("app", nargs="?", choices=SUPPORTED_APPS)
     collect.add_argument("--matrix", default=str(DEFAULT_DEVICE_MATRIX_PATH))
     collect.add_argument("--package", default=DEFAULT_PACKAGE)
     collect.add_argument("--resume")
@@ -3555,10 +3621,28 @@ def main(argv=None):
     elif args.cmd == "rebuild":
         cmd_rebuild(manifest, args.target, args.serial, args.package, args.with_downstream)
     elif args.cmd == "collect":
-        return run_collect(
-            matrix_path=getattr(args, "matrix", str(DEFAULT_DEVICE_MATRIX_PATH)),
-            package=getattr(args, "package", DEFAULT_PACKAGE),
-            resume=getattr(args, "resume", None),
+        app = getattr(args, "app", None)
+        matrix_path = getattr(args, "matrix", str(DEFAULT_DEVICE_MATRIX_PATH))
+        resume = getattr(args, "resume", None)
+        package = getattr(args, "package", DEFAULT_PACKAGE)
+
+        if app:
+            return run_collect(
+                matrix_path=matrix_path,
+                package=resolve_app_package(app),
+                resume=resume,
+            )
+        if package and package != DEFAULT_PACKAGE:
+            return run_collect(
+                matrix_path=matrix_path,
+                package=package,
+                resume=resume,
+            )
+        if resume:
+            raise RuntimeError("collect --resume currently requires specifying an app or package")
+        return run_collect_all_apps(
+            matrix_path=matrix_path,
+            apps=list(SUPPORTED_APPS),
         )
     elif args.cmd in TOP_LEVEL_PROFILE_ACTIONS:
         smoke = getattr(args, "smoke", False)

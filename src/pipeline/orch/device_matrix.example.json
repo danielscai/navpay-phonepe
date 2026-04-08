@@ -1,5 +1,6 @@
 {
   "package": "com.phonepe.app",
+  "apps_order": ["phonepe", "paytm"],
   "bootstrap_target_id": "emu_arm64_xxhdpi",
   "targets": [
     {
