@@ -36,7 +36,9 @@ class CollectBlockerTest(unittest.TestCase):
                 cache_manager,
                 "detect_play_login_blocker",
                 return_value={"blocked": True, "reason": "play_account_not_logged_in"},
-            ), mock.patch.object(cache_manager, "execute_collect_target") as execute_mock:
+            ), mock.patch.object(cache_manager, "ensure_play_upgrade_or_skip", return_value={"serial": "emulator-5554"}), \
+                mock.patch.object(cache_manager, "execute_collect_target") as execute_mock, \
+                mock.patch.object(cache_manager, "shutdown_collect_emulators") as shutdown_mock:
                 code = cache_manager.run_collect(
                     matrix_path=str(matrix_path),
                     package="com.phonepe.app",
@@ -45,6 +47,7 @@ class CollectBlockerTest(unittest.TestCase):
 
             self.assertEqual(code, 20)
             execute_mock.assert_not_called()
+            shutdown_mock.assert_called_once()
 
             blocker_reports = list(snapshots_root.glob("runs/*/blocker-report.json"))
             self.assertEqual(len(blocker_reports), 1)

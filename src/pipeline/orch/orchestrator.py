@@ -296,6 +296,17 @@ def pending_collect_targets(matrix, run_state):
     return pending
 
 
+def remember_collect_serial(run_state, serial: str):
+    if not isinstance(run_state, dict):
+        return
+    serial_norm = normalize_serial_alias(serial or "")
+    if not serial_norm:
+        return
+    serials = run_state.setdefault("_collect_serials", [])
+    if serial_norm not in serials:
+        serials.append(serial_norm)
+
+
 def resolve_collect_target_serial(target, adb: str) -> str:
     target = target or {}
     serial_alias = normalize_serial_alias(target.get("serial_alias", ""))
@@ -329,6 +340,97 @@ def resolve_collect_target_serial(target, adb: str) -> str:
     if serial_alias:
         return select_device(adb, serial_alias)
     return select_device(adb, None)
+
+
+def check_local_snapshot_exists(snapshots_root: Path, package: str, version_code: str, signing_digest: str) -> bool:
+    package_name = (package or "").strip()
+    version = (version_code or "").strip()
+    digest = normalize_signing_digest(signing_digest or "")
+    if not package_name or not version or not digest:
+        return False
+
+    index_path = snapshots_root / "index.json"
+    if index_path.exists():
+        try:
+            data = json.loads(index_path.read_text(encoding="utf-8"))
+            snapshots = data.get("snapshots", [])
+            if isinstance(snapshots, list):
+                for item in snapshots:
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get("package") != package_name:
+                        continue
+                    if str(item.get("versionCode", "")).strip() != version:
+                        continue
+                    item_digest = normalize_signing_digest(str(item.get("signingDigest", "")))
+                    if item_digest == digest:
+                        return True
+        except Exception:
+            pass
+
+    snapshot_key_dir = snapshots_root / package_name / version / digest
+    return snapshot_key_dir.exists()
+
+
+def open_play_details_page(adb: str, serial: str, package: str):
+    run(
+        [
+            adb,
+            "-s",
+            serial,
+            "shell",
+            "am",
+            "start",
+            "-a",
+            "android.intent.action.VIEW",
+            "-d",
+            f"market://details?id={package}",
+            "-p",
+            "com.android.vending",
+        ],
+        check=False,
+    )
+
+
+def ensure_play_upgrade_or_skip(matrix, bootstrap_target, run_state, run_dir: Path):
+    del run_dir
+    target = bootstrap_target or {}
+    package = matrix.get("package", DEFAULT_PACKAGE)
+    adb = adb_path()
+
+    serial = resolve_collect_target_serial(target, adb)
+    remember_collect_serial(run_state, serial)
+
+    before_package_info = read_installed_package_info(adb, serial, package)
+    before_version_code = before_package_info.get("version_code", "")
+    open_play_details_page(adb, serial, package)
+
+    # Keep update click manual to avoid flaky UI automation.
+    if sys.stdin is not None and sys.stdin.isatty():
+        print(
+            f"[collect] 请在设备 {serial} 的 Google Play 页面手动点击 Update（包: {package}），完成后按回车继续..."
+        )
+        try:
+            input()
+        except EOFError:
+            pass
+
+    after_package_info = read_installed_package_info(adb, serial, package)
+    after_version_code = after_package_info.get("version_code", "")
+    upgraded = False
+    if before_version_code and after_version_code:
+        try:
+            upgraded = int(after_version_code) > int(before_version_code)
+        except Exception:
+            upgraded = False
+    return {
+        "serial": serial,
+        "before_version_code": before_version_code,
+        "after_version_code": after_version_code,
+        "before_signing_digest": before_package_info.get("signing_digest", ""),
+        "after_signing_digest": after_package_info.get("signing_digest", ""),
+        "upgraded": upgraded,
+    }
 
 
 def parse_pm_path_output(output: str):
@@ -371,6 +473,7 @@ def execute_collect_target(_matrix, _target, _run_state, _run_dir):
 
     try:
         serial = resolve_collect_target_serial(target, adb)
+        remember_collect_serial(run_state, serial)
 
         wm_density = target.get("wm_density")
         if isinstance(wm_density, int) and wm_density > 0:
@@ -580,10 +683,12 @@ def archive_collect_target_artifacts(snapshots_root: Path, version_anchor, targe
 def detect_play_login_blocker(_matrix, _target, _run_state, _run_dir):
     matrix = _matrix or {}
     target = _target or {}
+    run_state = _run_state if isinstance(_run_state, dict) else {}
     strict_gate = target.get("target_id") == matrix.get("bootstrap_target_id")
     adb = adb_path()
     try:
         serial_alias = resolve_collect_target_serial(target, adb)
+        remember_collect_serial(run_state, serial_alias)
     except Exception:
         serial_alias = normalize_serial_alias(target.get("serial_alias", ""))
     if not serial_alias:
@@ -707,6 +812,34 @@ def update_collect_snapshot_index(snapshots_root: Path, run_state, summary):
         }
     )
     data["runs"] = runs
+    anchor = run_state.get("version_anchor")
+    if isinstance(anchor, dict):
+        snapshots = data.get("snapshots", [])
+        if not isinstance(snapshots, list):
+            snapshots = []
+        package_name = str(anchor.get("packageName", "")).strip()
+        version_code = str(anchor.get("versionCode", "")).strip()
+        signing_digest = normalize_signing_digest(str(anchor.get("signingDigest", "")))
+        if package_name and version_code and signing_digest:
+            snapshots = [
+                item
+                for item in snapshots
+                if not (
+                    isinstance(item, dict)
+                    and item.get("package") == package_name
+                    and str(item.get("versionCode", "")).strip() == version_code
+                    and normalize_signing_digest(str(item.get("signingDigest", ""))) == signing_digest
+                )
+            ]
+            snapshots.append(
+                {
+                    "package": package_name,
+                    "versionCode": version_code,
+                    "signingDigest": signing_digest,
+                    "updated_at": datetime.now().isoformat(),
+                }
+            )
+            data["snapshots"] = snapshots
     write_meta(index_path, data)
 
 
@@ -715,6 +848,22 @@ def finalize_collect_run(snapshots_root: Path, run_dir: Path, matrix, run_state,
     summary = write_collect_gap_and_summary_reports(run_dir, matrix, run_state)
     update_collect_snapshot_index(snapshots_root, run_state, summary)
     return exit_code
+
+
+def shutdown_collect_emulators(run_state):
+    if not isinstance(run_state, dict):
+        return
+    adb = adb_path()
+    for serial in list(run_state.get("_collect_serials", [])):
+        serial_norm = normalize_serial_alias(serial or "")
+        if not serial_norm.startswith("emulator-"):
+            continue
+        subprocess.run(
+            [adb, "-s", serial_norm, "emu", "kill"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
 
 
 def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, snapshots_root: Optional[Path] = None) -> int:
@@ -736,56 +885,93 @@ def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, sn
         run_state = initialize_collect_run_state(matrix, run_id)
         write_collect_run_state(run_dir, run_state)
 
-    version_anchor = run_state.get("version_anchor")
-    if not version_anchor:
-        bootstrap_target = find_collect_target(matrix, matrix.get("bootstrap_target_id", ""))
-        blocker = detect_play_login_blocker(matrix, bootstrap_target, run_state, run_dir)
-        if (blocker or {}).get("blocked"):
-            payload = {
-                "reason": (blocker or {}).get("reason", "play_login_blocked"),
-                "target_id": (bootstrap_target or {}).get("target_id", ""),
-                "detected_at": datetime.now().isoformat(),
-            }
-            run_state["status"] = "blocked"
-            run_state["blocked_reason"] = payload["reason"]
-            write_collect_blocker_reports(run_dir, payload)
-            return finalize_collect_run(snapshots_path, run_dir, matrix, run_state, 20)
-        version_anchor = collect_bootstrap_anchor(matrix, run_state, run_dir)
-        bootstrap_target = find_collect_target(matrix, matrix.get("bootstrap_target_id", ""))
-        bootstrap_result = run_state.get("_bootstrap_result")
-        if bootstrap_target and bootstrap_result:
-            archive_collect_target_artifacts(snapshots_path, version_anchor, bootstrap_target, bootstrap_result)
-        write_collect_run_state(run_dir, run_state)
+    try:
+        version_anchor = run_state.get("version_anchor")
+        if not version_anchor:
+            bootstrap_target = find_collect_target(matrix, matrix.get("bootstrap_target_id", ""))
+            blocker = detect_play_login_blocker(matrix, bootstrap_target, run_state, run_dir)
+            if (blocker or {}).get("blocked"):
+                payload = {
+                    "reason": (blocker or {}).get("reason", "play_login_blocked"),
+                    "target_id": (bootstrap_target or {}).get("target_id", ""),
+                    "detected_at": datetime.now().isoformat(),
+                }
+                run_state["status"] = "blocked"
+                run_state["blocked_reason"] = payload["reason"]
+                write_collect_blocker_reports(run_dir, payload)
+                return finalize_collect_run(snapshots_path, run_dir, matrix, run_state, 20)
 
-    for target in pending_collect_targets(matrix, run_state):
-        target_id = target["target_id"]
-        blocker = detect_play_login_blocker(matrix, target, run_state, run_dir)
-        if (blocker or {}).get("blocked"):
-            payload = {
-                "reason": (blocker or {}).get("reason", "play_login_blocked"),
-                "target_id": target_id,
-                "detected_at": datetime.now().isoformat(),
-            }
-            run_state["status"] = "blocked"
-            run_state["blocked_reason"] = payload["reason"]
-            write_collect_blocker_reports(run_dir, payload)
-            return finalize_collect_run(snapshots_path, run_dir, matrix, run_state, 20)
-        result = execute_collect_target(matrix, target, run_state, run_dir)
-        status = (result or {}).get("status", "failed")
-        if status == "done":
-            ensure_collect_anchor_match(version_anchor, (result or {}).get("anchor"), target_id)
-            run_state.setdefault("completed_targets", []).append(target_id)
-            archive_collect_target_artifacts(snapshots_path, version_anchor, target, result)
-            run_state["status"] = "running"
-        else:
-            run_state.setdefault("failed_targets", []).append(target_id)
-            run_state.setdefault("errors", {})[target_id] = (result or {}).get("error", "target_failed")
-            run_state["status"] = "failed"
-            return finalize_collect_run(snapshots_path, run_dir, matrix, run_state, 1)
-        write_collect_run_state(run_dir, run_state)
+            upgrade_check = ensure_play_upgrade_or_skip(matrix, bootstrap_target, run_state, run_dir)
+            run_state["play_upgrade_check"] = upgrade_check
+            after_version_code = str((upgrade_check or {}).get("after_version_code", "")).strip()
+            after_signing_digest = str((upgrade_check or {}).get("after_signing_digest", "")).strip()
+            if after_version_code and after_signing_digest and check_local_snapshot_exists(
+                snapshots_path,
+                matrix.get("package", DEFAULT_PACKAGE),
+                after_version_code,
+                after_signing_digest,
+            ):
+                run_state["version_anchor"] = {
+                    "packageName": matrix.get("package", DEFAULT_PACKAGE),
+                    "versionCode": after_version_code,
+                    "signingDigest": normalize_signing_digest(after_signing_digest),
+                }
+                run_state["cache_hit"] = True
+                run_state["status"] = "done"
+                run_state["cache_hit_reason"] = "snapshot_key_exists"
+                return finalize_collect_run(snapshots_path, run_dir, matrix, run_state, 0)
 
-    run_state["status"] = "done"
-    return finalize_collect_run(snapshots_path, run_dir, matrix, run_state, 0)
+            version_anchor = collect_bootstrap_anchor(matrix, run_state, run_dir)
+            bootstrap_target = find_collect_target(matrix, matrix.get("bootstrap_target_id", ""))
+            bootstrap_result = run_state.get("_bootstrap_result")
+
+            already_cached = check_local_snapshot_exists(
+                snapshots_path,
+                version_anchor["packageName"],
+                version_anchor["versionCode"],
+                version_anchor["signingDigest"],
+            )
+            run_state["cache_hit"] = already_cached
+            if already_cached:
+                run_state["status"] = "done"
+                run_state["cache_hit_reason"] = "snapshot_key_exists"
+                return finalize_collect_run(snapshots_path, run_dir, matrix, run_state, 0)
+
+            if bootstrap_target and bootstrap_result:
+                archive_collect_target_artifacts(snapshots_path, version_anchor, bootstrap_target, bootstrap_result)
+            write_collect_run_state(run_dir, run_state)
+
+        for target in pending_collect_targets(matrix, run_state):
+            target_id = target["target_id"]
+            blocker = detect_play_login_blocker(matrix, target, run_state, run_dir)
+            if (blocker or {}).get("blocked"):
+                payload = {
+                    "reason": (blocker or {}).get("reason", "play_login_blocked"),
+                    "target_id": target_id,
+                    "detected_at": datetime.now().isoformat(),
+                }
+                run_state["status"] = "blocked"
+                run_state["blocked_reason"] = payload["reason"]
+                write_collect_blocker_reports(run_dir, payload)
+                return finalize_collect_run(snapshots_path, run_dir, matrix, run_state, 20)
+            result = execute_collect_target(matrix, target, run_state, run_dir)
+            status = (result or {}).get("status", "failed")
+            if status == "done":
+                ensure_collect_anchor_match(version_anchor, (result or {}).get("anchor"), target_id)
+                run_state.setdefault("completed_targets", []).append(target_id)
+                archive_collect_target_artifacts(snapshots_path, version_anchor, target, result)
+                run_state["status"] = "running"
+            else:
+                run_state.setdefault("failed_targets", []).append(target_id)
+                run_state.setdefault("errors", {})[target_id] = (result or {}).get("error", "target_failed")
+                run_state["status"] = "failed"
+                return finalize_collect_run(snapshots_path, run_dir, matrix, run_state, 1)
+            write_collect_run_state(run_dir, run_state)
+
+        run_state["status"] = "done"
+        return finalize_collect_run(snapshots_path, run_dir, matrix, run_state, 0)
+    finally:
+        shutdown_collect_emulators(run_state)
 
 
 def emulator_path():
@@ -1079,9 +1265,17 @@ def normalize_signing_digest(raw: str) -> str:
 
 
 def read_apk_signing_digest(apksigner: Path, apk_path: Path) -> str:
+    env = os.environ.copy()
+    java_tool_opts = env.get("JAVA_TOOL_OPTIONS", "").strip()
+    native_access_opt = "--enable-native-access=ALL-UNNAMED"
+    if native_access_opt not in java_tool_opts:
+        env["JAVA_TOOL_OPTIONS"] = (
+            f"{java_tool_opts} {native_access_opt}".strip() if java_tool_opts else native_access_opt
+        )
     out = subprocess.check_output(
         [str(apksigner), "verify", "--print-certs", str(apk_path)],
         text=True,
+        env=env,
     )
     match = re.search(r"Signer #1 certificate SHA-256 digest:\s*([A-Fa-f0-9:\s]+)", out)
     if not match or not match.group(1).strip():
@@ -1230,19 +1424,45 @@ def read_device_prop(adb: str, serial: str, prop: str) -> str:
         return ""
 
 
-def get_pkg_version(adb, serial, package):
+def parse_signing_digest_from_package_dump(output: str) -> str:
+    text = output or ""
+    for line in text.splitlines():
+        lower = line.lower()
+        if "sha-256" not in lower and "sha256" not in lower:
+            continue
+        match = re.search(r"(?:[A-Fa-f0-9]{2}:){15,}[A-Fa-f0-9]{2}", line)
+        if match:
+            return normalize_signing_digest(match.group(0))
+        match = re.search(r"\b[A-Fa-f0-9]{64}\b", line)
+        if match:
+            return normalize_signing_digest(match.group(0))
+    return ""
+
+
+def read_installed_package_info(adb: str, serial: str, package: str):
     try:
         out = subprocess.check_output([adb, "-s", serial, "shell", "dumpsys", "package", package], text=True)
-        version_name = ""
-        version_code = ""
-        for line in out.splitlines():
-            if "versionName=" in line:
-                version_name = line.strip().split("versionName=")[-1]
-            if "versionCode=" in line:
-                version_code = line.strip().split("versionCode=")[-1].split(" ")[0]
-        return version_name, version_code
     except Exception:
-        return "", ""
+        return {"version_name": "", "version_code": "", "signing_digest": ""}
+
+    version_name = ""
+    version_code = ""
+    for line in out.splitlines():
+        if "versionName=" in line:
+            version_name = line.strip().split("versionName=")[-1]
+        if "versionCode=" in line:
+            version_code = line.strip().split("versionCode=")[-1].split(" ")[0]
+    signing_digest = parse_signing_digest_from_package_dump(out)
+    return {
+        "version_name": version_name,
+        "version_code": version_code,
+        "signing_digest": signing_digest,
+    }
+
+
+def get_pkg_version(adb, serial, package):
+    info = read_installed_package_info(adb, serial, package)
+    return info.get("version_name", ""), info.get("version_code", "")
 
 
 def write_meta(path: Path, payload: dict):

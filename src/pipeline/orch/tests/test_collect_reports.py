@@ -58,7 +58,9 @@ class CollectReportsTest(unittest.TestCase):
                 }
 
             with mock.patch.object(cache_manager, "detect_play_login_blocker", return_value={"blocked": False}), \
-                mock.patch.object(cache_manager, "execute_collect_target", side_effect=fake_execute):
+                mock.patch.object(cache_manager, "ensure_play_upgrade_or_skip", return_value={"serial": "emulator-5554"}), \
+                mock.patch.object(cache_manager, "execute_collect_target", side_effect=fake_execute), \
+                mock.patch.object(cache_manager, "shutdown_collect_emulators"):
                 cache_manager.run_collect(
                     matrix_path=str(matrix_path),
                     package="com.phonepe.app",

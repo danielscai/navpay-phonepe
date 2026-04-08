@@ -17,6 +17,40 @@
 - Modify: `src/pipeline/orch/device_matrix.example.json`
 - Test: runtime verification via `yarn device`
 
+### Task 0.0: Emulator incident postmortem and hard requirements (must follow)
+
+**Root cause of the previous mistake (why Home/Back/keyboard failed):**
+- We treated collection emulators as headless/research-style instances, but the collection flow needs interactive control for login/recovery.
+- Headless launch patterns (`-no-window`) and incomplete AVD interaction checks caused us to miss UI controllability gates.
+- We did not enforce a preflight checklist for navigation keys, text input, and public network reachability before accepting new AVDs.
+
+**Mandatory creation requirements for future collection emulators:**
+1. Android system image must be API 35 (`android-35`) only, because this line is the current stable baseline.
+2. Use Google Play-capable arm64 image for collection/login paths:
+   - `system-images;android-35;google_apis_playstore;arm64-v8a`
+3. AVD for collection must be **windowed** (do not use `-no-window` for these two collection devices).
+4. Soft keyboard must be usable:
+   - Ensure `show_ime_with_hard_keyboard=1` after boot.
+   - Keep AVD config consistent to avoid hiding software IME by default.
+5. Navigation controls must be verifiable:
+   - Must pass both emulator UI navigation (Home/Back) and adb keyevent checks.
+6. Public internet must be verifiable:
+   - Device must resolve DNS and reach external HTTPS endpoint before use.
+
+**Required preflight gate (both AVDs must pass):**
+```bash
+adb -s <serial> shell getprop ro.build.version.sdk                # expect 35
+adb -s <serial> shell settings put secure show_ime_with_hard_keyboard 1
+adb -s <serial> shell input keyevent KEYCODE_HOME
+adb -s <serial> shell input keyevent KEYCODE_BACK
+adb -s <serial> shell input text phonepe123
+adb -s <serial> shell 'cmd connectivity airplane-mode disable'    # ensure not in airplane mode
+adb -s <serial> shell ping -c 1 8.8.8.8
+adb -s <serial> shell 'toybox nc -z -w 3 www.google.com 443'
+```
+
+If any check fails, emulator is rejected and must be recreated; do not proceed to matrix collection.
+
 **Step 1: Define current achievable arm64-v8a density targets**
 
 - Confirm the target density set supported by current host resources (for example `xhdpi`, `xxhdpi`, `xxxhdpi`).
@@ -24,11 +58,12 @@
 
 **Step 2: Prepare emulator instances serially**
 
-Run (example, one emulator at a time):
+Run (example, one emulator at a time, windowed):
 
 ```bash
 emulator -avd <name_xhdpi> -no-snapshot-load
 adb -s <serial_xhdpi> wait-for-device
+adb -s <serial_xhdpi> shell settings put secure show_ime_with_hard_keyboard 1
 adb -s <serial_xhdpi> shell wm density 320
 adb -s <serial_xhdpi> reboot
 ```

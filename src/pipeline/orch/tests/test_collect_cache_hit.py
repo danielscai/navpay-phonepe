@@ -11,32 +11,11 @@ sys.path.insert(0, str(CACHE_MANAGER_DIR))
 import orchestrator as cache_manager  # noqa: E402
 
 
-class CollectRunStateTest(unittest.TestCase):
-    def test_collect_resume_skips_completed_targets(self) -> None:
+class CollectCacheHitTest(unittest.TestCase):
+    def test_collect_stops_when_snapshot_key_already_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             root = Path(tempdir)
             snapshots_root = root / "cache" / "phonepe" / "snapshots"
-            run_dir = snapshots_root / "runs" / "r1"
-            run_dir.mkdir(parents=True, exist_ok=True)
-            (run_dir / "run_state.json").write_text(
-                json.dumps(
-                    {
-                        "run_id": "r1",
-                        "status": "running",
-                        "completed_targets": ["emu_arm64_xxhdpi"],
-                        "version_anchor": {
-                            "packageName": "com.phonepe.app",
-                            "versionCode": "26040100",
-                            "signingDigest": "abc123",
-                        },
-                        "failed_targets": [],
-                        "blocked_reason": None,
-                    },
-                    ensure_ascii=True,
-                ),
-                encoding="utf-8",
-            )
-
             matrix_path = root / "device_matrix.json"
             matrix_path.write_text(
                 json.dumps(
@@ -53,16 +32,13 @@ class CollectRunStateTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            base_apk = root / "base.apk"
-            abi_apk = root / "split_config.arm64_v8a.apk"
-            density_apk = root / "split_config.xxhdpi.apk"
-            for file_path in (base_apk, abi_apk, density_apk):
-                file_path.write_text("apk-binary", encoding="utf-8")
+            existing_snapshot = snapshots_root / "com.phonepe.app" / "26040100" / "abc123"
+            (existing_snapshot / "captures" / "emu_arm64_xxhdpi").mkdir(parents=True, exist_ok=True)
 
-            executed = []
+            called_targets = []
 
             def fake_execute(_matrix, target, _state, _run_dir):
-                executed.append(target["target_id"])
+                called_targets.append(target["target_id"])
                 return {
                     "status": "done",
                     "anchor": {
@@ -70,27 +46,32 @@ class CollectRunStateTest(unittest.TestCase):
                         "versionCode": "26040100",
                         "signingDigest": "abc123",
                     },
-                    "artifacts": {
-                        "base_apk": str(base_apk),
-                        "abi_split_apk": str(abi_apk),
-                        "density_split_apk": str(density_apk),
-                    },
-                    "device_meta": {"serial": target["serial_alias"]},
+                    "artifacts": {},
                 }
 
             with mock.patch.object(cache_manager, "detect_play_login_blocker", return_value={"blocked": False}), \
-                mock.patch.object(cache_manager, "ensure_play_upgrade_or_skip", return_value={"serial": "emulator-5554"}), \
+                mock.patch.object(
+                    cache_manager,
+                    "ensure_play_upgrade_or_skip",
+                    return_value={
+                        "serial": "emulator-5554",
+                        "after_version_code": "26040100",
+                        "after_signing_digest": "abc123",
+                    },
+                ), \
                 mock.patch.object(cache_manager, "execute_collect_target", side_effect=fake_execute), \
-                mock.patch.object(cache_manager, "shutdown_collect_emulators"):
+                mock.patch.object(cache_manager, "archive_collect_target_artifacts") as archive_mock, \
+                mock.patch.object(cache_manager, "shutdown_collect_emulators") as shutdown_mock:
                 exit_code = cache_manager.run_collect(
                     matrix_path=str(matrix_path),
                     package="com.phonepe.app",
-                    resume="r1",
                     snapshots_root=snapshots_root,
                 )
 
             self.assertEqual(exit_code, 0)
-            self.assertEqual(executed, ["emu_arm64_xhdpi"])
+            self.assertEqual(called_targets, [])
+            archive_mock.assert_not_called()
+            shutdown_mock.assert_called_once()
 
 
 if __name__ == "__main__":
