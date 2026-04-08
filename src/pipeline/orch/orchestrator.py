@@ -300,6 +300,53 @@ def execute_collect_target(_matrix, _target, _run_state, _run_dir):
     return {"status": "done"}
 
 
+def find_collect_target(matrix, target_id: str):
+    for target in matrix.get("targets", []):
+        if target.get("target_id") == target_id:
+            return target
+    return None
+
+
+def validate_anchor_payload(anchor, target_id: str):
+    if not isinstance(anchor, dict):
+        raise RuntimeError(f"Missing anchor metadata for target: {target_id}")
+    required = ("packageName", "versionCode", "signingDigest")
+    for key in required:
+        value = anchor.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise RuntimeError(f"Invalid anchor metadata: {key} missing for target {target_id}")
+    return {
+        "packageName": anchor["packageName"].strip(),
+        "versionCode": anchor["versionCode"].strip(),
+        "signingDigest": normalize_signing_digest(anchor["signingDigest"]),
+    }
+
+
+def collect_bootstrap_anchor(matrix, run_state, run_dir: Path):
+    bootstrap_target_id = matrix.get("bootstrap_target_id", "")
+    target = find_collect_target(matrix, bootstrap_target_id)
+    if not target:
+        raise RuntimeError(f"Bootstrap target not found in matrix: {bootstrap_target_id}")
+    result = execute_collect_target(matrix, target, run_state, run_dir)
+    status = (result or {}).get("status")
+    if status != "done":
+        raise RuntimeError(f"Bootstrap target failed: {bootstrap_target_id}")
+    anchor = validate_anchor_payload((result or {}).get("anchor"), bootstrap_target_id)
+    run_state["version_anchor"] = anchor
+    if bootstrap_target_id not in run_state.setdefault("completed_targets", []):
+        run_state["completed_targets"].append(bootstrap_target_id)
+    return anchor
+
+
+def ensure_collect_anchor_match(version_anchor, result_anchor, target_id: str):
+    anchor = validate_anchor_payload(result_anchor, target_id)
+    for key in ("packageName", "versionCode", "signingDigest"):
+        if anchor[key] != version_anchor[key]:
+            raise RuntimeError(
+                f"Anchor mismatch for {target_id}: {key} expected={version_anchor[key]} got={anchor[key]}"
+            )
+
+
 def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, snapshots_root: Optional[Path] = None) -> int:
     matrix = load_device_matrix(matrix_path)
     if package:
@@ -319,11 +366,17 @@ def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, sn
         run_state = initialize_collect_run_state(matrix, run_id)
         write_collect_run_state(run_dir, run_state)
 
+    version_anchor = run_state.get("version_anchor")
+    if not version_anchor:
+        version_anchor = collect_bootstrap_anchor(matrix, run_state, run_dir)
+        write_collect_run_state(run_dir, run_state)
+
     for target in pending_collect_targets(matrix, run_state):
         target_id = target["target_id"]
         result = execute_collect_target(matrix, target, run_state, run_dir)
         status = (result or {}).get("status", "failed")
         if status == "done":
+            ensure_collect_anchor_match(version_anchor, (result or {}).get("anchor"), target_id)
             run_state.setdefault("completed_targets", []).append(target_id)
             run_state["status"] = "running"
         else:

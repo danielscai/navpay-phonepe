@@ -24,6 +24,11 @@ class CollectRunStateTest(unittest.TestCase):
                         "run_id": "r1",
                         "status": "running",
                         "completed_targets": ["emu_arm64_xxhdpi"],
+                        "version_anchor": {
+                            "packageName": "com.phonepe.app",
+                            "versionCode": "26040100",
+                            "signingDigest": "abc123",
+                        },
                         "failed_targets": [],
                         "blocked_reason": None,
                     },
@@ -52,7 +57,14 @@ class CollectRunStateTest(unittest.TestCase):
 
             def fake_execute(_matrix, target, _state, _run_dir):
                 executed.append(target["target_id"])
-                return {"status": "done"}
+                return {
+                    "status": "done",
+                    "anchor": {
+                        "packageName": "com.phonepe.app",
+                        "versionCode": "26040100",
+                        "signingDigest": "abc123",
+                    },
+                }
 
             with mock.patch.object(cache_manager, "execute_collect_target", side_effect=fake_execute):
                 exit_code = cache_manager.run_collect(
