@@ -23,6 +23,7 @@
     "merge": "yarn orch merge",
     "apk": "yarn orch apk",
     "apk:fresh": "yarn orch apk --fresh",
+    "collect:phonepe": "yarn orch collect --matrix src/pipeline/orch/device_matrix.example.json --package com.phonepe.app",
     "ins": "bash scripts/install_to_emulator.sh",
     "test": "bash scripts/run_test.sh",
     "release": "yarn release:build && yarn release:cache && yarn release:publish",

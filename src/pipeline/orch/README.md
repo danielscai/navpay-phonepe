@@ -30,6 +30,10 @@ This directory contains the unified build orchestrator for composed PhonePe APK 
   - `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554 --install-mode clean`
 - Run the smoke test with keep-data reinstall:
   - `python3 src/pipeline/orch/orchestrator.py test --smoke --serial emulator-5554 --install-mode keep`
+- Run PhonePe snapshot collection with matrix:
+  - `python3 src/pipeline/orch/orchestrator.py collect --matrix src/pipeline/orch/device_matrix.example.json --package com.phonepe.app`
+- Resume PhonePe snapshot collection from run id:
+  - `python3 src/pipeline/orch/orchestrator.py collect --matrix src/pipeline/orch/device_matrix.example.json --resume <run_id> --package com.phonepe.app`
 
 Top-level workflow supports only `full` profile to enforce composed testing.
 
@@ -121,6 +125,7 @@ See root [`package.json`](/Users/danielscai/Documents/workspace/navpay/navpay-ph
 - `yarn merge`
 - `yarn apk`
 - `yarn apk:fresh`
+- `yarn collect:phonepe`
 - `yarn log`
 - `yarn logd`
 - `yarn test` (default: reinstall mode, 不卸载直接 `install -r`)
@@ -149,3 +154,6 @@ Keep-data mode note:
 - Module artifact builders are declared in `src/pipeline/orch/cache_manifest.json` under `builder`.
 - Module mergers are artifact-only and must not compile during merge.
 - Cache reset removes the selected cache and all downstream caches.
+- Snapshot collection (`collect`) runs targets serially and writes run artifacts under `cache/phonepe/snapshots/runs/<run_id>/`.
+- If Play login is blocked, `collect` returns exit code `20` and writes `blocker-report.json/.md`; complete Play login manually then rerun with `--resume <run_id>`.
+- Collection workflow note: do not use `yarn orch apk --fresh` (or any fresh variant) in collection paths.
