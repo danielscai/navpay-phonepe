@@ -1,6 +1,16 @@
 {
   "emulators": [
     {
+      "name": "phonepe_collect_arm64_xhdpi",
+      "avd_name": "phonepe_arm64_xhdpi",
+      "modules": ["phonepe_phonepehelper"]
+    },
+    {
+      "name": "phonepe_collect_arm64_xxhdpi",
+      "avd_name": "phonepe_ui35",
+      "modules": ["phonepe_phonepehelper"]
+    },
+    {
       "name": "phonepe_nologin",
       "avd_name": "phonepe_nologin",
       "modules": ["phonepe_https_interceptor","phonepe_sigbypass"]
