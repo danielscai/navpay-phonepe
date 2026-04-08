@@ -2892,6 +2892,20 @@ def cmd_install(app: str, serial: str = "", version: str = "") -> int:
     return 0
 
 
+def cmd_test(app: str, serial: str = "", smoke: bool = False, install_mode: str = "split-session", snapshot_version: str = "") -> int:
+    del app
+    manifest = load_manifest()
+    profile_test(
+        manifest,
+        DEFAULT_PROFILE,
+        serial,
+        smoke=smoke,
+        install_mode=install_mode,
+        snapshot_version=snapshot_version,
+    )
+    return 0
+
+
 def cmd_device(serial: str):
     adb = adb_path()
     serial_alias = normalize_serial_alias(serial or "")
@@ -3560,11 +3574,17 @@ def run_profile_action(
         raise RuntimeError(f"Unknown profile action: {action}")
 
 
-def parse_test_mode_tokens(tokens, smoke: bool, install_mode: str, serial: str):
+def parse_test_mode_tokens(app_token: str, tokens, smoke: bool, install_mode: str, serial: str):
+    app = ""
     mode_smoke = smoke
     mode_install = install_mode
     mode_serial = serial
-    items = [t for t in (tokens or []) if t]
+    items = []
+    if app_token:
+        items.append(app_token)
+    items.extend([t for t in (tokens or []) if t])
+    if items and items[0] in SUPPORTED_APPS:
+        app = items.pop(0)
     idx = 0
 
     if idx < len(items) and items[idx] == "smoke":
@@ -3587,7 +3607,7 @@ def parse_test_mode_tokens(tokens, smoke: bool, install_mode: str, serial: str):
     if idx < len(items):
         raise RuntimeError("Too many test mode arguments. Use: test [smoke] [reinstall|clean|keep|split-session] [serial]")
 
-    return mode_smoke, mode_install, mode_serial
+    return app, mode_smoke, mode_install, mode_serial
 
 
 def normalize_serial_alias(serial: str) -> str:
@@ -3632,6 +3652,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     test_parser = sub.add_parser("test")
     add_profile_args(test_parser, allow_serial=True, allow_smoke=True)
+    test_parser.add_argument("app", nargs="?", default="")
     test_parser.add_argument(
         "--install-mode",
         choices=("reinstall", "clean", "keep", "split-session"),
@@ -3741,17 +3762,28 @@ def main(argv=None):
             snapshot_version=getattr(args, "snapshot_version", ""),
         )
         return 0
+    elif args.cmd == "test":
+        smoke = getattr(args, "smoke", False)
+        install_mode = getattr(args, "install_mode", "reinstall")
+        serial = normalize_serial_alias(getattr(args, "serial", "") or "")
+        app, smoke, install_mode, serial = parse_test_mode_tokens(
+            getattr(args, "app", "") or "",
+            getattr(args, "test_mode", []),
+            smoke,
+            install_mode,
+            serial,
+        )
+        return cmd_test(
+            app=app,
+            serial=serial,
+            smoke=smoke,
+            install_mode=install_mode,
+            snapshot_version=getattr(args, "snapshot_version", ""),
+        )
     elif args.cmd in TOP_LEVEL_PROFILE_ACTIONS:
         smoke = getattr(args, "smoke", False)
         install_mode = getattr(args, "install_mode", "reinstall")
         serial = normalize_serial_alias(getattr(args, "serial", "") or "")
-        if args.cmd == "test":
-            smoke, install_mode, serial = parse_test_mode_tokens(
-                getattr(args, "test_mode", []),
-                smoke,
-                install_mode,
-                serial,
-            )
         run_profile_action(
             manifest,
             args.cmd,
