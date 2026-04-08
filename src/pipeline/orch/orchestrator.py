@@ -2862,6 +2862,36 @@ def cmd_decompiled(app: str, version: str = "") -> int:
     return 0
 
 
+def resolve_install_target_serial(serial: str = "") -> str:
+    normalized = normalize_serial_alias(serial or "")
+    if normalized:
+        return normalized
+    devices = list_connected_devices(adb_path())
+    emulators = [item for item in devices if item.startswith("emulator-")]
+    if emulators:
+        return emulators[0]
+    if devices:
+        return devices[0]
+    return ""
+
+
+def cmd_install(app: str, serial: str = "", version: str = "") -> int:
+    del app
+    target_serial = resolve_install_target_serial(serial)
+    if not target_serial:
+        raise RuntimeError("No running emulator found")
+    manifest = load_manifest()
+    profile_test(
+        manifest,
+        DEFAULT_PROFILE,
+        target_serial,
+        smoke=False,
+        install_mode="split-session",
+        snapshot_version=version,
+    )
+    return 0
+
+
 def cmd_device(serial: str):
     adb = adb_path()
     serial_alias = normalize_serial_alias(serial or "")
@@ -3621,6 +3651,10 @@ def build_parser() -> argparse.ArgumentParser:
     decompiled.add_argument("version", nargs="?", default="")
     info = sub.add_parser("info")
     info.add_argument("app", nargs="?", choices=SUPPORTED_APPS)
+    install = sub.add_parser("install")
+    install.add_argument("app", choices=SUPPORTED_APPS)
+    install.add_argument("--serial")
+    install.add_argument("version", nargs="?", default="")
     device_parser = sub.add_parser("device")
     device_parser.add_argument("serial", nargs="?")
 
@@ -3663,6 +3697,12 @@ def main(argv=None):
         return cmd_decompiled(getattr(args, "app"), getattr(args, "version", ""))
     elif args.cmd == "info":
         return cmd_info(getattr(args, "app", None))
+    elif args.cmd == "install":
+        return cmd_install(
+            getattr(args, "app"),
+            getattr(args, "serial", "") or "",
+            getattr(args, "version", ""),
+        )
     elif args.cmd == "device":
         cmd_device(getattr(args, "serial", None))
     elif args.cmd == "reset":
