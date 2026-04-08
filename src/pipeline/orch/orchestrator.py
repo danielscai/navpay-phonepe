@@ -2822,6 +2822,39 @@ def cmd_status(manifest):
         print(f"{name}: {status}{meta_info} -> {path}")
 
 
+def app_snapshots_root(app: str) -> Path:
+    return REPO_ROOT / "cache" / app / "snapshots"
+
+
+def cmd_info(app: Optional[str] = None) -> int:
+    apps = [app] if app else list(SUPPORTED_APPS)
+    for app_id in apps:
+        print(f"[{app_id}]")
+        index_path = app_snapshots_root(app_id) / "index.json"
+        if not index_path.exists():
+            print("  snapshots: none")
+            continue
+        try:
+            payload = json.loads(index_path.read_text(encoding="utf-8"))
+        except Exception:
+            print("  snapshots: invalid index")
+            continue
+        snapshots = payload.get("snapshots", [])
+        if not isinstance(snapshots, list) or not snapshots:
+            print("  snapshots: none")
+            continue
+        for entry in snapshots:
+            if not isinstance(entry, dict):
+                continue
+            version_code = str(entry.get("versionCode", "")).strip()
+            signing_digest = str(entry.get("signingDigest", "")).strip()
+            updated_at = str(entry.get("updated_at", "")).strip()
+            print(
+                f"  versionCode={version_code} signingDigest={signing_digest} updated_at={updated_at}"
+            )
+    return 0
+
+
 def cmd_device(serial: str):
     adb = adb_path()
     serial_alias = normalize_serial_alias(serial or "")
@@ -3577,6 +3610,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("graph")
     sub.add_parser("status")
     sub.add_parser("decompiled")
+    info = sub.add_parser("info")
+    info.add_argument("app", nargs="?", choices=SUPPORTED_APPS)
     device_parser = sub.add_parser("device")
     device_parser.add_argument("serial", nargs="?")
 
@@ -3614,6 +3649,8 @@ def main(argv=None):
         cmd_graph(manifest)
     elif args.cmd == "status":
         cmd_status(manifest)
+    elif args.cmd == "info":
+        return cmd_info(getattr(args, "app", None))
     elif args.cmd == "device":
         cmd_device(getattr(args, "serial", None))
     elif args.cmd == "reset":
