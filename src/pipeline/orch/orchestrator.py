@@ -2855,6 +2855,13 @@ def cmd_info(app: Optional[str] = None) -> int:
     return 0
 
 
+def cmd_decompiled(app: str, version: str = "") -> int:
+    del app
+    manifest = load_manifest()
+    profile_prepare(manifest, DEFAULT_PROFILE, version)
+    return 0
+
+
 def cmd_device(serial: str):
     adb = adb_path()
     serial_alias = normalize_serial_alias(serial or "")
@@ -3609,7 +3616,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("graph")
     sub.add_parser("status")
-    sub.add_parser("decompiled")
+    decompiled = sub.add_parser("decompiled")
+    decompiled.add_argument("app", choices=SUPPORTED_APPS)
+    decompiled.add_argument("version", nargs="?", default="")
     info = sub.add_parser("info")
     info.add_argument("app", nargs="?", choices=SUPPORTED_APPS)
     device_parser = sub.add_parser("device")
@@ -3649,6 +3658,8 @@ def main(argv=None):
         cmd_graph(manifest)
     elif args.cmd == "status":
         cmd_status(manifest)
+    elif args.cmd == "decompiled":
+        return cmd_decompiled(getattr(args, "app"), getattr(args, "version", ""))
     elif args.cmd == "info":
         return cmd_info(getattr(args, "app", None))
     elif args.cmd == "device":
