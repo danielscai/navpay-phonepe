@@ -296,8 +296,174 @@ def pending_collect_targets(matrix, run_state):
     return pending
 
 
+def resolve_collect_target_serial(target, adb: str) -> str:
+    target = target or {}
+    serial_alias = normalize_serial_alias(target.get("serial_alias", ""))
+    avd_name = (target.get("avd_name") or "").strip()
+
+    if avd_name:
+        # Keep collection serial: only one emulator target active at a time.
+        for device_serial in sorted(list_connected_devices(adb)):
+            if not device_serial.startswith("emulator-"):
+                continue
+            current_avd = get_avd_name(adb, device_serial)
+            if current_avd and current_avd != avd_name:
+                subprocess.run(
+                    [adb, "-s", device_serial, "emu", "kill"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
+        serial = ensure_emulator_running({"avd_name": avd_name}, adb, timeout_sec=max(DEFAULT_EMULATOR_BOOT_TIMEOUT, 120))
+        if serial_alias and serial_alias != serial:
+            log_warn(f"[collect] target serial_alias {serial_alias} != detected {serial} for avd {avd_name}")
+        return serial
+
+    if serial_alias:
+        return select_device(adb, serial_alias)
+    return select_device(adb, None)
+
+
+def parse_pm_path_output(output: str):
+    paths = []
+    for line in (output or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("package:"):
+            line = line[len("package:") :]
+        if line:
+            paths.append(line)
+    return paths
+
+
+def select_collect_split(split_files, token: str) -> Optional[Path]:
+    token = (token or "").strip()
+    if not token:
+        return None
+    wanted = f"split_config.{token}.apk"
+    for split in split_files:
+        if split.name == wanted:
+            return split
+    token_norm = token.replace("-", "_")
+    wanted_norm = f"split_config.{token_norm}.apk"
+    for split in split_files:
+        if split.name == wanted_norm:
+            return split
+    return None
+
+
 def execute_collect_target(_matrix, _target, _run_state, _run_dir):
-    return {"status": "done"}
+    matrix = _matrix or {}
+    target = _target or {}
+    run_dir = Path(_run_dir)
+    run_state = _run_state or {}
+    target_id = target.get("target_id", "unknown")
+    package = matrix.get("package", DEFAULT_PACKAGE)
+    adb = adb_path()
+
+    try:
+        serial = resolve_collect_target_serial(target, adb)
+
+        wm_density = target.get("wm_density")
+        if isinstance(wm_density, int) and wm_density > 0:
+            run([adb, "-s", serial, "shell", "wm", "density", str(wm_density)], check=False)
+
+        def get_apk_paths():
+            try:
+                out = subprocess.check_output([adb, "-s", serial, "shell", "pm", "path", package], text=True)
+            except Exception:
+                return []
+            return parse_pm_path_output(out)
+
+        apk_paths = get_apk_paths()
+
+        if not apk_paths:
+            bootstrap = run_state.get("_bootstrap_result") or {}
+            artifacts = bootstrap.get("artifacts") or {}
+            install_files = [
+                artifacts.get("base_apk"),
+                artifacts.get("abi_split_apk"),
+                artifacts.get("density_split_apk"),
+            ]
+            install_files = [str(Path(item)) for item in install_files if item and Path(item).exists()]
+            if len(install_files) >= 2:
+                run([adb, "-s", serial, "install-multiple", "-r"] + install_files)
+                apk_paths = get_apk_paths()
+
+        if not apk_paths:
+            raise RuntimeError(f"collect failed: package not installed on target {target_id}: {package}")
+
+        target_cache = run_dir / "targets" / target_id
+        if target_cache.exists():
+            delete_cache_dir(target_cache)
+        target_cache.mkdir(parents=True, exist_ok=True)
+
+        for remote in apk_paths:
+            run([adb, "-s", serial, "pull", remote, str(target_cache)])
+
+        base_apk = target_cache / "base.apk"
+        if not base_apk.exists():
+            raise RuntimeError(f"collect failed: missing base.apk on target {target_id}")
+
+        split_files = sorted(target_cache.glob("split_config*.apk"))
+        if not split_files:
+            raise RuntimeError(f"collect failed: missing split APKs on target {target_id}")
+
+        supported_abis = read_supported_abis(adb, serial)
+        expected_abi = target.get("expected_split_abi") or (
+            normalize_abi_token(supported_abis[0]) if supported_abis else "arm64_v8a"
+        )
+        abi_split = select_collect_split(split_files, expected_abi)
+        if not abi_split:
+            raise RuntimeError(f"collect failed: missing ABI split {expected_abi} on target {target_id}")
+
+        expected_density = target.get("expected_split_density")
+        if not expected_density:
+            expected_density = density_to_bucket(read_density_value(adb, serial))
+        density_split = select_collect_split(split_files, expected_density)
+        if not density_split:
+            # Fallback to any non-ABI split so collection can proceed if device downloaded a nearby density bucket.
+            density_split = next((item for item in split_files if item != abi_split), None)
+        if not density_split:
+            raise RuntimeError(f"collect failed: missing density split {expected_density} on target {target_id}")
+
+        _, version_code = get_pkg_version(adb, serial, package)
+        if not version_code:
+            raise RuntimeError(f"collect failed: unable to read versionCode for {package} on {target_id}")
+
+        apksigner = find_build_tool("apksigner")
+        signing_digest = read_apk_signing_digest(Path(apksigner), base_apk)
+        density_value = read_density_value(adb, serial)
+
+        return {
+            "status": "done",
+            "anchor": {
+                "packageName": package,
+                "versionCode": str(version_code),
+                "signingDigest": signing_digest,
+            },
+            "artifacts": {
+                "base_apk": str(base_apk),
+                "abi_split_apk": str(abi_split),
+                "density_split_apk": str(density_split),
+            },
+            "device_meta": {
+                "target_id": target_id,
+                "serial": serial,
+                "serial_alias": target.get("serial_alias", ""),
+                "avd_name": target.get("avd_name", ""),
+                "abis": supported_abis,
+                "density": density_value,
+                "density_bucket": density_to_bucket(density_value),
+            },
+        }
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "target_id": target_id,
+            "error": str(exc),
+        }
 
 
 def find_collect_target(matrix, target_id: str):
@@ -406,10 +572,13 @@ def archive_collect_target_artifacts(snapshots_root: Path, version_anchor, targe
 
 def detect_play_login_blocker(_matrix, _target, _run_state, _run_dir):
     target = _target or {}
-    serial_alias = target.get("serial_alias", "")
+    adb = adb_path()
+    try:
+        serial_alias = resolve_collect_target_serial(target, adb)
+    except Exception:
+        serial_alias = normalize_serial_alias(target.get("serial_alias", ""))
     if not serial_alias:
         return {"blocked": True, "reason": "serial_alias_missing"}
-    adb = adb_path()
     try:
         out = subprocess.check_output(
             [adb, "-s", serial_alias, "shell", "dumpsys", "account"],
@@ -577,6 +746,7 @@ def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, sn
             run_state["status"] = "running"
         else:
             run_state.setdefault("failed_targets", []).append(target_id)
+            run_state.setdefault("errors", {})[target_id] = (result or {}).get("error", "target_failed")
             run_state["status"] = "failed"
             return finalize_collect_run(snapshots_path, run_dir, matrix, run_state, 1)
         write_collect_run_state(run_dir, run_state)
