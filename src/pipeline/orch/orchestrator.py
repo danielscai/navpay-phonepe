@@ -302,6 +302,9 @@ def resolve_collect_target_serial(target, adb: str) -> str:
     avd_name = (target.get("avd_name") or "").strip()
 
     if avd_name:
+        emulator_args = target.get("emulator_args", [])
+        if not isinstance(emulator_args, list):
+            emulator_args = []
         # Keep collection serial: only one emulator target active at a time.
         for device_serial in sorted(list_connected_devices(adb)):
             if not device_serial.startswith("emulator-"):
@@ -314,7 +317,11 @@ def resolve_collect_target_serial(target, adb: str) -> str:
                     stderr=subprocess.DEVNULL,
                     check=False,
                 )
-        serial = ensure_emulator_running({"avd_name": avd_name}, adb, timeout_sec=max(DEFAULT_EMULATOR_BOOT_TIMEOUT, 120))
+        serial = ensure_emulator_running(
+            {"avd_name": avd_name, "args": emulator_args},
+            adb,
+            timeout_sec=max(DEFAULT_EMULATOR_BOOT_TIMEOUT, 120),
+        )
         if serial_alias and serial_alias != serial:
             log_warn(f"[collect] target serial_alias {serial_alias} != detected {serial} for avd {avd_name}")
         return serial
@@ -571,7 +578,9 @@ def archive_collect_target_artifacts(snapshots_root: Path, version_anchor, targe
 
 
 def detect_play_login_blocker(_matrix, _target, _run_state, _run_dir):
+    matrix = _matrix or {}
     target = _target or {}
+    strict_gate = target.get("target_id") == matrix.get("bootstrap_target_id")
     adb = adb_path()
     try:
         serial_alias = resolve_collect_target_serial(target, adb)
@@ -579,16 +588,40 @@ def detect_play_login_blocker(_matrix, _target, _run_state, _run_dir):
         serial_alias = normalize_serial_alias(target.get("serial_alias", ""))
     if not serial_alias:
         return {"blocked": True, "reason": "serial_alias_missing"}
-    try:
-        out = subprocess.check_output(
-            [adb, "-s", serial_alias, "shell", "dumpsys", "account"],
-            text=True,
-            stderr=subprocess.STDOUT,
-            timeout=20,
-        )
-    except Exception:
+    out = ""
+    last_error = None
+    for _ in range(6):
+        try:
+            subprocess.run(
+                [adb, "-s", serial_alias, "wait-for-device"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=30,
+            )
+            if not is_boot_completed(adb, serial_alias):
+                time.sleep(2)
+                continue
+            out = subprocess.check_output(
+                [adb, "-s", serial_alias, "shell", "dumpsys", "account"],
+                text=True,
+                stderr=subprocess.STDOUT,
+                timeout=20,
+            )
+            if out:
+                break
+        except Exception as exc:
+            last_error = exc
+            time.sleep(2)
+    if not out:
+        if last_error:
+            log_warn(f"[collect] detect_play_login_blocker unavailable on {serial_alias}: {last_error}")
+        if not strict_gate:
+            return {"blocked": False}
         return {"blocked": True, "reason": "play_account_status_unavailable"}
     if "com.google" not in out:
+        if not strict_gate:
+            return {"blocked": False}
         return {"blocked": True, "reason": "play_account_not_logged_in"}
     return {"blocked": False}
 

@@ -1,13 +1,13 @@
 {
   "emulators": [
     {
-      "name": "phonepe_collect_arm64_xhdpi",
-      "avd_name": "phonepe_arm64_xhdpi",
+      "name": "phonepe_collect_clean_arm64_xhdpi",
+      "avd_name": "phonepe_collect_clean35_xhdpi",
       "modules": ["phonepe_phonepehelper"]
     },
     {
-      "name": "phonepe_collect_arm64_xxhdpi",
-      "avd_name": "phonepe_ui35",
+      "name": "phonepe_collect_clean_arm64_xxhdpi",
+      "avd_name": "phonepe_collect_clean35_xxhdpi",
       "modules": ["phonepe_phonepehelper"]
     },
     {

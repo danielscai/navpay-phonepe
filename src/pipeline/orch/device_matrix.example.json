@@ -4,8 +4,9 @@
   "targets": [
     {
       "target_id": "emu_arm64_xhdpi",
-      "serial_alias": "emulator-5560",
-      "avd_name": "phonepe_arm64_xhdpi",
+      "serial_alias": "emulator-5554",
+      "avd_name": "phonepe_collect_clean35_xhdpi",
+      "emulator_args": ["-gpu", "swiftshader_indirect", "-no-snapshot-load"],
       "wm_density": 320,
       "expected_split_abi": "arm64_v8a",
       "expected_split_density": "xhdpi"
@@ -13,7 +14,8 @@
     {
       "target_id": "emu_arm64_xxhdpi",
       "serial_alias": "emulator-5554",
-      "avd_name": "phonepe_ui35",
+      "avd_name": "phonepe_collect_clean35_xxhdpi",
+      "emulator_args": ["-gpu", "swiftshader_indirect", "-no-snapshot-load"],
       "wm_density": 480,
       "expected_split_abi": "arm64_v8a",
       "expected_split_density": "xxhdpi"
