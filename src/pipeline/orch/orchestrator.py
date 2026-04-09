@@ -561,7 +561,7 @@ def open_play_details_page(adb: str, serial: str, package: str):
     )
 
 
-def ensure_play_upgrade_or_skip(matrix, bootstrap_target, run_state, run_dir: Path):
+def ensure_play_upgrade_or_skip(matrix, bootstrap_target, run_state, run_dir: Path, auto_yes: bool = False):
     del run_dir
     target = bootstrap_target or {}
     package = matrix.get("package", DEFAULT_PACKAGE)
@@ -575,7 +575,9 @@ def ensure_play_upgrade_or_skip(matrix, bootstrap_target, run_state, run_dir: Pa
     open_play_details_page(adb, serial, package)
 
     # Keep update click manual to avoid flaky UI automation.
-    if sys.stdin is not None and sys.stdin.isatty():
+    if auto_yes:
+        log_info(f"[collect] auto-confirm enabled (-y), skip manual Enter on device {serial}")
+    elif sys.stdin is not None and sys.stdin.isatty():
         print(
             f"[collect] 请在设备 {serial} 的 Google Play 页面手动点击 Update（包: {package}），完成后按回车继续..."
         )
@@ -1050,7 +1052,13 @@ def shutdown_collect_emulators(run_state):
         )
 
 
-def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, snapshots_root: Optional[Path] = None) -> int:
+def run_collect(
+    matrix_path: str,
+    package: str,
+    resume: Optional[str] = None,
+    snapshots_root: Optional[Path] = None,
+    auto_yes: bool = False,
+) -> int:
     matrix = load_device_matrix(matrix_path)
     if package:
         matrix["package"] = package
@@ -1085,7 +1093,12 @@ def run_collect(matrix_path: str, package: str, resume: Optional[str] = None, sn
                 write_collect_blocker_reports(run_dir, payload)
                 return finalize_collect_run(snapshots_path, run_dir, matrix, run_state, 20)
 
-            upgrade_check = ensure_play_upgrade_or_skip(matrix, bootstrap_target, run_state, run_dir)
+            if auto_yes:
+                upgrade_check = ensure_play_upgrade_or_skip(
+                    matrix, bootstrap_target, run_state, run_dir, auto_yes=True
+                )
+            else:
+                upgrade_check = ensure_play_upgrade_or_skip(matrix, bootstrap_target, run_state, run_dir)
             run_state["play_upgrade_check"] = upgrade_check
             after_version_code = str((upgrade_check or {}).get("after_version_code", "")).strip()
             after_signing_digest = str((upgrade_check or {}).get("after_signing_digest", "")).strip()
@@ -1179,6 +1192,7 @@ def run_collect_for_app_target(
     matrix_path: str,
     resume: Optional[str] = None,
     snapshots_root: Optional[Path] = None,
+    auto_yes: bool = False,
 ) -> int:
     matrix = load_device_matrix(matrix_path)
     target_id = str((target or {}).get("target_id", "")).strip()
@@ -1200,6 +1214,7 @@ def run_collect_for_app_target(
             package=resolve_app_package(app),
             resume=resume,
             snapshots_root=snapshots_root,
+            auto_yes=auto_yes,
         )
     finally:
         Path(temp_matrix_path).unlink(missing_ok=True)
@@ -1210,6 +1225,7 @@ def run_collect_all_apps(
     apps: list[str],
     resume: Optional[str] = None,
     snapshots_root: Optional[Path] = None,
+    auto_yes: bool = False,
 ) -> int:
     matrix = load_device_matrix(matrix_path)
     for target in matrix.get("targets", []):
@@ -1220,6 +1236,7 @@ def run_collect_all_apps(
                 matrix_path=matrix_path,
                 resume=resume,
                 snapshots_root=snapshots_root_for_app(app),
+                auto_yes=auto_yes,
             )
             if code != 0:
                 return code
@@ -3929,6 +3946,7 @@ def build_parser() -> argparse.ArgumentParser:
     collect.add_argument("--matrix", default=str(DEFAULT_DEVICE_MATRIX_PATH))
     collect.add_argument("--package", default=DEFAULT_PACKAGE)
     collect.add_argument("--resume")
+    collect.add_argument("-y", "--yes", action="store_true", default=False)
 
     build = sub.add_parser("build")
     build.add_argument("app", choices=SUPPORTED_APPS)
@@ -3971,6 +3989,7 @@ def main(argv=None):
         matrix_path = getattr(args, "matrix", str(DEFAULT_DEVICE_MATRIX_PATH))
         resume = getattr(args, "resume", None)
         package = getattr(args, "package", DEFAULT_PACKAGE)
+        auto_yes = getattr(args, "yes", False)
 
         if app:
             return run_collect(
@@ -3978,18 +3997,21 @@ def main(argv=None):
                 package=resolve_app_package(app),
                 resume=resume,
                 snapshots_root=snapshots_root_for_app(app),
+                auto_yes=auto_yes,
             )
         if package and package != DEFAULT_PACKAGE:
             return run_collect(
                 matrix_path=matrix_path,
                 package=package,
                 resume=resume,
+                auto_yes=auto_yes,
             )
         if resume:
             raise RuntimeError("collect --resume currently requires specifying an app or package")
         return run_collect_all_apps(
             matrix_path=matrix_path,
             apps=list(SUPPORTED_APPS),
+            auto_yes=auto_yes,
         )
     elif args.cmd == "build":
         profile_apk(

@@ -21,8 +21,8 @@ def test_collect_all_runs_all_apps_per_emulator_before_next_emulator(monkeypatch
     monkeypatch.setattr(orch, "load_device_matrix", lambda _: matrix)
     monkeypatch.setattr(orch, "snapshots_root_for_app", lambda app: Path("/tmp/cache/apps") / app / "snapshots", raising=False)
 
-    def fake_collect_for_app_target(app, target, matrix_path, resume=None, snapshots_root=None):
-        del matrix_path, resume
+    def fake_collect_for_app_target(app, target, matrix_path, resume=None, snapshots_root=None, auto_yes=False):
+        del matrix_path, resume, auto_yes
         order.append(f"{target['target_id']}-{app}")
         roots.append((app, str(snapshots_root)))
         return 0

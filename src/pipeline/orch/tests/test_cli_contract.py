@@ -49,6 +49,11 @@ class CliContractTest(unittest.TestCase):
         self.assertEqual(args.cmd, "collect")
         self.assertEqual(args.matrix, "a.json")
         self.assertEqual(args.resume, "run_1")
+        self.assertEqual(args.yes, False)
+
+        args_yes = parser.parse_args(["collect", "-y"])
+        self.assertEqual(args_yes.cmd, "collect")
+        self.assertEqual(args_yes.yes, True)
 
     def test_profile_actions_accept_snapshot_version_arg(self) -> None:
         parser = orch.build_parser()
@@ -96,3 +101,27 @@ def test_main_without_explicit_argv_uses_process_args(monkeypatch):
     monkeypatch.setattr(orch, "profile_apk", fake_profile_apk)
     assert orch.main() == 0
     assert calls == [("full", False, "")]
+
+
+def test_collect_yes_routes_to_run_collect_with_auto_yes(monkeypatch):
+    monkeypatch.setattr(orch, "load_manifest", lambda: {"dummy": {"deps": []}})
+    monkeypatch.setattr(orch, "resolve_app_package", lambda app: "com.phonepe.app" if app == "phonepe" else app)
+    monkeypatch.setattr(orch, "snapshots_root_for_app", lambda app: Path(f"/tmp/cache/apps/{app}/snapshots"))
+
+    captured = {}
+
+    def fake_run_collect(matrix_path, package, resume=None, snapshots_root=None, auto_yes=False):
+        captured["matrix_path"] = matrix_path
+        captured["package"] = package
+        captured["resume"] = resume
+        captured["snapshots_root"] = snapshots_root
+        captured["auto_yes"] = auto_yes
+        return 0
+
+    monkeypatch.setattr(orch, "run_collect", fake_run_collect)
+    code = orch.main(["collect", "phonepe", "--matrix", "a.json", "-y"])
+    assert code == 0
+    assert captured["matrix_path"] == "a.json"
+    assert captured["package"] == "com.phonepe.app"
+    assert str(captured["snapshots_root"]) == "/tmp/cache/apps/phonepe/snapshots"
+    assert captured["auto_yes"] is True
