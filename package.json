@@ -23,7 +23,7 @@
     "device": "yarn orch device",
     "collect": "python3 src/pipeline/orch/orchestrator.py collect",
     "info": "python3 src/pipeline/orch/orchestrator.py info",
-    "decompiled": "python3 src/pipeline/orch/orchestrator.py decompiled",
+    "decompile": "python3 src/pipeline/orch/orchestrator.py decompile",
     "build": "python3 src/pipeline/orch/orchestrator.py build",
     "install": "python3 src/pipeline/orch/orchestrator.py install",
     "test": "python3 src/pipeline/orch/orchestrator.py test",

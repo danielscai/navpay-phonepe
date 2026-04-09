@@ -7,7 +7,7 @@ def test_package_scripts_expose_orch_shortcuts():
     scripts = package.get("scripts", {})
     assert scripts.get("collect") == "python3 src/pipeline/orch/orchestrator.py collect"
     assert scripts.get("info") == "python3 src/pipeline/orch/orchestrator.py info"
-    assert scripts.get("decompiled") == "python3 src/pipeline/orch/orchestrator.py decompiled"
+    assert scripts.get("decompile") == "python3 src/pipeline/orch/orchestrator.py decompile"
     assert scripts.get("build") == "python3 src/pipeline/orch/orchestrator.py build"
     assert scripts.get("install") == "python3 src/pipeline/orch/orchestrator.py install"
     assert scripts.get("test") == "python3 src/pipeline/orch/orchestrator.py test"

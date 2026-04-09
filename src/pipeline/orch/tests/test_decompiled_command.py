@@ -7,40 +7,41 @@ sys.path.insert(0, str(CACHE_MANAGER_DIR))
 import orchestrator as orch  # noqa: E402
 
 
-def test_decompiled_command_supports_latest_and_version_pin(monkeypatch):
+def test_decompile_command_supports_latest_and_version_pin(monkeypatch, tmp_path, capsys):
     calls = []
-    monkeypatch.setattr(orch, "load_manifest", lambda: {"dummy": {"deps": []}})
+    capture_dir = tmp_path / "captures" / "emu1"
+    capture_dir.mkdir(parents=True, exist_ok=True)
+    base_apk = capture_dir / "base.apk"
+    base_apk.write_text("apk", encoding="utf-8")
 
-    def fake_ensure_phonepe_decompiled_snapshot(
-        manifest,
-        snapshot_version,
-        package,
-        snapshots_root=None,
-        seed_path=None,
-        merged_path=None,
-        decompiled_path=None,
-    ):
-        del manifest, package
-        calls.append((snapshot_version, str(snapshots_root), str(seed_path), str(merged_path), str(decompiled_path)))
-        return decompiled_path, {"versionCode": snapshot_version or "latest"}
+    monkeypatch.setattr(orch, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(orch, "resolve_app_package", lambda app: "net.one97.paytm" if app == "paytm" else "com.phonepe.app")
+    monkeypatch.setattr(
+        orch,
+        "resolve_snapshot_anchor",
+        lambda index_path, package, snapshot_version="": {
+            "packageName": package,
+            "versionCode": snapshot_version or "latest",
+            "signingDigest": "deadbeef",
+        },
+    )
+    monkeypatch.setattr(orch, "resolve_snapshot_capture_dir_for_base", lambda snapshots_root, anchor: capture_dir)
 
-    monkeypatch.setattr(orch, "ensure_phonepe_decompiled_snapshot", fake_ensure_phonepe_decompiled_snapshot)
+    def fake_run(cmd, cwd=None, env=None, check=True, concise=False):
+        del cwd, env, check, concise
+        calls.append(cmd)
 
-    assert orch.main(["decompiled", "phonepe"]) == 0
-    assert orch.main(["decompiled", "phonepe", "26022705"]) == 0
-    assert calls == [
-        (
-            "",
-            str(orch.REPO_ROOT / "cache" / "snapshots" / "phonepe"),
-            str(orch.REPO_ROOT / "cache" / "phonepe" / "snapshot_seed"),
-            str(orch.REPO_ROOT / "cache" / "phonepe" / "merged"),
-            str(orch.REPO_ROOT / "cache" / "phonepe" / "decompiled"),
-        ),
-        (
-            "26022705",
-            str(orch.REPO_ROOT / "cache" / "snapshots" / "phonepe"),
-            str(orch.REPO_ROOT / "cache" / "phonepe" / "snapshot_seed"),
-            str(orch.REPO_ROOT / "cache" / "phonepe" / "merged"),
-            str(orch.REPO_ROOT / "cache" / "phonepe" / "decompiled"),
-        ),
-    ]
+    monkeypatch.setattr(orch, "run", fake_run)
+    monkeypatch.setattr(orch, "delete_cache_dir", lambda path: (_ for _ in ()).throw(RuntimeError("should not call delete_cache_dir")))
+
+    existing = tmp_path / "cache" / "paytm" / "decompiled" / "base_decompiled_clean" / "drawable"
+    existing.mkdir(parents=True, exist_ok=True)
+    (existing / "a.txt").write_text("x", encoding="utf-8")
+
+    assert orch.main(["decompile", "paytm"]) == 0
+    assert orch.main(["decompile", "paytm", "26022705"]) == 0
+    out = capsys.readouterr().out
+    assert "base_decompiled_clean" in out
+    assert calls[0][0] == "apktool"
+    assert str(base_apk) in calls[0]
+    assert str(tmp_path / "cache" / "paytm" / "decompiled" / "base_decompiled_clean") in calls[0]

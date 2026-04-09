@@ -1693,6 +1693,22 @@ def resolve_snapshot_capture_dir(snapshots_root: Path, anchor: dict) -> Path:
     raise RuntimeError(f"Missing required APKs in snapshot captures: {capture_root}")
 
 
+def resolve_snapshot_capture_dir_for_base(snapshots_root: Path, anchor: dict) -> Path:
+    package_name = anchor["packageName"]
+    version_code = anchor["versionCode"]
+    signing_digest = normalize_signing_digest(anchor["signingDigest"])
+    capture_root = snapshots_root / package_name / version_code / signing_digest / "captures"
+    if not capture_root.exists():
+        raise RuntimeError(f"Missing snapshot captures: {capture_root}")
+
+    candidates = sorted([path for path in capture_root.iterdir() if path.is_dir()], key=lambda path: path.name)
+    for capture_dir in candidates:
+        base_apk = capture_dir / "base.apk"
+        if base_apk.exists() and base_apk.stat().st_size > 0:
+            return capture_dir
+    raise RuntimeError(f"Missing base.apk in snapshot captures: {capture_root}")
+
+
 def build_phonepe_snapshot_seed(cache_path: Path, package: str, snapshot_version: str, snapshots_root: Optional[Path] = None):
     snapshots_path = Path(snapshots_root) if snapshots_root else DEFAULT_SNAPSHOTS_ROOT
     anchor = resolve_snapshot_anchor(resolve_snapshot_index_path(snapshots_path), package, snapshot_version)
@@ -2871,20 +2887,34 @@ def cmd_info(app: Optional[str] = None) -> int:
 
 
 def cmd_decompiled(app: str, version: str = "") -> int:
+    return cmd_decompile(app, version)
+
+
+def cmd_decompile(app: str, version: str = "") -> int:
     package = resolve_app_package(app)
     snapshots_root = snapshots_root_for_app(app)
-    seed_path = REPO_ROOT / "cache" / app / "snapshot_seed"
-    merged_path = REPO_ROOT / "cache" / app / "merged"
-    decompiled_path = REPO_ROOT / "cache" / app / "decompiled"
-    ensure_phonepe_decompiled_snapshot(
-        manifest=load_manifest(),
-        snapshot_version=version,
-        package=package,
-        snapshots_root=snapshots_root,
-        seed_path=seed_path,
-        merged_path=merged_path,
-        decompiled_path=decompiled_path,
+    anchor = resolve_snapshot_anchor(resolve_snapshot_index_path(snapshots_root), package, version)
+    capture_dir = resolve_snapshot_capture_dir_for_base(snapshots_root, anchor)
+    base_apk = capture_dir / "base.apk"
+
+    decompiled_root = REPO_ROOT / "cache" / app / "decompiled"
+    target = decompiled_root / "base_decompiled_clean"
+    if target.exists():
+        shutil.rmtree(target)
+    decompiled_root.mkdir(parents=True, exist_ok=True)
+
+    run(["apktool", "d", "-f", str(base_apk), "-o", str(target)])
+    write_meta(
+        decompiled_root / "meta.json",
+        {
+            "created_at": datetime.now().isoformat(),
+            "source": "snapshot_base_apk",
+            "app": app,
+            "base_apk": str(base_apk),
+            "snapshot_anchor": anchor,
+        },
     )
+    log_info(f"[decompile] app={app} output={target}")
     return 0
 
 
@@ -3702,9 +3732,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("graph")
     sub.add_parser("status")
-    decompiled = sub.add_parser("decompiled")
-    decompiled.add_argument("app", choices=SUPPORTED_APPS)
-    decompiled.add_argument("version", nargs="?", default="")
+    decompile = sub.add_parser("decompile")
+    decompile.add_argument("app", choices=SUPPORTED_APPS)
+    decompile.add_argument("version", nargs="?", default="")
     info = sub.add_parser("info")
     info.add_argument("app", nargs="?", choices=SUPPORTED_APPS)
     install = sub.add_parser("install")
@@ -3749,8 +3779,8 @@ def main(argv=None):
         cmd_graph(manifest)
     elif args.cmd == "status":
         cmd_status(manifest)
-    elif args.cmd == "decompiled":
-        return cmd_decompiled(getattr(args, "app"), getattr(args, "version", ""))
+    elif args.cmd == "decompile":
+        return cmd_decompile(getattr(args, "app"), getattr(args, "version", ""))
     elif args.cmd == "info":
         return cmd_info(getattr(args, "app", None))
     elif args.cmd == "install":

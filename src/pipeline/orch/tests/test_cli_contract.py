@@ -68,7 +68,7 @@ def test_main_without_args_prints_help_and_exits_zero(capsys):
     out = capsys.readouterr().out
     assert code == 0
     assert "collect" in out
-    assert "decompiled" in out
+    assert "decompile" in out
 
 
 def test_build_command_routes_to_profile_apk(monkeypatch):

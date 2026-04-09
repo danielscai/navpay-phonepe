@@ -12,7 +12,7 @@ class ValidationDocLinksTest(unittest.TestCase):
             self.assertIn("orch collect", text)
             self.assertIn("orch collect phonepe", text)
             self.assertIn("orch info", text)
-            self.assertIn("orch decompiled phonepe 26022705", text)
+            self.assertIn("orch decompile phonepe 26022705", text)
 
     def test_validation_doc_references_new_test_commands(self) -> None:
         validation_doc = Path("docs/plans/2026-03-02-profile-based-build-refactor-validation.md")

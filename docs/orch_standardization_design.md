@@ -26,13 +26,13 @@
 ### 2) 顶层快捷命令
 
 安装后直接使用 `orch <subcommand>`；若通过 Yarn 触发，则保留对应脚本包装：
-- `yarn plan/prepare/smali/merge/build/install/test/collect/info/decompiled/device/status/graph/reset/rebuild`
+- `yarn plan/prepare/smali/merge/build/install/test/collect/info/decompile/device/status/graph/reset/rebuild`
 
 标准示例（必须保持一致）：
 - `orch collect`
 - `orch collect phonepe`
 - `orch info`
-- `orch decompiled phonepe 26022705`
+- `orch decompile phonepe 26022705`
 
 ### 3) collect（多软件）
 
@@ -49,10 +49,10 @@
 - 展示：已采集软件、版本列表、signing digest、更新时间、可用 captures 数量。
 - 注：`yarn info` 由 Yarn 保留，文档和脚本建议统一写作 `orch info`。
 
-### 5) decompiled
+### 5) decompile
 
-- `orch decompiled phonepe`
-- `orch decompiled phonepe 26022705`
+- `orch decompile phonepe`
+- `orch decompile phonepe 26022705`
 - 行为：基于最新或指定版本，复用现有 `snapshot -> merged -> base_decompiled_clean` 逻辑，生成对应软件 decompiled 目录。
 
 ### 6) build

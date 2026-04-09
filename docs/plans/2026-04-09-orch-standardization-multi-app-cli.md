@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Standardize `orch` into a multi-app CLI (`phonepe`, `paytm`) with default help, unified subcommands (`collect/info/decompiled/build/install/test`), and a `yarn install:orch` setup path that makes `orch <subcommand>` the primary entry.
+**Goal:** Standardize `orch` into a multi-app CLI (`phonepe`, `paytm`) with default help, unified subcommands (`collect/info/decompile/build/install/test`), and a `yarn install:orch` setup path that makes `orch <subcommand>` the primary entry.
 
-**Architecture:** Introduce an app registry (`apps_manifest.json`) and route command behavior by `app_id` instead of hardcoded PhonePe-only assumptions. Keep existing snapshot/decompiled/build internals reusable by wrapping them in app-aware adapters, then expose `orch` as the primary command surface while preserving backward compatibility (`apk` alias to `build`, old collect options). `yarn info` and `yarn install` remain Yarn-reserved collisions, so docs and wrappers should point to `orch info` / `orch install`. Enforce serial collection order per emulator and per app.
+**Architecture:** Introduce an app registry (`apps_manifest.json`) and route command behavior by `app_id` instead of hardcoded PhonePe-only assumptions. Keep existing snapshot/decompile/build internals reusable by wrapping them in app-aware adapters, then expose `orch` as the primary command surface while preserving backward compatibility (`apk` alias to `build`, old collect options). `yarn info` and `yarn install` remain Yarn-reserved collisions, so docs and wrappers should point to `orch info` / `orch install`. Enforce serial collection order per emulator and per app.
 
 **Tech Stack:** Python 3 (`argparse`, `json`, `pathlib`, `subprocess`), existing `orchestrator.py`, pytest test suite under `src/pipeline/orch/tests`, Yarn scripts in root `package.json`, Markdown docs.
 
@@ -61,7 +61,7 @@ git commit -m "feat(orch): add app registry and app-scoped cli contract"
 
 ### Task 2: Make `yarn orch` default to help output
 
-> Note (minimal sequencing adjustment): register a placeholder `decompiled` subcommand in this task so help-contract assertions pass; implement full `decompiled <app> [version]` behavior in Task 5.
+> Note (minimal sequencing adjustment): register a placeholder `decompile` subcommand in this task so help-contract assertions pass; implement full `decompile <app> [version]` behavior in Task 5.
 
 **Files:**
 - Modify: `src/pipeline/orch/orchestrator.py`
@@ -75,7 +75,7 @@ def test_main_without_args_prints_help_and_exits_zero(capsys):
     out = capsys.readouterr().out
     assert code == 0
     assert "collect" in out
-    assert "decompiled" in out
+    assert "decompile" in out
 ```
 
 **Step 2: Run test to verify it fails**
@@ -193,7 +193,7 @@ git add src/pipeline/orch/orchestrator.py src/pipeline/orch/tests/test_info_comm
 git commit -m "feat(orch): add info command for collected app/version inventory"
 ```
 
-### Task 5: Add `decompiled` command with latest and pinned version
+### Task 5: Add `decompile` command with latest and pinned version
 
 **Files:**
 - Modify: `src/pipeline/orch/orchestrator.py`
@@ -203,8 +203,8 @@ git commit -m "feat(orch): add info command for collected app/version inventory"
 
 ```python
 def test_decompiled_command_supports_latest_and_version_pin(monkeypatch):
-    # orch decompiled phonepe
-    # orch decompiled phonepe 26022705
+    # orch decompile phonepe
+    # orch decompile phonepe 26022705
 ```
 
 **Step 2: Run test to verify it fails**
@@ -219,7 +219,7 @@ def cmd_decompiled(app: str, version: str = ""):
     profile_prepare(..., snapshot_version=version)
 ```
 
-Reuse existing snapshot/decompiled path logic.
+Reuse existing snapshot/decompile path logic.
 
 **Step 4: Run test to verify it passes**
 
@@ -230,7 +230,7 @@ Expected: PASS.
 
 ```bash
 git add src/pipeline/orch/orchestrator.py src/pipeline/orch/tests/test_decompiled_command.py
-git commit -m "feat(orch): add decompiled command for latest or pinned version"
+git commit -m "feat(orch): add decompile command for latest or pinned version"
 ```
 
 ### Task 6: Add `build` command as standardized alias of current `apk`
@@ -367,7 +367,7 @@ git commit -m "feat(orch): add app-scoped test command"
 
 ```python
 def test_package_scripts_expose_orch_shortcuts():
-    # assert scripts: collect, info, decompiled, build, install, test, ...
+    # assert scripts: collect, info, decompile, build, install, test, ...
 ```
 
 **Step 2: Run test to verify it fails**
@@ -382,7 +382,7 @@ Expected: FAIL (missing shortcuts).
   "scripts": {
     "collect": "yarn orch collect",
     "info": "orch info",
-    "decompiled": "yarn orch decompiled",
+    "decompile": "yarn orch decompile",
     "build": "yarn orch build",
     "install": "orch install"
   }
@@ -415,7 +415,7 @@ git commit -m "chore(scripts): add yarn shortcuts for orch subcommands"
 
 ```python
 def test_docs_reference_standardized_commands_and_multi_app_collect():
-    # assert docs mention: orch collect, orch collect phonepe, orch info, orch decompiled phonepe 26022705
+    # assert docs mention: orch collect, orch collect phonepe, orch info, orch decompile phonepe 26022705
 ```
 
 **Step 2: Run test to verify it fails**
@@ -456,15 +456,15 @@ Expected: PASS.
 Run: `yarn orch`
 Expected: exit `0`, prints subcommands + examples + supported apps.
 
-**Step 3: Verify collect/info/decompiled/build/install/test command paths**
+**Step 3: Verify collect/info/decompile/build/install/test command paths**
 
 Run:
 
 ```bash
 orch collect phonepe
 orch info
-orch decompiled phonepe
-orch decompiled phonepe 26022705
+orch decompile phonepe
+orch decompile phonepe 26022705
 orch build phonepe
 orch install phonepe --serial emulator-5554
 orch test phonepe --serial emulator-5554

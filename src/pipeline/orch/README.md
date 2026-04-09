@@ -48,7 +48,7 @@ Top-level workflow supports only `full` profile to enforce composed testing.
 - `orch collect`
 - `orch collect phonepe`
 - `orch info`
-- `orch decompiled phonepe 26022705`
+- `orch decompile phonepe 26022705`
 
 ## Unified Pipeline
 
