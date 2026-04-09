@@ -1169,7 +1169,28 @@ def delete_cache_dir(path: Path):
     if not path.exists():
         return
     set_writable(path)
-    shutil.rmtree(path)
+
+    def _handle_remove_error(func, target, exc_info):
+        err = exc_info[1]
+        if isinstance(err, FileNotFoundError):
+            return
+        target_path = Path(target)
+        try:
+            if target_path.exists():
+                target_path.chmod(target_path.stat().st_mode | 0o200)
+        except Exception:
+            pass
+        try:
+            func(target)
+        except FileNotFoundError:
+            return
+        except Exception:
+            raise err
+
+    try:
+        shutil.rmtree(path, onerror=_handle_remove_error)
+    except FileNotFoundError:
+        return
 
 def copy_path(src_path: Path, src_root: Path, dst_root: Path):
     rel = src_path.relative_to(src_root)
@@ -2900,7 +2921,7 @@ def cmd_decompile(app: str, version: str = "") -> int:
     decompiled_root = REPO_ROOT / "cache" / app / "decompiled"
     target = decompiled_root / "base_decompiled_clean"
     if target.exists():
-        shutil.rmtree(target)
+        delete_cache_dir(target)
     decompiled_root.mkdir(parents=True, exist_ok=True)
 
     run(["apktool", "d", "-f", str(base_apk), "-o", str(target)])

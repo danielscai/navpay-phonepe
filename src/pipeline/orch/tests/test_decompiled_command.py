@@ -1,4 +1,5 @@
 import sys
+import errno
 from pathlib import Path
 
 CACHE_MANAGER_DIR = Path(__file__).resolve().parents[1]
@@ -32,8 +33,6 @@ def test_decompile_command_supports_latest_and_version_pin(monkeypatch, tmp_path
         calls.append(cmd)
 
     monkeypatch.setattr(orch, "run", fake_run)
-    monkeypatch.setattr(orch, "delete_cache_dir", lambda path: (_ for _ in ()).throw(RuntimeError("should not call delete_cache_dir")))
-
     existing = tmp_path / "cache" / "paytm" / "decompiled" / "base_decompiled_clean" / "drawable"
     existing.mkdir(parents=True, exist_ok=True)
     (existing / "a.txt").write_text("x", encoding="utf-8")
@@ -45,3 +44,38 @@ def test_decompile_command_supports_latest_and_version_pin(monkeypatch, tmp_path
     assert calls[0][0] == "apktool"
     assert str(base_apk) in calls[0]
     assert str(tmp_path / "cache" / "paytm" / "decompiled" / "base_decompiled_clean") in calls[0]
+
+
+def test_delete_cache_dir_ignores_enoent_from_rmtree_callback(tmp_path):
+    root = tmp_path / "cache" / "stale"
+    child = root / "smali_classes5" / "com" / "mapmyindia" / "sdk" / "maps" / "MapmyIndiaMap$OnCameraMoveCanceledListener.smali"
+    child.parent.mkdir(parents=True, exist_ok=True)
+    child.write_text(".class public Lx;\n", encoding="utf-8")
+
+    missing = FileNotFoundError(errno.ENOENT, "No such file or directory", str(child))
+    orch.delete_cache_dir(root)
+
+    # Simulate a callback invocation from shutil.rmtree for disappearing children.
+    # Must be ignored without raising.
+    def remove(_target):
+        raise missing
+
+    handler = None
+    captured = {}
+
+    def fake_rmtree(_path, onerror=None):
+        captured["called"] = True
+        onerror(remove, str(child), (FileNotFoundError, missing, None))
+        # root removal still succeeds.
+        return None
+
+    original_rmtree = orch.shutil.rmtree
+    orch.shutil.rmtree = fake_rmtree
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        handler = orch.delete_cache_dir(root)
+    finally:
+        orch.shutil.rmtree = original_rmtree
+
+    assert captured["called"] is True
+    assert handler is None
