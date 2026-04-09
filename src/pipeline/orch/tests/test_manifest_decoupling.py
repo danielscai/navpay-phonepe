@@ -1,12 +1,9 @@
-import json
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-
-MANIFEST_PATH = Path(__file__).resolve().parents[1] / "cache_manifest.json"
 ROOT = Path(__file__).resolve().parents[2]
 CACHE_MANAGER_DIR = Path(__file__).resolve().parents[1]
 TARGET_MODULES = (
@@ -23,22 +20,22 @@ import orchestrator as cache_manager  # noqa: E402
 
 class ManifestDecouplingTest(unittest.TestCase):
     def test_target_modules_depend_on_phonepe_decompiled(self) -> None:
-        manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+        manifest = cache_manager.load_manifest()
         for module in TARGET_MODULES:
             self.assertEqual(manifest[module]["deps"], ["phonepe_decompiled"])
 
     def test_target_modules_source_fields_are_baseline_subdir(self) -> None:
-        manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+        manifest = cache_manager.load_manifest()
         for module in TARGET_MODULES:
             self.assertEqual(manifest[module]["source_cache"], "phonepe_decompiled")
             self.assertEqual(manifest[module]["source_subdir"], "base_decompiled_clean")
 
     def test_resolve_module_spec_fails_fast_for_invalid_source_cache(self) -> None:
         manifest = {
-            "phonepe_decompiled": {"deps": [], "path": "cache/phonepe/decompiled"},
+            "phonepe_decompiled": {"deps": [], "path": "cache/apps/phonepe/decompiled"},
             "phonepe_sigbypass": {
                 "deps": ["phonepe_decompiled"],
-                "path": "cache/phonepe_sigbypass",
+                "path": "cache/apps/phonepe/modules/phonepe_sigbypass/workspace",
                 "source_cache": "missing_cache",
                 "source_subdir": "base_decompiled_clean",
                 "reset_paths": ["smali/Foo.smali"],
@@ -55,13 +52,13 @@ class ManifestDecouplingTest(unittest.TestCase):
             base = Path(tempdir)
             fake_repo = base / "repo"
             fake_repo.mkdir(parents=True)
-            (fake_repo / "cache/phonepe/decompiled").mkdir(parents=True)
+            (fake_repo / "cache/apps/phonepe/decompiled").mkdir(parents=True)
 
             manifest = {
-                "phonepe_decompiled": {"deps": [], "path": "cache/phonepe/decompiled"},
+                "phonepe_decompiled": {"deps": [], "path": "cache/apps/phonepe/decompiled"},
                 "phonepe_sigbypass": {
                     "deps": ["phonepe_decompiled"],
-                    "path": "cache/phonepe_sigbypass",
+                    "path": "cache/apps/phonepe/modules/phonepe_sigbypass/workspace",
                     "source_cache": "phonepe_decompiled",
                     "source_subdir": "base_decompiled_clean",
                     "reset_paths": ["smali/Foo.smali"],
@@ -93,9 +90,9 @@ class ManifestDecouplingTest(unittest.TestCase):
                 self.assertNotIn('"$SCRIPT_DIR/compile.sh"', text)
 
     def test_phonepe_snapshot_seed_is_the_versioned_root_cache(self) -> None:
-        manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+        manifest = cache_manager.load_manifest()
         self.assertIn("phonepe_snapshot_seed", manifest)
-        self.assertEqual(manifest["phonepe_snapshot_seed"]["path"], "cache/phonepe/snapshot_seed")
+        self.assertEqual(manifest["phonepe_snapshot_seed"]["path"], "cache/apps/phonepe/snapshot_seed")
         self.assertEqual(manifest["phonepe_snapshot_seed"]["deps"], [])
         self.assertEqual(manifest["phonepe_merged"]["deps"], ["phonepe_snapshot_seed"])
         self.assertEqual(manifest["phonepe_decompiled"]["deps"], ["phonepe_merged"])

@@ -19,7 +19,7 @@ def test_collect_all_runs_all_apps_per_emulator_before_next_emulator(monkeypatch
     }
 
     monkeypatch.setattr(orch, "load_device_matrix", lambda _: matrix)
-    monkeypatch.setattr(orch, "snapshots_root_for_app", lambda app: Path("/tmp/cache/snapshots") / app, raising=False)
+    monkeypatch.setattr(orch, "snapshots_root_for_app", lambda app: Path("/tmp/cache/apps") / app / "snapshots", raising=False)
 
     def fake_collect_for_app_target(app, target, matrix_path, resume=None, snapshots_root=None):
         del matrix_path, resume
@@ -33,8 +33,8 @@ def test_collect_all_runs_all_apps_per_emulator_before_next_emulator(monkeypatch
     assert code == 0
     assert order == ["emu1-phonepe", "emu1-paytm", "emu2-phonepe", "emu2-paytm"]
     assert roots == [
-        ("phonepe", "/tmp/cache/snapshots/phonepe"),
-        ("paytm", "/tmp/cache/snapshots/paytm"),
-        ("phonepe", "/tmp/cache/snapshots/phonepe"),
-        ("paytm", "/tmp/cache/snapshots/paytm"),
+        ("phonepe", "/tmp/cache/apps/phonepe/snapshots"),
+        ("paytm", "/tmp/cache/apps/paytm/snapshots"),
+        ("phonepe", "/tmp/cache/apps/phonepe/snapshots"),
+        ("paytm", "/tmp/cache/apps/paytm/snapshots"),
     ]

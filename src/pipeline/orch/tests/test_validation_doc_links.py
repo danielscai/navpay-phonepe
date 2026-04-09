@@ -26,27 +26,28 @@ class ValidationDocLinksTest(unittest.TestCase):
         text = readme.read_text(encoding="utf-8")
 
         self.assertIn("--snapshot-version", text)
-        self.assertIn("cache/phonepe/snapshot_seed", text)
+        self.assertIn("cache/apps/phonepe/snapshot_seed", text)
+        self.assertNotIn("cache_manifest.json", text)
 
     def test_orchestrator_policy_doc_uses_snapshot_seed_cache_root(self) -> None:
         policy_doc = Path("docs/编排统一规范.md")
         text = policy_doc.read_text(encoding="utf-8")
 
-        self.assertIn("cache/phonepe/snapshot_seed", text)
+        self.assertIn("cache/apps/phonepe/snapshot_seed", text)
         self.assertNotIn("cache/phonepe/from_device", text)
 
     def test_release_doc_mentions_snapshot_seed_paths(self) -> None:
         release_doc = Path("docs/release-to-admin.md")
         text = release_doc.read_text(encoding="utf-8")
 
-        self.assertIn("cache/phonepe/snapshot_seed/base.apk", text)
-        self.assertIn("cache/phonepe/snapshot_seed/split_config.arm64_v8a.apk", text)
+        self.assertIn("cache/apps/phonepe/snapshot_seed/base.apk", text)
+        self.assertIn("cache/apps/phonepe/snapshot_seed/split_config.arm64_v8a.apk", text)
 
     def test_verification_doc_mentions_snapshot_seed_paths(self) -> None:
         verification_doc = Path("docs/verification/2026-04-07-patched-signed-split-signature-alignment.md")
         text = verification_doc.read_text(encoding="utf-8")
 
-        self.assertIn("cache/phonepe/snapshot_seed", text)
+        self.assertIn("cache/apps/phonepe/snapshot_seed", text)
         self.assertNotIn("cache/phonepe/from_device/base.apk", text)
 
     def test_heartbeat_bridge_validation_doc_exists_and_mentions_targeted_pytest(self) -> None:

@@ -1,6 +1,6 @@
 # Build Orchestrator (`src/pipeline/orch`)
 
-This directory contains the unified build orchestrator for composed PhonePe APK testing. Cached runtime data still lives under the repository root `cache/` directory, with versioned PhonePe APK inputs materialized under `cache/phonepe/snapshot_seed`.
+This directory contains the unified build orchestrator for composed PhonePe APK testing. Cached runtime data still lives under the repository root `cache/` directory, with versioned PhonePe APK inputs materialized under `cache/apps/phonepe/snapshot_seed`.
 
 Install the CLI once with `yarn install:orch`, then use `orch <subcommand>` directly.
 
@@ -53,14 +53,14 @@ Top-level workflow supports only `full` profile to enforce composed testing.
 ## Unified Pipeline
 
 1. `prepare`
-   - Refreshes `cache/profiles/<name>/workspace` from `cache/phonepe/decompiled/base_decompiled_clean`, which is built from the selected `cache/phonepe/snapshot_seed`.
+   - Refreshes `cache/apps/phonepe/profiles/<name>/workspace` from `cache/apps/phonepe/decompiled/base_decompiled_clean`, which is built from the selected `cache/apps/phonepe/snapshot_seed`.
 2. `smali`
-   - Builds per-module artifacts into `cache/module_artifacts/<module>/`.
+   - Builds per-module artifacts into `cache/apps/phonepe/modules/<module>/`.
    - Rebuilds only when declared `fingerprint_inputs` change.
 3. `merge`
    - Merges each module from its artifact directory via `--artifact-dir`.
 4. `apk`
-   - Produces the final signed APK once in `cache/profiles/<name>/build/patched_signed.apk`.
+   - Produces the final signed APK once in `cache/apps/phonepe/profiles/<name>/build/patched_signed.apk`.
    - Default behavior reuses existing signed APK when fingerprint is unchanged.
    - Use `--fresh` to force full rebuild.
 5. `test`
@@ -81,7 +81,7 @@ Module relationships are resolved automatically by the orchestrator from two fil
 
 - `src/pipeline/orch/cache_profiles.json`
   - Defines modules in the only supported top-level profile (`full`).
-- `src/pipeline/orch/cache_manifest.json`
+- `src/pipeline/orch/orchestrator.py` (`MANIFEST_REGISTRY`)
   - Defines per-module dependency metadata (`deps`, `source_cache`, `source_subdir`, `builder`, `merger`).
 
 How to auto-discover the active relationship graph for a profile:
@@ -106,7 +106,7 @@ Run these commands in order if you want to inspect the real build behavior.
    Meaning: recreates a clean profile workspace from the decompiled baseline. This guarantees later injection happens on a fresh tree instead of a dirty previous run.
 
 3. `python3 src/pipeline/orch/orchestrator.py smali`
-   Meaning: builds the four module artifacts once into `cache/module_artifacts/`. This is the step that replaces the old “each module compiles during inject” behavior.
+   Meaning: builds the four module artifacts once into `cache/apps/phonepe/modules/`. This is the step that replaces the old “each module compiles during inject” behavior.
 
 4. `python3 src/pipeline/orch/orchestrator.py merge`
    Meaning: merges module artifacts into the workspace once, without APK packaging.
@@ -164,11 +164,11 @@ Keep-data mode note:
 
 ## Notes
 
-- All dependency rules are defined in `src/pipeline/orch/cache_manifest.json`.
-- Module artifact builders are declared in `src/pipeline/orch/cache_manifest.json` under `builder`.
+- All dependency rules are defined in in-code registry constants under `src/pipeline/orch/orchestrator.py`.
+- Module artifact builders are declared in in-code module registry under `src/pipeline/orch/orchestrator.py` (`MANIFEST_REGISTRY`).
 - Module mergers are artifact-only and must not compile during merge.
 - Cache reset removes the selected cache and all downstream caches.
-- Snapshot collection (`collect`) runs targets serially and writes run artifacts under `cache/phonepe/snapshots/runs/<run_id>/`.
-- `cache/phonepe/snapshot_seed` is the active split/base seed for profile packaging; it is derived from `cache/phonepe/snapshots/<package>/<versionCode>/<signingDigest>/captures/<target_id>/` and can be pinned with `--snapshot-version`.
+- Snapshot collection (`collect`) runs targets serially and writes run artifacts under `cache/apps/phonepe/snapshots/runs/<run_id>/`.
+- `cache/apps/phonepe/snapshot_seed` is the active split/base seed for profile packaging; it is derived from `cache/apps/phonepe/snapshots/<package>/<versionCode>/<signingDigest>/captures/<target_id>/` and can be pinned with `--snapshot-version`.
 - If Play login is blocked, `collect` returns exit code `20` and writes `blocker-report.json/.md`; complete Play login manually then rerun with `--resume <run_id>`.
 - Collection workflow note: do not use `yarn orch apk --fresh` (or any fresh variant) in collection paths.

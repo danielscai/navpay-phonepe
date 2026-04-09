@@ -6,6 +6,7 @@ CACHE_MANAGER_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(CACHE_MANAGER_DIR))
 
 import orchestrator as orch  # noqa: E402
+import cache_layout  # noqa: E402
 
 
 def test_decompile_command_supports_latest_and_version_pin(monkeypatch, tmp_path, capsys):
@@ -15,7 +16,7 @@ def test_decompile_command_supports_latest_and_version_pin(monkeypatch, tmp_path
     base_apk = capture_dir / "base.apk"
     base_apk.write_text("apk", encoding="utf-8")
 
-    monkeypatch.setattr(orch, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(cache_layout, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(orch, "resolve_app_package", lambda app: "net.one97.paytm" if app == "paytm" else "com.phonepe.app")
     monkeypatch.setattr(
         orch,
@@ -33,7 +34,7 @@ def test_decompile_command_supports_latest_and_version_pin(monkeypatch, tmp_path
         calls.append(cmd)
 
     monkeypatch.setattr(orch, "run", fake_run)
-    existing = tmp_path / "cache" / "paytm" / "decompiled" / "base_decompiled_clean" / "drawable"
+    existing = tmp_path / "cache" / "apps" / "paytm" / "decompiled" / "base_decompiled_clean" / "drawable"
     existing.mkdir(parents=True, exist_ok=True)
     (existing / "a.txt").write_text("x", encoding="utf-8")
 
@@ -43,7 +44,7 @@ def test_decompile_command_supports_latest_and_version_pin(monkeypatch, tmp_path
     assert "base_decompiled_clean" in out
     assert calls[0][0] == "apktool"
     assert str(base_apk) in calls[0]
-    assert str(tmp_path / "cache" / "paytm" / "decompiled" / "base_decompiled_clean") in calls[0]
+    assert str(tmp_path / "cache" / "apps" / "paytm" / "decompiled" / "base_decompiled_clean") in calls[0]
 
 
 def test_delete_cache_dir_ignores_enoent_from_rmtree_callback(tmp_path):

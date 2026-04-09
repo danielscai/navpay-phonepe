@@ -11,9 +11,9 @@
 
 ## 固化后流程
 1. 构建：`yarn apk`
-2. 签名对齐：`orchestrator profile_apk()` 自动把 `cache/phonepe/snapshot_seed` 中的 required split 准备到 `cache/profiles/full/build/`，并校验与 `patched_signed.apk` 同签名。
+2. 签名对齐：`orchestrator profile_apk()` 自动把 `cache/apps/phonepe/snapshot_seed` 中的 required split 准备到 `cache/profiles/full/build/`，并校验与 `patched_signed.apk` 同签名。
 3. 测试安装：`yarn test --serial emulator-5554`（默认 split-session）
-4. 发布：admin 发布脚本以 `patched_signed.apk` 为 base，默认读取 `cache/phonepe/snapshot_seed` 中的 split（`split_config.arm64_v8a.apk`、`split_config.xxhdpi.apk`）。
+4. 发布：admin 发布脚本以 `patched_signed.apk` 为 base，默认读取 `cache/apps/phonepe/snapshot_seed` 中的 split（`split_config.arm64_v8a.apk`、`split_config.xxhdpi.apk`）。
 
 ## 验证命令与结果
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -14,30 +15,34 @@ from datetime import datetime
 from pathlib import Path
 
 from compose_engine import (
+    DEFAULT_APP,
     detect_conflicts,
     profile_build_path,
     profile_workspace_path,
     refresh_profile_workspace,
+)
+from cache_layout import (
+    module_artifact_path as layout_module_artifact_path,
+    paths_for_app,
 )
 from profile_resolver import resolve_profile
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[2]
-MANIFEST_PATH = SCRIPT_DIR / "cache_manifest.json"
 APPS_MANIFEST_PATH = SCRIPT_DIR / "apps_manifest.json"
 EMULATOR_CONFIG_PATH = SCRIPT_DIR / "emulators.json"
 DEFAULT_DEVICE_MATRIX_PATH = SCRIPT_DIR / "device_matrix.example.json"
-DEFAULT_SNAPSHOTS_ROOT = REPO_ROOT / "cache" / "snapshots" / "phonepe"
+DEFAULT_SNAPSHOTS_ROOT = paths_for_app(DEFAULT_APP).snapshots_root
 
 DEFAULT_PACKAGE = "com.phonepe.app"
 DEFAULT_SERIAL = "GSLDU18106001520"
 DEFAULT_PROFILE = "full"
 SUPPORTED_TOP_LEVEL_PROFILES = (DEFAULT_PROFILE,)
-SIGBYPASS_BUILD_DIR = "cache/phonepe_sigbypass_build"
-HTTPS_BUILD_DIR = "cache/phonepe_https_interceptor_build"
-PHONEPEHELPER_BUILD_DIR = "cache/phonepe_phonepehelper_build"
-HEARTBEAT_BRIDGE_BUILD_DIR = "cache/heartbeat_bridge_build"
+SIGBYPASS_BUILD_DIR = "cache/apps/phonepe/modules/phonepe_sigbypass/build"
+HTTPS_BUILD_DIR = "cache/apps/phonepe/modules/phonepe_https_interceptor/build"
+PHONEPEHELPER_BUILD_DIR = "cache/apps/phonepe/modules/phonepe_phonepehelper/build"
+HEARTBEAT_BRIDGE_BUILD_DIR = "cache/apps/phonepe/modules/heartbeat_bridge/build"
 DEFAULT_UNSIGNED_APK = "patched_unsigned.apk"
 DEFAULT_ALIGNED_APK = "patched_aligned.apk"
 DEFAULT_SIGNED_APK = "patched_signed.apk"
@@ -54,7 +59,7 @@ DEFAULT_EMULATOR_BOOT_TIMEOUT = 20
 COLLECT_EMULATOR_SNAPSHOT_NAME = "navpay_collect_last"
 REUSE_STATE_FILE = "reuse_artifacts_state.json"
 MERGE_STATE_FILE = "profile_merge_state.json"
-DEFAULT_SNAPSHOT_SEED_DIR = "cache/phonepe/snapshot_seed"
+DEFAULT_SNAPSHOT_SEED_DIR = "cache/apps/phonepe/snapshot_seed"
 DEFAULT_SPLIT_SEED_DIR = DEFAULT_SNAPSHOT_SEED_DIR
 DEFAULT_REQUIRED_SPLITS = (
     "split_config.arm64_v8a.apk",
@@ -149,17 +154,17 @@ def log_cmd_output(label: str, line: str):
 
 MODULE_DEFAULTS = {
     "phonepe_snapshot_seed": {
-        "path": "cache/phonepe/snapshot_seed",
+        "path": "cache/apps/phonepe/snapshot_seed",
     },
     "phonepe_merged": {
-        "path": "cache/phonepe/merged",
+        "path": "cache/apps/phonepe/merged",
     },
     "phonepe_decompiled": {
-        "path": "cache/phonepe/decompiled",
+        "path": "cache/apps/phonepe/decompiled",
     },
     "phonepe_sigbypass": {
         "label": "SIGBYPASS",
-        "path": "cache/phonepe_sigbypass",
+        "path": "cache/apps/phonepe/modules/phonepe_sigbypass/workspace",
         "build_dir": SIGBYPASS_BUILD_DIR,
         "log_tag": SIGBYPASS_LOG_TAG,
         "login_activity": SIGBYPASS_LOGIN_ACTIVITY,
@@ -168,7 +173,7 @@ MODULE_DEFAULTS = {
     },
     "phonepe_https_interceptor": {
         "label": "HTTPS",
-        "path": "cache/phonepe_https_interceptor",
+        "path": "cache/apps/phonepe/modules/phonepe_https_interceptor/workspace",
         "build_dir": HTTPS_BUILD_DIR,
         "log_tag": HTTPS_LOG_TAG,
         "runtime_log_required": False,
@@ -178,7 +183,7 @@ MODULE_DEFAULTS = {
     },
     "phonepe_phonepehelper": {
         "label": "PPHELPER",
-        "path": "cache/phonepe_phonepehelper",
+        "path": "cache/apps/phonepe/modules/phonepe_phonepehelper/workspace",
         "build_dir": PHONEPEHELPER_BUILD_DIR,
         "log_tag": PPHELPER_LOG_TAG,
         "login_activity": SIGBYPASS_LOGIN_ACTIVITY,
@@ -187,7 +192,7 @@ MODULE_DEFAULTS = {
     },
     "heartbeat_bridge": {
         "label": "HEARTBEAT",
-        "path": "cache/heartbeat_bridge",
+        "path": "cache/apps/phonepe/modules/heartbeat_bridge/workspace",
         "build_dir": HEARTBEAT_BRIDGE_BUILD_DIR,
         "log_tag": "HeartbeatBridge",
         "runtime_log_required": False,
@@ -195,6 +200,145 @@ MODULE_DEFAULTS = {
         "test_mode": "unified",
         "merge_script": "src/apk/heartbeat_bridge/scripts/merge.sh",
     },
+}
+
+MANIFEST_REGISTRY = {
+    "phonepe_snapshot_seed": {
+        "path": "cache/apps/phonepe/snapshot_seed",
+        "deps": [],
+    },
+    "phonepe_merged": {
+        "path": "cache/apps/phonepe/merged",
+        "deps": ["phonepe_snapshot_seed"],
+    },
+    "phonepe_decompiled": {
+        "path": "cache/apps/phonepe/decompiled",
+        "deps": ["phonepe_merged"],
+    },
+    "phonepe_sigbypass": {
+        "deps": ["phonepe_decompiled"],
+        "source_cache": "phonepe_decompiled",
+        "source_subdir": "base_decompiled_clean",
+        "builder": {
+            "command": "src/apk/signature_bypass/scripts/compile.sh",
+            "args": [],
+            "fingerprint_inputs": [
+                "src/apk/signature_bypass/src/main/java",
+                "src/apk/signature_bypass/scripts/compile.sh",
+                "src/apk/signature_bypass/scripts/merge.sh",
+                "src/pipeline/tools/lib/dispatcher.sh",
+            ],
+            "outputs": [
+                {"source": "src/apk/signature_bypass/build/smali", "target": "smali"},
+                {"source": "src/apk/signature_bypass/build/pine_smali", "target": "pine_smali"},
+                {"source": "src/apk/signature_bypass/build/classes.dex", "target": "classes.dex"},
+                {"source": "src/apk/signature_bypass/libs/jni", "target": "libs/jni"},
+            ],
+        },
+        "merge_script": "src/apk/signature_bypass/scripts/merge.sh",
+        "reset_paths": [
+            "smali/com/phonepe/app/PhonePeApplication.smali",
+        ],
+        "added_paths": [
+            "smali_classes*",
+            "lib/arm64-v8a/libpine.so",
+            "lib/armeabi-v7a/libpine.so",
+        ],
+    },
+    "phonepe_https_interceptor": {
+        "deps": ["phonepe_decompiled"],
+        "source_cache": "phonepe_decompiled",
+        "source_subdir": "base_decompiled_clean",
+        "builder": {
+            "command": "src/apk/https_interceptor/scripts/compile.sh",
+            "args": [],
+            "fingerprint_inputs": [
+                "src/apk/https_interceptor/app/build.gradle",
+                "src/apk/https_interceptor/app/src/main/java/com/httpinterceptor/interceptor/RemoteLoggingInterceptor.java",
+                "src/apk/https_interceptor/app/src/main/java/com/httpinterceptor/interceptor/LogSender.java",
+                "src/apk/https_interceptor/app/src/main/java/com/httpinterceptor/hook/HookUtil.java",
+                "src/apk/https_interceptor/scripts/compile.sh",
+                "src/apk/https_interceptor/scripts/merge.sh",
+            ],
+            "outputs": [
+                {"source": "src/apk/https_interceptor/build/smali", "target": "smali"},
+            ],
+        },
+        "merge_script": "src/apk/https_interceptor/scripts/merge.sh",
+        "reset_paths": [
+            "smali*/okhttp3/OkHttpClient$Builder.smali",
+            "AndroidManifest.xml",
+            "res/xml/network_security_config.xml",
+        ],
+        "uninstall_before_install": True,
+        "added_paths": [
+            "smali_classes*",
+        ],
+    },
+    "phonepe_phonepehelper": {
+        "deps": ["phonepe_decompiled"],
+        "source_cache": "phonepe_decompiled",
+        "source_subdir": "base_decompiled_clean",
+        "builder": {
+            "command": "src/apk/phonepehelper/scripts/compile.sh",
+            "args": [],
+            "fingerprint_inputs": [
+                "src/apk/phonepehelper/src/main/java",
+                "src/apk/phonepehelper/scripts/merge.sh",
+                "src/apk/phonepehelper/scripts/compile.sh",
+            ],
+            "outputs": [
+                {"source": "src/apk/phonepehelper/build/smali", "target": "smali"},
+            ],
+        },
+        "merge_script": "src/apk/phonepehelper/scripts/merge.sh",
+        "uninstall_before_install": False,
+        "reset_paths": [
+            "smali_classes*/com/sigbypass/HookEntry.smali",
+        ],
+        "added_paths": [
+            "smali_classes*",
+        ],
+    },
+    "heartbeat_bridge": {
+        "deps": ["phonepe_decompiled"],
+        "source_cache": "phonepe_decompiled",
+        "source_subdir": "base_decompiled_clean",
+        "builder": {
+            "command": "src/apk/heartbeat_bridge/scripts/compile.sh",
+            "args": [],
+            "fingerprint_inputs": [
+                "src/apk/heartbeat_bridge/src/main/java",
+                "src/apk/heartbeat_bridge/scripts/compile.sh",
+                "src/apk/heartbeat_bridge/scripts/merge.sh",
+            ],
+            "outputs": [
+                {"source": "src/apk/heartbeat_bridge/build/smali", "target": "smali"},
+            ],
+        },
+        "merge_script": "src/apk/heartbeat_bridge/scripts/merge.sh",
+        "path": "cache/apps/phonepe/modules/heartbeat_bridge/workspace",
+        "reset_paths": [
+            "smali_classes*/com/heartbeatbridge/HeartbeatBridgeProvider.smali",
+        ],
+        "build_dir": "cache/apps/phonepe/modules/heartbeat_bridge/build",
+        "log_tag": "HeartbeatBridge",
+        "runtime_log_required": False,
+        "uninstall_before_install": False,
+        "added_paths": [
+            "smali_classes*",
+        ],
+    },
+}
+
+LEGACY_CACHE_PATH_ALIASES = {
+    "cache/apps/phonepe/snapshot_seed": "cache/phonepe/snapshot_seed",
+    "cache/apps/phonepe/merged": "cache/phonepe/merged",
+    "cache/apps/phonepe/decompiled": "cache/phonepe/decompiled",
+    "cache/apps/phonepe/modules/phonepe_sigbypass/workspace": "cache/phonepe_sigbypass",
+    "cache/apps/phonepe/modules/phonepe_https_interceptor/workspace": "cache/phonepe_https_interceptor",
+    "cache/apps/phonepe/modules/phonepe_phonepehelper/workspace": "cache/phonepe_phonepehelper",
+    "cache/apps/phonepe/modules/heartbeat_bridge/workspace": "cache/heartbeat_bridge",
 }
 
 TOP_LEVEL_PROFILE_ACTIONS = {"plan", "prepare", "smali", "merge", "apk", "test"}
@@ -213,9 +357,7 @@ SUPPORTED_APPS = tuple(load_apps_manifest().keys())
 
 
 def load_manifest():
-    if not MANIFEST_PATH.exists():
-        raise FileNotFoundError(f"Missing manifest: {MANIFEST_PATH}")
-    data = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    data = copy.deepcopy(MANIFEST_REGISTRY)
     for name, cfg in data.items():
         if "deps" not in cfg:
             raise ValueError(f"Invalid manifest entry: {name}")
@@ -1028,7 +1170,7 @@ def resolve_app_package(app: str) -> str:
 
 
 def snapshots_root_for_app(app: str) -> Path:
-    return REPO_ROOT / "cache" / "snapshots" / app
+    return paths_for_app(app).snapshots_root
 
 
 def run_collect_for_app_target(
@@ -2251,11 +2393,11 @@ def compute_module_fingerprint(spec) -> str:
 
 
 def module_artifact_root() -> Path:
-    return resolve_cache_path("cache/module_artifacts")
+    return paths_for_app(DEFAULT_APP).module_artifacts_root
 
 
 def module_artifact_path(module_name: str) -> Path:
-    return module_artifact_root() / module_name
+    return layout_module_artifact_path(module_name, DEFAULT_APP)
 
 
 def artifact_output_exists(path: Path) -> bool:
@@ -2918,7 +3060,7 @@ def cmd_decompile(app: str, version: str = "") -> int:
     capture_dir = resolve_snapshot_capture_dir_for_base(snapshots_root, anchor)
     base_apk = capture_dir / "base.apk"
 
-    decompiled_root = REPO_ROOT / "cache" / app / "decompiled"
+    decompiled_root = paths_for_app(app).decompiled
     target = decompiled_root / "base_decompiled_clean"
     if target.exists():
         delete_cache_dir(target)
@@ -3131,6 +3273,14 @@ def resolve_manifest_source_cache(name: str, cfg, manifest) -> str:
 def resolve_manifest_source_root(name: str, cfg, manifest) -> Path:
     source_cache = resolve_manifest_source_cache(name, cfg, manifest)
     source_root = resolve_manifest_path(manifest, source_cache)
+    if not source_root.exists():
+        source_cfg = manifest.get(source_cache, {})
+        source_rel = resolve_cfg_value(source_cache, source_cfg, "path")
+        legacy_rel = LEGACY_CACHE_PATH_ALIASES.get(str(source_rel))
+        if legacy_rel:
+            legacy_root = resolve_cache_path(legacy_rel)
+            if legacy_root.exists():
+                source_root = legacy_root
     source_subdir = cfg.get("source_subdir")
     if source_subdir:
         source_root = source_root / source_subdir

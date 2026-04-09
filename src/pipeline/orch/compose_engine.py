@@ -2,6 +2,12 @@ import shutil
 import os
 from pathlib import Path
 
+from cache_layout import (
+    DEFAULT_APP,
+    profile_build_path as layout_profile_build_path,
+    profile_workspace_path as layout_profile_workspace_path,
+)
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[2]
@@ -25,12 +31,12 @@ def detect_conflicts(mod_cfg: dict, modules: list):
             seen[reset_path] = module
 
 
-def profile_workspace_path(profile: str) -> Path:
-    return PROFILES_DIR / profile / "workspace"
+def profile_workspace_path(profile: str, app: str = DEFAULT_APP) -> Path:
+    return layout_profile_workspace_path(profile, app)
 
 
-def profile_build_path(profile: str) -> Path:
-    return PROFILES_DIR / profile / "build"
+def profile_build_path(profile: str, app: str = DEFAULT_APP) -> Path:
+    return layout_profile_build_path(profile, app)
 
 
 def make_workspace_writable(path: Path) -> None:
@@ -44,10 +50,10 @@ def make_workspace_writable(path: Path) -> None:
     path.chmod(path.stat().st_mode | 0o200)
 
 
-def refresh_profile_workspace(profile: str, baseline_dir: Path) -> Path:
+def refresh_profile_workspace(profile: str, baseline_dir: Path, app: str = DEFAULT_APP) -> Path:
     if not baseline_dir.exists():
         raise RuntimeError(f"Baseline decompiled cache not found: {baseline_dir}")
-    workspace = profile_workspace_path(profile)
+    workspace = profile_workspace_path(profile, app)
     if workspace.exists():
         make_workspace_writable(workspace)
         shutil.rmtree(workspace)
