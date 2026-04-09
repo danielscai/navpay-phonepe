@@ -2564,6 +2564,7 @@ def sigbypass_compile(cache_path: Path, work_dir: Path, unsigned_apk: str, align
         env["PATH"] = f"{env['JAVA_HOME']}/bin:" + env.get("PATH", "")
 
     enforce_dex_compression(cache_path)
+    sanitize_manifest_null_meta_data(cache_path)
     build_jobs = max(1, os.cpu_count() or 1)
     run(["apktool", "b", "-j", str(build_jobs), "-nc", str(cache_path), "-o", str(unsigned)], env=env)
     ensure_primary_dex_first(unsigned)
@@ -2579,6 +2580,8 @@ def enforce_dex_compression(cache_path: Path):
 
     lines = apktool_yml.read_text(encoding="utf-8").splitlines(keepends=True)
     in_do_not_compress = False
+    found_do_not_compress = False
+    has_so_entry = False
     changed = False
     out = []
 
@@ -2586,18 +2589,54 @@ def enforce_dex_compression(cache_path: Path):
         stripped = line.strip()
         if stripped == "doNotCompress:":
             in_do_not_compress = True
+            found_do_not_compress = True
+            has_so_entry = False
             out.append(line)
             continue
         if in_do_not_compress and line and not line[0].isspace() and stripped.endswith(":"):
+            if not has_so_entry:
+                out.append("- so\n")
+                changed = True
             in_do_not_compress = False
         if in_do_not_compress and stripped == "- dex":
             changed = True
             continue
+        if in_do_not_compress and stripped == "- so":
+            has_so_entry = True
         out.append(line)
+
+    if in_do_not_compress and not has_so_entry:
+        out.append("- so\n")
+        changed = True
+
+    if not found_do_not_compress:
+        if out and not out[-1].endswith("\n"):
+            out[-1] = out[-1] + "\n"
+        out.extend(["doNotCompress:\n", "- so\n"])
+        changed = True
 
     if changed:
         apktool_yml.write_text("".join(out), encoding="utf-8")
-        log_info("Removed doNotCompress:dex from apktool.yml to keep dex entries compressed")
+        log_info("Updated apktool.yml compression policy: keep dex compressed, keep native libs (.so) uncompressed")
+
+
+def sanitize_manifest_null_meta_data(cache_path: Path):
+    manifest_path = cache_path / "AndroidManifest.xml"
+    if not manifest_path.exists():
+        return
+
+    lines = manifest_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    changed = False
+    out = []
+    for line in lines:
+        stripped = line.strip()
+        if "<meta-data" in stripped and ('android:resource="@null"' in stripped or 'android:value="@null"' in stripped):
+            changed = True
+            continue
+        out.append(line)
+    if changed:
+        manifest_path.write_text("".join(out), encoding="utf-8")
+        log_info("Sanitized AndroidManifest.xml: removed invalid <meta-data ... @null> entries")
 
 
 def ensure_primary_dex_first(apk_path: Path):
