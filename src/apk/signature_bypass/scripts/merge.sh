@@ -193,31 +193,35 @@ fi
 
 log_info "Application: $APP_SMALI"
 
-# 备份
-if [ ! -f "$APP_SMALI.bak" ]; then
-    cp "$APP_SMALI" "$APP_SMALI.bak"
-    log_info "已备份原始文件"
-fi
-
-# 检查是否已修改
-if grep -q "Lcom/indipay/inject/Dispatcher;->init" "$APP_SMALI"; then
-    log_warn "Application 已包含 Dispatcher 入口代码，跳过修改"
+if [ "${NAVPAY_SKIP_APP_DISPATCHER_INJECT:-0}" = "1" ]; then
+    log_warn "检测到 NAVPAY_SKIP_APP_DISPATCHER_INJECT=1，跳过 Application Dispatcher 注入"
 else
-    log_info "注入 Dispatcher 入口代码..."
+    # 备份
+    if [ ! -f "$APP_SMALI.bak" ]; then
+        cp "$APP_SMALI" "$APP_SMALI.bak"
+        log_info "已备份原始文件"
+    fi
 
-    # 使用统一 Dispatcher 入口注入脚本
-    python3 "$DISPATCHER_INJECT_SCRIPT" "$APP_SMALI"
-
-    # 验证注入结果
+    # 检查是否已修改
     if grep -q "Lcom/indipay/inject/Dispatcher;->init" "$APP_SMALI"; then
-        log_info "注入成功"
+        log_warn "Application 已包含 Dispatcher 入口代码，跳过修改"
     else
-        log_error "注入失败，请手动编辑 $APP_SMALI"
-        log_error "在 attachBaseContext 方法中添加:"
-        echo ""
-        echo '    invoke-static {p0}, Lcom/indipay/inject/Dispatcher;->init(Landroid/content/Context;)V'
-        echo ""
-        exit 1
+        log_info "注入 Dispatcher 入口代码..."
+
+        # 使用统一 Dispatcher 入口注入脚本
+        python3 "$DISPATCHER_INJECT_SCRIPT" "$APP_SMALI"
+
+        # 验证注入结果
+        if grep -q "Lcom/indipay/inject/Dispatcher;->init" "$APP_SMALI"; then
+            log_info "注入成功"
+        else
+            log_error "注入失败，请手动编辑 $APP_SMALI"
+            log_error "在 attachBaseContext 方法中添加:"
+            echo ""
+            echo '    invoke-static {p0}, Lcom/indipay/inject/Dispatcher;->init(Landroid/content/Context;)V'
+            echo ""
+            exit 1
+        fi
     fi
 fi
 

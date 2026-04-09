@@ -1,12 +1,18 @@
 # 统一 Hook Runtime 架构（Dispatcher + Pine）
 
 ## 目标
-统一 Application 注入入口，所有模块通过 Dispatcher 注册，避免模块间直接改写彼此入口实现。
+统一 Dispatcher 入口与模块注册契约，避免模块间直接改写彼此入口实现。
+
+> 2026-04-09 更新：在 `full` profile（含 `phonepehelper`）中，为规避主 dex method id 上限，允许由 `NavpayBridgeProvider.onCreate()` 触发 `Dispatcher.init()`，不再强制仅依赖 `Application.attachBaseContext()` 注入。详见：`docs/2026-04-09-dispatcher-inject-overflow方案对比与验证计划.md`。
 
 ## 核心入口
 - `_framework/dispatcher` 提供统一入口：
   - `Lcom/indipay/inject/Dispatcher;->init(Landroid/content/Context;)V`
 - `Dispatcher.init` 通过模板中的 `##MODULE_CALLS##` 执行已注册模块入口。
+
+当前允许两种触发方式：
+- Application `attachBaseContext()` 注入触发
+- Provider `onCreate()` 触发（full profile 下的降级路径）
 
 ## Pine 初始化位置
 - 当前由 `signature_bypass` 的 `HookEntry.init()` 执行：

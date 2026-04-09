@@ -62,7 +62,20 @@ public final class NavpayBridgeProvider extends ContentProvider {
 
     @Override
     public boolean onCreate() {
-        helper = NavpayBridgeDbHelper.getInstance(getContext());
+        Context context = getContext();
+        if (context != null) {
+            Context initContext = context.getApplicationContext();
+            if (initContext == null) {
+                initContext = context;
+            }
+            try {
+                Class<?> dispatcherClass = Class.forName("com.indipay.inject.Dispatcher");
+                dispatcherClass.getMethod("init", Context.class).invoke(null, initContext);
+            } catch (Throwable ignored) {
+                // Dispatcher may be unavailable in some test artifacts; keep provider usable.
+            }
+        }
+        helper = NavpayBridgeDbHelper.getInstance(context);
         return helper != null;
     }
 

@@ -2166,6 +2166,7 @@ def merge(
     added_paths,
     label: str,
     artifact_dir: Optional[Path] = None,
+    merge_env: Optional[dict] = None,
 ):
     if not cache_path.exists():
         raise RuntimeError(f"{label} cache not found: {cache_path}")
@@ -2184,7 +2185,11 @@ def merge(
     if artifact_dir is not None:
         cmd.extend(["--artifact-dir", str(artifact_dir)])
     cmd.append(str(cache_path))
-    run(cmd, cwd=REPO_ROOT, concise=True)
+    env = None
+    if merge_env:
+        env = os.environ.copy()
+        env.update({str(k): str(v) for k, v in merge_env.items()})
+    run(cmd, cwd=REPO_ROOT, env=env, concise=True)
 
 
 def compute_inputs_fingerprint(root: Path) -> str:
@@ -3513,6 +3518,14 @@ def profile_prepare(manifest, profile_name: str, snapshot_version: str = ""):
     )
     return modules, workspace
 
+
+def profile_module_merge_env(modules, module: str) -> dict:
+    module_set = set(modules or [])
+    if "phonepe_phonepehelper" in module_set and module in {"phonepe_sigbypass", "phonepe_phonepehelper"}:
+        return {"NAVPAY_SKIP_APP_DISPATCHER_INJECT": "1"}
+    return {}
+
+
 def profile_merge(
     manifest,
     profile_name: str,
@@ -3544,6 +3557,7 @@ def profile_merge(
             spec["added_paths"],
             f"PROFILE:{profile_name}:{module}",
             artifact_dir=artifact_dir,
+            merge_env=profile_module_merge_env(modules, module),
         )
         log_info(f"[PROFILE:{profile_name}] merged: {module}")
     write_profile_merge_state(manifest, profile_name, workspace, modules)
@@ -3606,6 +3620,14 @@ def workspace_contains_text(paths, needle: str) -> bool:
 def verify_profile_injection(manifest, workspace: Path, modules):
     missing = []
     checked_labels = []
+    module_set = set(modules or [])
+    provider_paths = find_workspace_matches(workspace, "com/phonepehelper/NavpayBridgeProvider.smali")
+    provider_bootstraps_dispatcher = workspace_contains_text(provider_paths, "com.indipay.inject.Dispatcher")
+    app_paths = find_workspace_matches(workspace, "com/phonepe/app/PhonePeApplication.smali")
+    app_has_dispatcher_entry = workspace_contains_text(
+        app_paths,
+        "Lcom/indipay/inject/Dispatcher;->init(Landroid/content/Context;)V",
+    )
 
     for module in modules:
         checked_labels.append(resolve_cfg_value(module, manifest.get(module, {}), "label", module.upper()))
@@ -3623,7 +3645,6 @@ def verify_profile_injection(manifest, workspace: Path, modules):
             module_init_paths = find_workspace_matches(workspace, "com/phonepehelper/ModuleInit.smali")
             helper_paths = find_workspace_matches(workspace, "com/PhonePeTweak/Def/PhonePeHelper.smali")
             dispatcher_paths = find_workspace_matches(workspace, "com/indipay/inject/Dispatcher.smali")
-            app_paths = find_workspace_matches(workspace, "com/phonepe/app/PhonePeApplication.smali")
             if not module_init_paths:
                 missing.append("phonepe_phonepehelper: missing ModuleInit.smali")
             if not helper_paths:
@@ -3633,15 +3654,11 @@ def verify_profile_injection(manifest, workspace: Path, modules):
                 "Lcom/phonepehelper/ModuleInit;->init(Landroid/content/Context;)V",
             ):
                 missing.append("phonepe_phonepehelper: Dispatcher missing ModuleInit registration")
-            if not workspace_contains_text(
-                app_paths,
-                "Lcom/indipay/inject/Dispatcher;->init(Landroid/content/Context;)V",
-            ):
+            if not (app_has_dispatcher_entry or provider_bootstraps_dispatcher):
                 missing.append("phonepe_phonepehelper: PhonePeApplication missing Dispatcher entry")
         elif module == "phonepe_sigbypass":
             hook_entry_paths = find_workspace_matches(workspace, "com/sigbypass/HookEntry.smali")
             dispatcher_paths = find_workspace_matches(workspace, "com/indipay/inject/Dispatcher.smali")
-            app_paths = find_workspace_matches(workspace, "com/phonepe/app/PhonePeApplication.smali")
             if not hook_entry_paths:
                 missing.append("phonepe_sigbypass: missing HookEntry.smali")
             if not workspace_contains_text(
@@ -3649,10 +3666,10 @@ def verify_profile_injection(manifest, workspace: Path, modules):
                 "Lcom/sigbypass/HookEntry;->init(Landroid/content/Context;)V",
             ):
                 missing.append("phonepe_sigbypass: Dispatcher missing HookEntry registration")
-            if not workspace_contains_text(
-                app_paths,
-                "Lcom/indipay/inject/Dispatcher;->init(Landroid/content/Context;)V",
-            ):
+            if "phonepe_phonepehelper" in module_set:
+                if not (app_has_dispatcher_entry or provider_bootstraps_dispatcher):
+                    missing.append("phonepe_sigbypass: missing Dispatcher bootstrap entry")
+            elif not app_has_dispatcher_entry:
                 missing.append("phonepe_sigbypass: PhonePeApplication missing Dispatcher entry")
         elif module == "heartbeat_bridge":
             provider_paths = find_workspace_matches(workspace, "com/heartbeatbridge/HeartbeatBridgeProvider.smali")

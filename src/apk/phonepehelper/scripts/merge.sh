@@ -162,7 +162,11 @@ fi
 
 log_info "Application: $APP_SMALI"
 
-python3 "$DISPATCHER_INJECT_SCRIPT" "$APP_SMALI"
+if [ "${NAVPAY_SKIP_APP_DISPATCHER_INJECT:-0}" = "1" ]; then
+    log_warn "检测到 NAVPAY_SKIP_APP_DISPATCHER_INJECT=1，跳过 Application Dispatcher 注入"
+else
+    python3 "$DISPATCHER_INJECT_SCRIPT" "$APP_SMALI"
+fi
 
 log_step "3. 注册 phonepehelper 到 Dispatcher"
 
@@ -262,7 +266,15 @@ else
     exit 1
 fi
 
-if grep -q "Lcom/indipay/inject/Dispatcher;->init(Landroid/content/Context;)V" "$APP_SMALI"; then
+if [ "${NAVPAY_SKIP_APP_DISPATCHER_INJECT:-0}" = "1" ]; then
+    PROVIDER_SMALI="$TARGET_SMALI_DIR/com/phonepehelper/NavpayBridgeProvider.smali"
+    if [ -f "$PROVIDER_SMALI" ] && grep -q "com.indipay.inject.Dispatcher" "$PROVIDER_SMALI"; then
+        echo -e "  ${GREEN}✓${NC} Provider 将负责触发 Dispatcher 初始化"
+    else
+        echo -e "  ${RED}✗${NC} Provider 未包含 Dispatcher 启动逻辑"
+        exit 1
+    fi
+elif grep -q "Lcom/indipay/inject/Dispatcher;->init(Landroid/content/Context;)V" "$APP_SMALI"; then
     echo -e "  ${GREEN}✓${NC} Application 入口已注入 Dispatcher"
 else
     echo -e "  ${RED}✗${NC} Application 入口未注入 Dispatcher"
