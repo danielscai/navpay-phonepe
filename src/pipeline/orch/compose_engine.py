@@ -1,5 +1,6 @@
 import shutil
 import os
+import time
 from pathlib import Path
 
 from cache_layout import (
@@ -42,11 +43,20 @@ def make_workspace_writable(path: Path) -> None:
     for root, dirs, files in os.walk(path):
         for filename in files:
             file_path = Path(root) / filename
-            file_path.chmod(file_path.stat().st_mode | 0o200)
+            try:
+                file_path.chmod(file_path.stat().st_mode | 0o200)
+            except FileNotFoundError:
+                pass
         for dirname in dirs:
             dir_path = Path(root) / dirname
-            dir_path.chmod(dir_path.stat().st_mode | 0o200)
-    path.chmod(path.stat().st_mode | 0o200)
+            try:
+                dir_path.chmod(dir_path.stat().st_mode | 0o200)
+            except FileNotFoundError:
+                pass
+    try:
+        path.chmod(path.stat().st_mode | 0o200)
+    except FileNotFoundError:
+        pass
 
 
 def refresh_profile_workspace(profile: str, baseline_dir: Path, app: str = DEFAULT_APP) -> Path:
@@ -56,7 +66,16 @@ def refresh_profile_workspace(profile: str, baseline_dir: Path, app: str = DEFAU
     workspace = profile_workspace_path(profile_key, app)
     if workspace.exists():
         make_workspace_writable(workspace)
-        shutil.rmtree(workspace)
+        for _ in range(3):
+            try:
+                shutil.rmtree(workspace)
+                break
+            except OSError:
+                time.sleep(0.1)
+        if workspace.exists():
+            shutil.rmtree(workspace, ignore_errors=True)
+        if workspace.exists():
+            raise RuntimeError(f"Failed to clean compose workspace: {workspace}")
     shutil.copytree(baseline_dir, workspace)
     make_workspace_writable(workspace)
     return workspace

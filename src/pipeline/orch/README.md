@@ -6,20 +6,14 @@ Install the CLI once with `yarn install:orch`, then use `orch <subcommand>` dire
 
 ## Canonical Commands
 
-- Plan active modules:
-  - `python3 src/pipeline/orch/orchestrator.py plan`
-- Refresh the clean workspace:
-  - `python3 src/pipeline/orch/orchestrator.py prepare`
-- Build module artifacts:
-  - `python3 src/pipeline/orch/orchestrator.py smali`
-- Inject artifacts into the workspace:
-  - `python3 src/pipeline/orch/orchestrator.py merge`
 - Build and sign the final APK (default reuses cache when inputs have not changed):
-  - `python3 src/pipeline/orch/orchestrator.py apk`
+  - `python3 src/pipeline/orch/orchestrator.py build phonepe`
 - Build and sign the final APK from a specific snapshot version:
-  - `python3 src/pipeline/orch/orchestrator.py apk --snapshot-version 26022705`
-- Force full APK rebuild:
-  - `python3 src/pipeline/orch/orchestrator.py apk --fresh`
+  - `python3 src/pipeline/orch/orchestrator.py build phonepe --snapshot-version 26022705`
+- Run only module artifact(smali) stage:
+  - `python3 src/pipeline/orch/orchestrator.py build phonepe --smali`
+- Run only merge stage:
+  - `python3 src/pipeline/orch/orchestrator.py build phonepe --merge`
 - Run the full integration test (default split-session strategy):
   - `python3 src/pipeline/orch/orchestrator.py test --serial emulator-5554`
 - Run the full integration test against a specific snapshot version:

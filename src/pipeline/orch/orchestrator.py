@@ -340,9 +340,6 @@ LEGACY_CACHE_PATH_ALIASES = {
     "cache/apps/phonepe/modules/heartbeat_bridge/workspace": "cache/heartbeat_bridge",
 }
 
-TOP_LEVEL_PROFILE_ACTIONS = {"plan", "prepare", "smali", "merge", "apk", "test"}
-
-
 def load_apps_manifest(path: Path = APPS_MANIFEST_PATH) -> dict:
     if not path.exists():
         raise FileNotFoundError(f"Missing apps manifest: {path}")
@@ -3705,6 +3702,16 @@ def profile_apk(manifest, profile_name: str, fresh: bool = False, snapshot_versi
     signed_apk_path = work_dir / DEFAULT_SIGNED_APK
     workspace = None
     if reuse_artifacts:
+        # Check reuse against the existing merged workspace first.
+        # If this hits, avoid prepare() which would reset workspace and invalidate the reuse fingerprint.
+        if not snapshot_version:
+            try:
+                workspace = resolve_profile_workspace(profile_name)
+            except RuntimeError:
+                workspace = None
+            if workspace is not None and maybe_reuse_profile_artifacts(manifest, profile_name, workspace, work_dir):
+                ensure_profile_release_splits_signed(work_dir, split_seed_dir, signed_apk_path)
+                return work_dir
         _, workspace = profile_prepare(manifest, profile_name, snapshot_version)
         if maybe_reuse_profile_artifacts(manifest, profile_name, workspace, work_dir):
             ensure_profile_release_splits_signed(work_dir, split_seed_dir, signed_apk_path)
@@ -3926,48 +3933,6 @@ def profile_test(
             log_info(f"[PROFILE:{profile_name}] split-session 模式跳过运行时日志标签强校验")
 
 
-def run_profile_action(
-    manifest,
-    action: str,
-    profile_name: str,
-    serial: str,
-    smoke: bool,
-    fresh: bool,
-    install_mode: str,
-    snapshot_version: str,
-):
-    ensure_supported_profile(profile_name)
-    if smoke and action != "test":
-        raise RuntimeError("--smoke is only supported for 'test'")
-    if fresh and action != "apk":
-        raise RuntimeError("--fresh is only supported for 'apk'")
-    if install_mode != "reinstall" and action != "test":
-        raise RuntimeError("--install-mode is only supported for 'test'")
-
-    if action == "plan":
-        modules = resolve_profile_modules(manifest, profile_name)
-        print(json.dumps(modules, ensure_ascii=True))
-    elif action == "prepare":
-        profile_prepare(manifest, profile_name, snapshot_version)
-    elif action == "smali":
-        profile_build_modules(manifest, profile_name)
-    elif action == "merge":
-        profile_merge(manifest, profile_name, refresh_workspace=False, snapshot_version=snapshot_version)
-    elif action == "apk":
-        profile_apk(manifest, profile_name, fresh=fresh, snapshot_version=snapshot_version)
-    elif action == "test":
-        profile_test(
-            manifest,
-            profile_name,
-            serial,
-            smoke=smoke,
-            install_mode=install_mode,
-            snapshot_version=snapshot_version,
-        )
-    else:
-        raise RuntimeError(f"Unknown profile action: {action}")
-
-
 def parse_test_mode_tokens(
     tokens,
     smoke: bool,
@@ -4030,30 +3995,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build orchestrator")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    def add_profile_args(
-        cmd_parser,
-        *,
-        allow_serial: bool = True,
-        allow_smoke: bool = False,
-        allow_fresh: bool = False,
-    ):
-        cmd_parser.add_argument("--snapshot-version", default="")
-        if allow_serial:
-            cmd_parser.add_argument("--serial")
-        if allow_smoke:
-            cmd_parser.add_argument("--smoke", action="store_true", default=False)
-        if allow_fresh:
-            cmd_parser.add_argument("--fresh", action="store_true", default=False)
-
-    for action in ("plan", "prepare", "smali", "merge"):
-        action_parser = sub.add_parser(action)
-        add_profile_args(action_parser, allow_serial=False)
-
-    apk_parser = sub.add_parser("apk")
-    add_profile_args(apk_parser, allow_serial=False, allow_fresh=True)
-
     test_parser = sub.add_parser("test")
-    add_profile_args(test_parser, allow_serial=True, allow_smoke=True)
+    test_parser.add_argument("--snapshot-version", default="")
+    test_parser.add_argument("--serial")
+    test_parser.add_argument("--smoke", action="store_true", default=False)
     test_parser.add_argument("app", nargs="?", default="")
     test_parser.add_argument(
         "--install-mode",
@@ -4106,6 +4051,18 @@ def build_parser() -> argparse.ArgumentParser:
     build = sub.add_parser("build")
     build.add_argument("app", choices=SUPPORTED_APPS)
     build.add_argument("--snapshot-version", default="")
+    build.add_argument(
+        "--smali",
+        action="store_true",
+        default=False,
+        help="Only run module smali artifact build stage for the selected app",
+    )
+    build.add_argument(
+        "--merge",
+        action="store_true",
+        default=False,
+        help="Only run merge stage for the selected app",
+    )
 
     return parser
 
@@ -4170,6 +4127,21 @@ def main(argv=None):
             auto_yes=auto_yes,
         )
     elif args.cmd == "build":
+        run_smali_only = bool(getattr(args, "smali", False))
+        run_merge_only = bool(getattr(args, "merge", False))
+        if run_smali_only and run_merge_only:
+            raise RuntimeError("--smali and --merge cannot be used together")
+        if run_smali_only:
+            profile_build_modules(manifest, COMPOSE_WORKFLOW_NAME)
+            return 0
+        if run_merge_only:
+            profile_merge(
+                manifest,
+                COMPOSE_WORKFLOW_NAME,
+                refresh_workspace=False,
+                snapshot_version=getattr(args, "snapshot_version", ""),
+            )
+            return 0
         profile_apk(
             manifest,
             COMPOSE_WORKFLOW_NAME,
@@ -4195,20 +4167,6 @@ def main(argv=None):
             smoke=smoke,
             install_mode=install_mode,
             snapshot_version=getattr(args, "snapshot_version", ""),
-        )
-    elif args.cmd in TOP_LEVEL_PROFILE_ACTIONS:
-        smoke = getattr(args, "smoke", False)
-        install_mode = getattr(args, "install_mode", "reinstall")
-        serial = normalize_serial_alias(getattr(args, "serial", "") or "")
-        run_profile_action(
-            manifest,
-            args.cmd,
-            COMPOSE_WORKFLOW_NAME,
-            serial,
-            smoke,
-            getattr(args, "fresh", False),
-            install_mode,
-            getattr(args, "snapshot_version", ""),
         )
     else:
         raise RuntimeError("Unknown command")

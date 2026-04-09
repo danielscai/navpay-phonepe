@@ -15,12 +15,11 @@ class CliContractTest(unittest.TestCase):
         self.assertEqual(args.cmd, "build")
         self.assertEqual(args.app, "phonepe")
 
-    def test_top_level_profile_actions_exist(self) -> None:
+    def test_removed_stage_subcommands_are_rejected(self) -> None:
         parser = orch.build_parser()
-        for cmd in ("plan", "prepare", "smali", "merge", "apk", "test"):
-            args = parser.parse_args([cmd])
-            self.assertEqual(args.cmd, cmd)
-            self.assertFalse(hasattr(args, "profile"))
+        for cmd in ("plan", "prepare", "smali", "merge", "apk"):
+            with self.assertRaises(SystemExit):
+                parser.parse_args([cmd])
 
     def test_legacy_aliases_are_removed(self) -> None:
         parser = orch.build_parser()
@@ -55,13 +54,25 @@ class CliContractTest(unittest.TestCase):
         self.assertEqual(args_yes.cmd, "collect")
         self.assertEqual(args_yes.yes, True)
 
-    def test_profile_actions_accept_snapshot_version_arg(self) -> None:
+    def test_build_and_test_accept_snapshot_version_arg(self) -> None:
         parser = orch.build_parser()
-        for cmd in ("plan", "prepare", "smali", "merge", "apk", "test"):
+        for cmd in ("build", "test"):
             with self.subTest(cmd=cmd):
-                args = parser.parse_args([cmd, "--snapshot-version", "26022705"])
+                base_args = [cmd]
+                if cmd == "build":
+                    base_args.append("phonepe")
+                args = parser.parse_args(base_args + ["--snapshot-version", "26022705"])
                 self.assertEqual(args.cmd, cmd)
                 self.assertEqual(args.snapshot_version, "26022705")
+
+    def test_build_accepts_stage_flags(self) -> None:
+        parser = orch.build_parser()
+        args = parser.parse_args(["build", "phonepe", "--smali"])
+        self.assertTrue(args.smali)
+        self.assertFalse(args.merge)
+        args = parser.parse_args(["build", "phonepe", "--merge"])
+        self.assertTrue(args.merge)
+        self.assertFalse(args.smali)
 
     def test_install_accepts_rebuild_flag(self) -> None:
         parser = orch.build_parser()
@@ -94,6 +105,24 @@ def test_build_command_routes_to_profile_apk(monkeypatch):
     monkeypatch.setattr(orch, "profile_apk", fake_profile_apk)
     orch.main(["build", "phonepe"])
     assert calls == [("compose", False, "")]
+
+
+def test_build_smali_flag_routes_to_smali_stage(monkeypatch):
+    called = {"smali": 0, "apk": 0}
+    monkeypatch.setattr(orch, "load_manifest", lambda: {"dummy": {"deps": []}})
+    monkeypatch.setattr(orch, "profile_build_modules", lambda manifest, profile: called.__setitem__("smali", called["smali"] + 1))
+    monkeypatch.setattr(orch, "profile_apk", lambda *args, **kwargs: called.__setitem__("apk", called["apk"] + 1))
+    orch.main(["build", "phonepe", "--smali"])
+    assert called == {"smali": 1, "apk": 0}
+
+
+def test_build_merge_flag_routes_to_merge_stage(monkeypatch):
+    called = {"merge": 0, "apk": 0}
+    monkeypatch.setattr(orch, "load_manifest", lambda: {"dummy": {"deps": []}})
+    monkeypatch.setattr(orch, "profile_merge", lambda *args, **kwargs: called.__setitem__("merge", called["merge"] + 1))
+    monkeypatch.setattr(orch, "profile_apk", lambda *args, **kwargs: called.__setitem__("apk", called["apk"] + 1))
+    orch.main(["build", "phonepe", "--merge"])
+    assert called == {"merge": 1, "apk": 0}
 
 
 def test_main_without_explicit_argv_uses_process_args(monkeypatch):

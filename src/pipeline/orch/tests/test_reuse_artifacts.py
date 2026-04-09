@@ -35,13 +35,14 @@ class ReuseArtifactsTest(unittest.TestCase):
                 "mtime-only updates should not invalidate profile apk reuse fingerprint",
             )
 
-    def test_fresh_flag_is_exposed_for_profile_apk(self) -> None:
+    def test_build_stage_flags_are_exposed(self) -> None:
         args = cache_manager.build_parser().parse_args([
-            "apk",
-            "--fresh",
+            "build",
+            "phonepe",
+            "--smali",
         ])
-        self.assertIs(args.fresh, True)
-        self.assertFalse(hasattr(args, "profile"))
+        self.assertIs(args.smali, True)
+        self.assertIs(args.merge, False)
 
     def test_profile_test_parser_accepts_split_session_install_mode(self) -> None:
         args = cache_manager.build_parser().parse_args([
@@ -88,7 +89,7 @@ class ReuseArtifactsTest(unittest.TestCase):
             )
 
             with mock.patch.object(cache_manager, "resolve_profile_workspace", return_value=workspace), \
-                mock.patch.object(cache_manager, "profile_prepare", return_value=(["phonepe_sigbypass"], workspace)), \
+                mock.patch.object(cache_manager, "profile_prepare", return_value=(["phonepe_sigbypass"], workspace)) as prepare_mock, \
                 mock.patch.object(cache_manager, "maybe_reuse_profile_artifacts", return_value=True), \
                 mock.patch.object(cache_manager, "profile_merge", return_value=workspace), \
                 mock.patch.object(cache_manager, "profile_build_path", return_value=work_dir), \
@@ -100,6 +101,7 @@ class ReuseArtifactsTest(unittest.TestCase):
 
             self.assertEqual(out_dir, work_dir)
             compile_mock.assert_not_called()
+            prepare_mock.assert_not_called()
             seed_mock.assert_called_once()
             ensure_splits_mock.assert_called_once()
 
