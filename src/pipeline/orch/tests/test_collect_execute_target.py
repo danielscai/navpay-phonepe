@@ -31,7 +31,9 @@ class CollectExecuteTargetTest(unittest.TestCase):
             fake_device_dir.mkdir(parents=True, exist_ok=True)
             (fake_device_dir / "base.apk").write_text("base", encoding="utf-8")
             (fake_device_dir / "split_config.arm64_v8a.apk").write_text("abi", encoding="utf-8")
+            (fake_device_dir / "split_config.x86_64.apk").write_text("abi-x86_64", encoding="utf-8")
             (fake_device_dir / "split_config.xxhdpi.apk").write_text("density", encoding="utf-8")
+            (fake_device_dir / "split_config.xhdpi.apk").write_text("density-xhdpi", encoding="utf-8")
 
             def fake_run(cmd, cwd=None, env=None, check=True, concise=False):
                 del cwd, env, check, concise
@@ -48,7 +50,9 @@ class CollectExecuteTargetTest(unittest.TestCase):
                         [
                             "package:/data/app/com.phonepe.app/base.apk",
                             "package:/data/app/com.phonepe.app/split_config.arm64_v8a.apk",
+                            "package:/data/app/com.phonepe.app/split_config.x86_64.apk",
                             "package:/data/app/com.phonepe.app/split_config.xxhdpi.apk",
+                            "package:/data/app/com.phonepe.app/split_config.xhdpi.apk",
                         ]
                     )
                 if cmd[:6] == ["adb", "-s", "emulator-5554", "shell", "dumpsys", "package"]:
@@ -72,6 +76,7 @@ class CollectExecuteTargetTest(unittest.TestCase):
             self.assertTrue(Path(result["artifacts"]["base_apk"]).exists())
             self.assertTrue(Path(result["artifacts"]["abi_split_apk"]).exists())
             self.assertTrue(Path(result["artifacts"]["density_split_apk"]).exists())
+            self.assertEqual(len(result["artifacts"]["split_apks"]), 4)
 
 
 if __name__ == "__main__":

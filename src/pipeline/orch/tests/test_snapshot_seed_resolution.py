@@ -77,7 +77,7 @@ class SnapshotSeedResolutionTest(unittest.TestCase):
         self.assertEqual(anchor["versionCode"], "26022800")
         self.assertEqual(anchor["signingDigest"], "ccdd")
 
-    def test_build_phonepe_snapshot_seed_copies_required_apks_and_meta(self) -> None:
+    def test_build_phonepe_snapshot_seed_copies_all_collected_splits_and_meta(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             root = Path(tempdir)
             snapshots_root = root / "snapshots"
@@ -92,6 +92,17 @@ class SnapshotSeedResolutionTest(unittest.TestCase):
             capture_dir.mkdir(parents=True, exist_ok=True)
             for name in ("base.apk", "split_config.arm64_v8a.apk", "split_config.xxhdpi.apk"):
                 (capture_dir / name).write_text(name, encoding="utf-8")
+            alt_capture_dir = (
+                snapshots_root
+                / "com.phonepe.app"
+                / "26022705"
+                / "aabb"
+                / "captures"
+                / "emu_x86_64_xhdpi"
+            )
+            alt_capture_dir.mkdir(parents=True, exist_ok=True)
+            for name in ("base.apk", "split_config.x86_64.apk", "split_config.xhdpi.apk"):
+                (alt_capture_dir / name).write_text(name, encoding="utf-8")
 
             (snapshots_root / "index.json").write_text(
                 json.dumps(
@@ -117,12 +128,16 @@ class SnapshotSeedResolutionTest(unittest.TestCase):
             self.assertTrue((seed_dir / "base.apk").is_file())
             self.assertTrue((seed_dir / "split_config.arm64_v8a.apk").is_file())
             self.assertTrue((seed_dir / "split_config.xxhdpi.apk").is_file())
+            self.assertTrue((seed_dir / "split_config.x86_64.apk").is_file())
+            self.assertTrue((seed_dir / "split_config.xhdpi.apk").is_file())
 
             meta = json.loads((seed_dir / "meta.json").read_text(encoding="utf-8"))
             self.assertEqual(meta["snapshot_anchor"]["packageName"], "com.phonepe.app")
             self.assertEqual(meta["snapshot_anchor"]["versionCode"], "26022705")
             self.assertEqual(meta["snapshot_anchor"]["signingDigest"], "aabb")
             self.assertEqual(meta["snapshot_version"], "26022705")
+            self.assertIn("split_config.arm64_v8a.apk", meta["split_files"])
+            self.assertIn("split_config.x86_64.apk", meta["split_files"])
 
 
 if __name__ == "__main__":

@@ -92,6 +92,16 @@ DEFAULT_REQUIRED_SPLITS = (
     "split_config.arm64_v8a.apk",
     "split_config.xxhdpi.apk",
 )
+KNOWN_ABI_SPLIT_TOKENS = {
+    "arm64_v8a",
+    "armeabi_v7a",
+    "x86",
+    "x86_64",
+    "armeabi",
+    "mips",
+    "mips64",
+    "riscv64",
+}
 ARTIFACT_INJECT_MODULES = {
     "phonepe_sigbypass",
     "phonepe_https_interceptor",
@@ -657,6 +667,45 @@ def select_collect_split(split_files, token: str) -> Optional[Path]:
     return None
 
 
+def parse_split_token(split_name: str) -> str:
+    name = (split_name or "").strip()
+    if not name.startswith("split_config.") or not name.endswith(".apk"):
+        return ""
+    return name[len("split_config.") : -len(".apk")]
+
+
+def split_token_kind(token: str) -> str:
+    normalized = (token or "").strip().replace("-", "_")
+    if not normalized:
+        return "unknown"
+    if normalized in KNOWN_ABI_SPLIT_TOKENS:
+        return "abi"
+    return "density"
+
+
+def classify_split_name(split_name: str) -> tuple[str, str]:
+    token = parse_split_token(split_name)
+    return split_token_kind(token), token
+
+
+def collect_split_file_groups(split_files) -> dict:
+    groups = {"abi": [], "density": [], "unknown": []}
+    for file_path in split_files or []:
+        kind, token = classify_split_name(Path(file_path).name)
+        item = {"path": str(file_path), "name": Path(file_path).name, "token": token}
+        if kind not in groups:
+            kind = "unknown"
+        groups[kind].append(item)
+    return groups
+
+
+def resolve_release_split_files(source_dir: Path):
+    split_files = sorted(source_dir.glob("split_config.*.apk"), key=lambda p: p.name)
+    if not split_files:
+        raise RuntimeError(f"No split_config APKs found under {source_dir}")
+    return split_files
+
+
 def execute_collect_target(_matrix, _target, _run_state, _run_dir):
     matrix = _matrix or {}
     target = _target or {}
@@ -686,11 +735,15 @@ def execute_collect_target(_matrix, _target, _run_state, _run_dir):
         if not apk_paths:
             bootstrap = run_state.get("_bootstrap_result") or {}
             artifacts = bootstrap.get("artifacts") or {}
-            install_files = [
-                artifacts.get("base_apk"),
-                artifacts.get("abi_split_apk"),
-                artifacts.get("density_split_apk"),
-            ]
+            split_apks = artifacts.get("split_apks")
+            if isinstance(split_apks, list):
+                install_files = [artifacts.get("base_apk"), *split_apks]
+            else:
+                install_files = [
+                    artifacts.get("base_apk"),
+                    artifacts.get("abi_split_apk"),
+                    artifacts.get("density_split_apk"),
+                ]
             install_files = [str(Path(item)) for item in install_files if item and Path(item).exists()]
             if len(install_files) >= 2:
                 run([adb, "-s", serial, "install-multiple", "-r"] + install_files)
@@ -740,6 +793,7 @@ def execute_collect_target(_matrix, _target, _run_state, _run_dir):
         apksigner = find_build_tool("apksigner")
         signing_digest = read_apk_signing_digest(Path(apksigner), base_apk)
         density_value = read_density_value(adb, serial)
+        split_groups = collect_split_file_groups(split_files)
 
         return {
             "status": "done",
@@ -752,6 +806,7 @@ def execute_collect_target(_matrix, _target, _run_state, _run_dir):
                 "base_apk": str(base_apk),
                 "abi_split_apk": str(abi_split),
                 "density_split_apk": str(density_split),
+                "split_apks": [str(path) for path in split_files],
             },
             "device_meta": {
                 "target_id": target_id,
@@ -761,6 +816,7 @@ def execute_collect_target(_matrix, _target, _run_state, _run_dir):
                 "abis": supported_abis,
                 "density": density_value,
                 "density_bucket": density_to_bucket(density_value),
+                "split_groups": split_groups,
             },
         }
     except Exception as exc:
@@ -839,22 +895,39 @@ def archive_collect_target_artifacts(snapshots_root: Path, version_anchor, targe
     capture_dir.mkdir(parents=True, exist_ok=True)
 
     artifacts = (result or {}).get("artifacts") or {}
-    artifact_specs = (
+    artifact_specs = [
         ("base_apk", "base.apk"),
-        ("abi_split_apk", "split_config.arm64_v8a.apk"),
-        ("density_split_apk", "split_config.xxhdpi.apk"),
-    )
+    ]
+    split_apks = artifacts.get("split_apks")
+    if isinstance(split_apks, list) and split_apks:
+        for split_path in split_apks:
+            split_name = Path(split_path).name
+            artifact_specs.append((split_path, split_name))
+    else:
+        # Backward compatibility for old collect records.
+        artifact_specs.extend(
+            [
+                ("abi_split_apk", "split_config.arm64_v8a.apk"),
+                ("density_split_apk", "split_config.xxhdpi.apk"),
+            ]
+        )
     files_meta = []
     for key, dest_name in artifact_specs:
-        src = Path(artifacts.get(key, ""))
+        if key in ("base_apk", "abi_split_apk", "density_split_apk"):
+            src = Path(artifacts.get(key, ""))
+        else:
+            src = Path(key)
         if not src.exists():
             raise RuntimeError(f"Missing artifact for {target_id}: {key}")
         dst = capture_dir / dest_name
         shutil.copy2(src, dst)
+        split_kind, split_token = classify_split_name(dst.name)
         files_meta.append(
             {
                 "key": key,
                 "file": dst.name,
+                "kind": split_kind,
+                "token": split_token,
                 "source_path": str(src),
                 "sha256": sha256_file(dst),
             }
@@ -1619,11 +1692,11 @@ def ensure_profile_release_splits_signed(work_dir: Path, source_dir: Path, base_
         env["PATH"] = f"{env['JAVA_HOME']}/bin:" + env.get("PATH", "")
 
     base_digest = read_apk_signing_digest(Path(apksigner), base_apk)
-    for split_name in DEFAULT_REQUIRED_SPLITS:
-        source_split = source_dir / split_name
+    source_splits = resolve_release_split_files(source_dir)
+    prepared_splits = []
+    for source_split in source_splits:
+        split_name = source_split.name
         target_split = work_dir / split_name
-        if not source_split.exists():
-            raise RuntimeError(f"Required split not found: {source_split}")
 
         source_digest = read_apk_signing_digest(Path(apksigner), source_split)
         if source_digest == base_digest:
@@ -1650,10 +1723,11 @@ def ensure_profile_release_splits_signed(work_dir: Path, source_dir: Path, base_
                 f"Prepared split signature mismatch for {target_split}: "
                 f"base={base_digest} split={target_digest}"
             )
+        prepared_splits.append(split_name)
 
     log_info(
         "[PROFILE] release split signatures aligned with base APK: "
-        + ", ".join(DEFAULT_REQUIRED_SPLITS)
+        + ", ".join(prepared_splits)
     )
 
 
@@ -1816,10 +1890,27 @@ def snapshot_seed_ready(cache_path: Path, anchor: dict) -> bool:
     cached_anchor = snapshot_anchor_from_meta(meta)
     if not cached_anchor or cached_anchor != anchor:
         return False
-    for split_name in ("base.apk", *DEFAULT_REQUIRED_SPLITS):
+    base_apk = cache_path / "base.apk"
+    if not base_apk.exists() or base_apk.stat().st_size <= 0:
+        return False
+    split_names = []
+    if isinstance(meta.get("split_files"), list):
+        split_names = [str(item).strip() for item in meta.get("split_files") if str(item).strip()]
+    if not split_names:
+        split_names = [path.name for path in sorted(cache_path.glob("split_config.*.apk"))]
+    if not split_names:
+        return False
+    has_abi = False
+    has_density = False
+    for split_name in split_names:
         split_path = cache_path / split_name
         if not split_path.exists() or split_path.stat().st_size <= 0:
             return False
+        split_kind, _ = classify_split_name(split_name)
+        has_abi = has_abi or split_kind == "abi"
+        has_density = has_density or split_kind == "density"
+    if not has_abi or not has_density:
+        return False
     return True
 
 
@@ -1886,13 +1977,14 @@ def resolve_snapshot_capture_dir(snapshots_root: Path, anchor: dict) -> Path:
 
     candidates = sorted([path for path in capture_root.iterdir() if path.is_dir()], key=lambda path: path.name)
     for capture_dir in candidates:
-        has_all_files = True
-        for split_name in ("base.apk", *DEFAULT_REQUIRED_SPLITS):
-            split_path = capture_dir / split_name
-            if not split_path.exists() or split_path.stat().st_size <= 0:
-                has_all_files = False
-                break
-        if has_all_files:
+        base_apk = capture_dir / "base.apk"
+        if not base_apk.exists() or base_apk.stat().st_size <= 0:
+            continue
+        split_files = sorted(capture_dir.glob("split_config.*.apk"))
+        if not split_files:
+            continue
+        groups = collect_split_file_groups(split_files)
+        if groups["abi"] and groups["density"]:
             return capture_dir
     raise RuntimeError(f"Missing required APKs in snapshot captures: {capture_root}")
 
@@ -1917,12 +2009,26 @@ def build_phonepe_snapshot_seed(cache_path: Path, package: str, snapshot_version
     snapshots_path = Path(snapshots_root) if snapshots_root else DEFAULT_SNAPSHOTS_ROOT
     anchor = resolve_snapshot_anchor(resolve_snapshot_index_path(snapshots_path), package, snapshot_version)
     capture_dir = resolve_snapshot_capture_dir(snapshots_path, anchor)
+    capture_root = snapshots_path / anchor["packageName"] / anchor["versionCode"] / anchor["signingDigest"] / "captures"
 
     delete_cache_dir(cache_path)
     cache_path.mkdir(parents=True, exist_ok=True)
 
-    for split_name in ("base.apk", *DEFAULT_REQUIRED_SPLITS):
-        shutil.copy2(capture_dir / split_name, cache_path / split_name)
+    shutil.copy2(capture_dir / "base.apk", cache_path / "base.apk")
+
+    split_sources = {}
+    capture_targets = []
+    for target_dir in sorted([path for path in capture_root.iterdir() if path.is_dir()], key=lambda p: p.name):
+        capture_targets.append(target_dir.name)
+        for split_file in sorted(target_dir.glob("split_config.*.apk"), key=lambda p: p.name):
+            split_sources[split_file.name] = split_file
+    if not split_sources:
+        raise RuntimeError(f"Missing split_config APKs in snapshot captures: {capture_root}")
+
+    copied_split_names = []
+    for split_name, split_src in sorted(split_sources.items(), key=lambda item: item[0]):
+        shutil.copy2(split_src, cache_path / split_name)
+        copied_split_names.append(split_name)
 
     write_meta(
         cache_path / "meta.json",
@@ -1934,6 +2040,8 @@ def build_phonepe_snapshot_seed(cache_path: Path, package: str, snapshot_version
             "snapshot_index": str(resolve_snapshot_index_path(snapshots_path)),
             "capture_dir": str(capture_dir),
             "capture_target_id": capture_dir.name,
+            "capture_targets": capture_targets,
+            "split_files": copied_split_names,
             "package": package,
         },
     )
@@ -3532,11 +3640,9 @@ def cmd_release(app: str, version: str, target_env: str = "dev") -> int:
     manifest = load_manifest()
     work_dir = profile_apk(manifest, COMPOSE_WORKFLOW_NAME, fresh=False)
     base_apk = work_dir / DEFAULT_SIGNED_APK
-    abi_apk = work_dir / DEFAULT_REQUIRED_SPLITS[0]
-    density_apk = work_dir / DEFAULT_REQUIRED_SPLITS[1]
-    for path in (base_apk, abi_apk, density_apk):
-        if not path.exists():
-            raise RuntimeError(f"release_artifact_missing: {path}")
+    if not base_apk.exists():
+        raise RuntimeError(f"release_artifact_missing: {base_apk}")
+    split_apks = resolve_release_split_files(work_dir)
 
     base_metadata = read_apk_metadata(base_apk)
     version_code = base_metadata["versionCode"]
@@ -3551,7 +3657,15 @@ def cmd_release(app: str, version: str, target_env: str = "dev") -> int:
         "installerMinVersion": base_metadata.get("installerMinVersion", 1),
     }
 
-    for split_kind, split_path in (("abi", abi_apk), ("density", density_apk)):
+    split_groups = collect_split_file_groups(split_apks)
+    if not split_groups["abi"] or not split_groups["density"]:
+        raise RuntimeError(
+            "release requires at least one ABI split and one density split; "
+            f"found abi={len(split_groups['abi'])}, density={len(split_groups['density'])}"
+        )
+
+    for split_path in split_apks:
+        split_kind, _ = classify_split_name(split_path.name)
         split_metadata = read_apk_metadata(split_path)
         if int(split_metadata["versionCode"]) != int(metadata["versionCode"]):
             raise RuntimeError(
@@ -3562,15 +3676,19 @@ def cmd_release(app: str, version: str, target_env: str = "dev") -> int:
                 f"split_package_mismatch split={split_kind} expected={metadata['packageName']} actual={split_metadata['packageName']}"
             )
 
-    signing_digests = {
-        "base": read_signing_digest(base_apk),
-        "abi": read_signing_digest(abi_apk),
-        "density": read_signing_digest(density_apk),
+    signing_digests = {"base": read_signing_digest(base_apk)}
+    for split_path in split_apks:
+        signing_digests[split_path.name] = read_signing_digest(split_path)
+    mismatched = {
+        name: digest
+        for name, digest in signing_digests.items()
+        if digest != signing_digests["base"]
     }
-    if signing_digests["base"] != signing_digests["abi"] or signing_digests["base"] != signing_digests["density"]:
+    if mismatched:
         raise RuntimeError(
             "apk_signatures_inconsistent "
-            f"base={signing_digests['base']} abi={signing_digests['abi']} density={signing_digests['density']}"
+            + ", ".join([f"{name}={digest}" for name, digest in sorted(mismatched.items())])
+            + f", base={signing_digests['base']}"
         )
 
     checksum = sha256_file(base_apk)
@@ -3600,30 +3718,49 @@ def cmd_release(app: str, version: str, target_env: str = "dev") -> int:
         raise RuntimeError("release_create_missing_id")
 
     artifacts = [
-        ("base", "base.apk", base_apk, {"artifactType": "base", "name": "base.apk", "signingDigest": signing_digests["base"]}),
         (
-            "abi",
-            "split_config.arm64_v8a.apk",
-            abi_apk,
+            "base",
+            "base.apk",
+            base_apk,
             {
-                "artifactType": "abi",
-                "name": "split_config.arm64_v8a.apk",
-                "signingDigest": signing_digests["abi"],
-                "abi": "arm64-v8a",
+                "artifactType": "base",
+                "name": "base.apk",
+                "signingDigest": signing_digests["base"],
             },
-        ),
-        (
-            "density",
-            "split_config.xxhdpi.apk",
-            density_apk,
-            {
-                "artifactType": "density",
-                "name": "split_config.xxhdpi.apk",
-                "signingDigest": signing_digests["density"],
-                "density": "xxhdpi",
-            },
-        ),
+        )
     ]
+    for split_path in split_apks:
+        split_kind, split_token = classify_split_name(split_path.name)
+        if split_kind == "abi":
+            artifacts.append(
+                (
+                    "abi",
+                    split_path.name,
+                    split_path,
+                    {
+                        "artifactType": "abi",
+                        "name": split_path.name,
+                        "signingDigest": signing_digests["base"],
+                        "abi": split_token.replace("_", "-"),
+                    },
+                )
+            )
+        elif split_kind == "density":
+            artifacts.append(
+                (
+                    "density",
+                    split_path.name,
+                    split_path,
+                    {
+                        "artifactType": "density",
+                        "name": split_path.name,
+                        "signingDigest": signing_digests["base"],
+                        "density": split_token,
+                    },
+                )
+            )
+        else:
+            log_warn(f"[release] skip unknown split type: {split_path.name}")
     for _, file_name, apk_path, fields in artifacts:
         http_multipart_upload(
             f"{release_env['base_url']}/api/publisher/payment-apps/{app_id}/releases/{release_id}/artifacts",
