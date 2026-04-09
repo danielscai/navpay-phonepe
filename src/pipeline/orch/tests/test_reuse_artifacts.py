@@ -41,7 +41,7 @@ class ReuseArtifactsTest(unittest.TestCase):
             "--fresh",
         ])
         self.assertIs(args.fresh, True)
-        self.assertEqual(args.profile, "full")
+        self.assertFalse(hasattr(args, "profile"))
 
     def test_profile_test_parser_accepts_split_session_install_mode(self) -> None:
         args = cache_manager.build_parser().parse_args([

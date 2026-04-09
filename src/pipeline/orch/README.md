@@ -41,7 +41,7 @@ Install the CLI once with `yarn install:orch`, then use `orch <subcommand>` dire
 - Resume PhonePe snapshot collection from run id:
   - `python3 src/pipeline/orch/orchestrator.py collect --matrix src/pipeline/orch/device_matrix.example.json --resume <run_id> --package com.phonepe.app`
 
-Top-level workflow supports only `full` profile to enforce composed testing.
+Top-level workflow uses a single composed pipeline (no profile mode selection).
 
 ## Multi-App Standard Commands
 
@@ -53,14 +53,14 @@ Top-level workflow supports only `full` profile to enforce composed testing.
 ## Unified Pipeline
 
 1. `prepare`
-   - Refreshes `cache/apps/phonepe/profiles/<name>/workspace` from `cache/apps/phonepe/decompiled/base_decompiled_clean`, which is built from the selected `cache/apps/phonepe/snapshot_seed`.
+   - Refreshes `cache/apps/phonepe/compose/injection_workspace` from `cache/apps/phonepe/decompiled/base_decompiled_clean`, which is built from the selected `cache/apps/phonepe/snapshot_seed`.
 2. `smali`
    - Builds per-module artifacts into `cache/apps/phonepe/modules/<module>/`.
    - Rebuilds only when declared `fingerprint_inputs` change.
 3. `merge`
    - Merges each module from its artifact directory via `--artifact-dir`.
 4. `apk`
-   - Produces the final signed APK once in `cache/apps/phonepe/profiles/<name>/build/patched_signed.apk`.
+   - Produces the final signed APK once in `cache/apps/phonepe/compose/release_apk/patched_signed.apk`.
    - Default behavior reuses existing signed APK when fingerprint is unchanged.
    - Use `--fresh` to force full rebuild.
 5. `test`
@@ -80,20 +80,20 @@ Current artifact-backed modules:
 Module relationships are resolved automatically by the orchestrator from two files:
 
 - `src/pipeline/orch/cache_profiles.json`
-  - Defines modules in the only supported top-level profile (`full`).
+  - Defines modules for the single composed workflow.
 - `src/pipeline/orch/orchestrator.py` (`MANIFEST_REGISTRY`)
   - Defines per-module dependency metadata (`deps`, `source_cache`, `source_subdir`, `builder`, `merger`).
 
-How to auto-discover the active relationship graph for a profile:
+How to auto-discover the active relationship graph for the composed workflow:
 
 1. Run `python3 src/pipeline/orch/orchestrator.py plan`
 2. Or use shortcut `yarn plan`
 
 Interpretation:
 
-- `plan` output gives the concrete module apply order for the composed full profile.
+- `plan` output gives the concrete module apply order for the composed workflow.
 - The orchestrator then resolves each module using manifest metadata, so merge/build dependencies are not guessed manually.
-- If profile or module definitions change, rerun `plan`; no extra manual mapping docs are needed.
+- If module definitions change, rerun `plan`; no extra manual mapping docs are needed.
 
 ## Manual Verification
 
@@ -103,7 +103,7 @@ Run these commands in order if you want to inspect the real build behavior.
    Meaning: prints the exact module order used by the default composed build. This confirms the orchestrator will build `sigbypass`, then `https_interceptor`, then `phonepehelper`, then `heartbeat_bridge`.
 
 2. `python3 src/pipeline/orch/orchestrator.py prepare`
-   Meaning: recreates a clean profile workspace from the decompiled baseline. This guarantees later injection happens on a fresh tree instead of a dirty previous run.
+   Meaning: recreates a clean compose injection workspace from the decompiled baseline. This guarantees later injection happens on a fresh tree instead of a dirty previous run.
 
 3. `python3 src/pipeline/orch/orchestrator.py smali`
    Meaning: builds the four module artifacts once into `cache/apps/phonepe/modules/`. This is the step that replaces the old “each module compiles during inject” behavior.

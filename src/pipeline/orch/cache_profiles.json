@@ -1,5 +1,5 @@
 {
-  "full": [
+  "modules": [
     "phonepe_sigbypass",
     "phonepe_https_interceptor",
     "phonepe_phonepehelper",

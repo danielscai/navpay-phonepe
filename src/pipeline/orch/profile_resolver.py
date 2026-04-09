@@ -15,17 +15,22 @@ def load_profiles(path: Path = PROFILES_PATH) -> Dict[str, List[str]]:
     return data
 
 
-def resolve_profile(name: str, path: Path = PROFILES_PATH) -> List[str]:
+def resolve_compose_modules(path: Path = PROFILES_PATH) -> List[str]:
     profiles = load_profiles(path)
-    if name not in profiles:
-        raise ValueError(f"Unknown profile: {name}")
-
-    modules = profiles[name]
+    modules = profiles.get("modules")
+    if modules is None:
+        # Backward compatibility for older config shape.
+        modules = profiles.get("full")
     if not isinstance(modules, list) or not modules:
-        raise ValueError(f"Invalid profile '{name}': module list must be non-empty")
-
+        raise ValueError("Invalid compose config: 'modules' list must be non-empty")
     duplicates = sorted({m for m in modules if modules.count(m) > 1})
     if duplicates:
-        raise ValueError(f"Invalid profile '{name}': duplicate modules: {', '.join(duplicates)}")
-
+        raise ValueError(f"Invalid compose module list: duplicate modules: {', '.join(duplicates)}")
     return modules
+
+
+def resolve_profile(name: str, path: Path = PROFILES_PATH) -> List[str]:
+    # Backward-compatible wrapper: profile selection is removed.
+    if name and name not in {"full", "compose"}:
+        raise ValueError("Unknown profile: mode selection has been removed (only composed workflow is supported)")
+    return resolve_compose_modules(path)

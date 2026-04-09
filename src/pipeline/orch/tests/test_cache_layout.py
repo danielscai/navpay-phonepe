@@ -14,6 +14,8 @@ def test_phonepe_paths_are_app_scoped(tmp_path, monkeypatch):
     assert paths.snapshots_root == tmp_path / "cache/apps/phonepe/snapshots"
     assert paths.decompiled == tmp_path / "cache/apps/phonepe/decompiled"
     assert paths.snapshot_seed == tmp_path / "cache/apps/phonepe/snapshot_seed"
+    assert paths.compose_workspace == tmp_path / "cache/apps/phonepe/compose/injection_workspace"
+    assert paths.compose_release_apk == tmp_path / "cache/apps/phonepe/compose/release_apk"
     assert paths.module_artifacts_root == tmp_path / "cache/apps/phonepe/modules"
 
 

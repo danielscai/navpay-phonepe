@@ -39,7 +39,7 @@ def test_install_rebuild_flag_triggers_cached_rebuild(monkeypatch):
 
     monkeypatch.setattr(orch, "install_profile_apk_to_device", fake_install)
     assert orch.main(["install", "phonepe", "26022705", "--rebuild"]) == 0
-    assert called["profile_name"] == "full"
+    assert called["profile_name"] == "compose"
     assert called["serial"] == "emulator-5554"
     assert called["rebuild"] is True
     assert called["snapshot_version"] == "26022705"

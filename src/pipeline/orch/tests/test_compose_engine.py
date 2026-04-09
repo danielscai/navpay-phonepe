@@ -54,7 +54,7 @@ class ComposeEngineTest(unittest.TestCase):
     def test_refresh_profile_workspace_makes_files_writable(self) -> None:
         profile_name = "unitperm"
         cache_root = Path(__file__).resolve().parents[4] / "cache"
-        workspace = cache_root / "apps" / "phonepe" / "profiles" / profile_name / "workspace"
+        workspace = cache_root / "apps" / "phonepe" / "compose" / "injection_workspace"
 
         if workspace.exists():
             for root, dirs, files in os.walk(workspace, topdown=False):
@@ -86,7 +86,7 @@ class ComposeEngineTest(unittest.TestCase):
     def test_refresh_profile_workspace_can_delete_existing_readonly_workspace(self) -> None:
         profile_name = "unitperm_existing"
         cache_root = Path(__file__).resolve().parents[4] / "cache"
-        workspace = cache_root / "apps" / "phonepe" / "profiles" / profile_name / "workspace"
+        workspace = cache_root / "apps" / "phonepe" / "compose" / "injection_workspace"
 
         if workspace.exists():
             for root, dirs, files in os.walk(workspace, topdown=False):

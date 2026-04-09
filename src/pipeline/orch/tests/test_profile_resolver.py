@@ -33,7 +33,7 @@ class ProfileResolverTest(unittest.TestCase):
             profile_path.write_text(
                 json.dumps(
                     {
-                        "dup": [
+                        "full": [
                             "phonepe_sigbypass",
                             "phonepe_sigbypass",
                         ]
@@ -43,7 +43,7 @@ class ProfileResolverTest(unittest.TestCase):
             )
 
             with self.assertRaises(ValueError) as exc:
-                resolve_profile("dup", profile_path)
+                resolve_profile("full", profile_path)
 
             self.assertIn("duplicate", str(exc.exception).lower())
 

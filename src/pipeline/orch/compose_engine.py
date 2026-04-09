@@ -12,7 +12,6 @@ from cache_layout import (
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parents[2]
 CACHE_DIR = REPO_ROOT / "cache"
-PROFILES_DIR = CACHE_DIR / "profiles"
 
 
 def detect_conflicts(mod_cfg: dict, modules: list):
@@ -51,9 +50,10 @@ def make_workspace_writable(path: Path) -> None:
 
 
 def refresh_profile_workspace(profile: str, baseline_dir: Path, app: str = DEFAULT_APP) -> Path:
+    profile_key = profile
     if not baseline_dir.exists():
         raise RuntimeError(f"Baseline decompiled cache not found: {baseline_dir}")
-    workspace = profile_workspace_path(profile, app)
+    workspace = profile_workspace_path(profile_key, app)
     if workspace.exists():
         make_workspace_writable(workspace)
         shutil.rmtree(workspace)

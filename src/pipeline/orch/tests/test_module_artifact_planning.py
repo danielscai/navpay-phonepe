@@ -14,7 +14,7 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
     def test_top_level_parser_accepts_build_modules_action(self) -> None:
         args = cache_manager.build_parser().parse_args(["smali"])
         self.assertEqual(args.cmd, "smali")
-        self.assertEqual(args.profile, "full")
+        self.assertFalse(hasattr(args, "profile"))
 
     def test_profile_plan_build_returns_resolved_profile_modules(self) -> None:
         manifest = {"any": {}}

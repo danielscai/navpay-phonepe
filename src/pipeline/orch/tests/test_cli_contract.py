@@ -20,7 +20,7 @@ class CliContractTest(unittest.TestCase):
         for cmd in ("plan", "prepare", "smali", "merge", "apk", "test"):
             args = parser.parse_args([cmd])
             self.assertEqual(args.cmd, cmd)
-            self.assertEqual(args.profile, "full")
+            self.assertFalse(hasattr(args, "profile"))
 
     def test_legacy_aliases_are_removed(self) -> None:
         parser = orch.build_parser()
@@ -93,7 +93,7 @@ def test_build_command_routes_to_profile_apk(monkeypatch):
 
     monkeypatch.setattr(orch, "profile_apk", fake_profile_apk)
     orch.main(["build", "phonepe"])
-    assert calls == [("full", False, "")]
+    assert calls == [("compose", False, "")]
 
 
 def test_main_without_explicit_argv_uses_process_args(monkeypatch):
@@ -107,7 +107,7 @@ def test_main_without_explicit_argv_uses_process_args(monkeypatch):
 
     monkeypatch.setattr(orch, "profile_apk", fake_profile_apk)
     assert orch.main() == 0
-    assert calls == [("full", False, "")]
+    assert calls == [("compose", False, "")]
 
 
 def test_collect_yes_routes_to_run_collect_with_auto_yes(monkeypatch):

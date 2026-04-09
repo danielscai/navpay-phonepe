@@ -15,7 +15,9 @@ class AppCachePaths:
     snapshot_seed: Path
     merged: Path
     decompiled: Path
-    profiles_root: Path
+    compose_root: Path
+    compose_workspace: Path
+    compose_release_apk: Path
     module_artifacts_root: Path
 
 
@@ -29,17 +31,21 @@ def paths_for_app(app: str = DEFAULT_APP) -> AppCachePaths:
         snapshot_seed=root / "snapshot_seed",
         merged=root / "merged",
         decompiled=root / "decompiled",
-        profiles_root=root / "profiles",
+        compose_root=root / "compose",
+        compose_workspace=root / "compose" / "injection_workspace",
+        compose_release_apk=root / "compose" / "release_apk",
         module_artifacts_root=root / "modules",
     )
 
 
 def profile_workspace_path(profile: str, app: str = DEFAULT_APP) -> Path:
-    return paths_for_app(app).profiles_root / profile / "workspace"
+    del profile
+    return paths_for_app(app).compose_workspace
 
 
 def profile_build_path(profile: str, app: str = DEFAULT_APP) -> Path:
-    return paths_for_app(app).profiles_root / profile / "build"
+    del profile
+    return paths_for_app(app).compose_release_apk
 
 
 def module_artifact_path(module_name: str, app: str = DEFAULT_APP) -> Path:

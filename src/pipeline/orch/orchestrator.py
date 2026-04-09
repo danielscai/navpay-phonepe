@@ -25,7 +25,7 @@ from cache_layout import (
     module_artifact_path as layout_module_artifact_path,
     paths_for_app,
 )
-from profile_resolver import resolve_profile
+from profile_resolver import resolve_compose_modules
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -37,8 +37,7 @@ DEFAULT_SNAPSHOTS_ROOT = paths_for_app(DEFAULT_APP).snapshots_root
 
 DEFAULT_PACKAGE = "com.phonepe.app"
 DEFAULT_SERIAL = "GSLDU18106001520"
-DEFAULT_PROFILE = "full"
-SUPPORTED_TOP_LEVEL_PROFILES = (DEFAULT_PROFILE,)
+COMPOSE_WORKFLOW_NAME = "compose"
 SIGBYPASS_BUILD_DIR = "cache/apps/phonepe/modules/phonepe_sigbypass/build"
 HTTPS_BUILD_DIR = "cache/apps/phonepe/modules/phonepe_https_interceptor/build"
 PHONEPEHELPER_BUILD_DIR = "cache/apps/phonepe/modules/phonepe_phonepehelper/build"
@@ -2229,7 +2228,7 @@ def compute_inputs_fingerprint(root: Path) -> str:
 def compute_profile_reuse_fingerprint(manifest, profile_name: str, workspace: Path) -> str:
     modules = resolve_profile_modules(manifest, profile_name)
     state = read_profile_merge_state(workspace)
-    if state.get("profile") == profile_name and state.get("modules") == modules:
+    if state.get("modules") == modules:
         cached_fingerprints = state.get("module_fingerprints")
         if isinstance(cached_fingerprints, dict):
             current_fingerprints = {}
@@ -2244,7 +2243,6 @@ def compute_profile_reuse_fingerprint(manifest, profile_name: str, workspace: Pa
             if fingerprints_match and has_required_workspace_inputs(workspace):
                 payload = {
                     "mode": "merge_state_fast_v1",
-                    "profile": profile_name,
                     "modules": modules,
                     "module_fingerprints": current_fingerprints,
                 }
@@ -2293,10 +2291,10 @@ def has_required_workspace_inputs(workspace: Path) -> bool:
 
 
 def write_profile_merge_state(manifest, profile_name: str, workspace: Path, modules):
+    del profile_name
     state_path = workspace / MERGE_STATE_FILE
     payload = {
         "created_at": datetime.now().isoformat(),
-        "profile": profile_name,
         "modules": modules,
         "module_fingerprints": {
             module: compute_module_fingerprint(resolve_module_spec(manifest, module))
@@ -2307,12 +2305,11 @@ def write_profile_merge_state(manifest, profile_name: str, workspace: Path, modu
 
 
 def has_reusable_merged_workspace(manifest, profile_name: str, workspace: Path, modules) -> bool:
+    del profile_name
     if not has_required_workspace_inputs(workspace):
         return False
     state = read_profile_merge_state(workspace)
     if not state:
-        return False
-    if state.get("profile") != profile_name:
         return False
     cached_modules = state.get("modules")
     if cached_modules != modules:
@@ -2354,7 +2351,6 @@ def write_reuse_state(manifest, profile_name: str, workspace: Path, work_dir: Pa
     state_path = work_dir / REUSE_STATE_FILE
     payload = {
         "created_at": datetime.now().isoformat(),
-        "profile": profile_name,
         "workspace": str(workspace),
         "signed_apk": DEFAULT_SIGNED_APK,
         "fingerprint": compute_profile_reuse_fingerprint(manifest, profile_name, workspace),
@@ -3266,7 +3262,7 @@ def cmd_install(app: str, serial: str = "", version: str = "", rebuild: bool = F
     manifest = load_manifest()
     install_profile_apk_to_device(
         manifest,
-        DEFAULT_PROFILE,
+        COMPOSE_WORKFLOW_NAME,
         target_serial,
         rebuild=rebuild,
         snapshot_version=version,
@@ -3279,7 +3275,7 @@ def cmd_test(app: str, serial: str = "", smoke: bool = False, install_mode: str 
     manifest = load_manifest()
     profile_test(
         manifest,
-        DEFAULT_PROFILE,
+        COMPOSE_WORKFLOW_NAME,
         serial,
         smoke=smoke,
         install_mode=install_mode,
@@ -3610,7 +3606,8 @@ def run_module_action(spec, action: str, delete_first: bool, serial: str):
         raise RuntimeError(f"Unknown action: {action}")
 
 def resolve_profile_modules(manifest, profile_name: str):
-    modules = resolve_profile(profile_name)
+    del profile_name
+    modules = resolve_compose_modules()
     missing = [name for name in modules if name not in manifest]
     if missing:
         raise RuntimeError(f"Profile contains unknown modules: {', '.join(missing)}")
@@ -3618,12 +3615,7 @@ def resolve_profile_modules(manifest, profile_name: str):
 
 
 def ensure_supported_profile(profile_name: str):
-    if profile_name not in SUPPORTED_TOP_LEVEL_PROFILES:
-        allowed = ", ".join(SUPPORTED_TOP_LEVEL_PROFILES)
-        raise RuntimeError(
-            f"Unsupported profile for top-level workflow: {profile_name}. "
-            f"Allowed: {allowed}"
-        )
+    del profile_name
 
 
 def profile_plan_build(manifest, profile_name: str):
@@ -3643,7 +3635,7 @@ def resolve_profile_workspace(profile_name: str) -> Path:
     if not workspace.exists():
         raise RuntimeError(
             f"Profile workspace not found: {workspace}. "
-            f"Run 'python3 src/pipeline/orch/orchestrator.py prepare --profile {profile_name}' first."
+            "Run 'python3 src/pipeline/orch/orchestrator.py prepare' first."
         )
     return workspace
 
@@ -4045,7 +4037,6 @@ def build_parser() -> argparse.ArgumentParser:
         allow_smoke: bool = False,
         allow_fresh: bool = False,
     ):
-        cmd_parser.add_argument("--profile", choices=SUPPORTED_TOP_LEVEL_PROFILES, default=DEFAULT_PROFILE)
         cmd_parser.add_argument("--snapshot-version", default="")
         if allow_serial:
             cmd_parser.add_argument("--serial")
@@ -4181,7 +4172,7 @@ def main(argv=None):
     elif args.cmd == "build":
         profile_apk(
             manifest,
-            DEFAULT_PROFILE,
+            COMPOSE_WORKFLOW_NAME,
             fresh=False,
             snapshot_version=getattr(args, "snapshot_version", ""),
         )
@@ -4212,7 +4203,7 @@ def main(argv=None):
         run_profile_action(
             manifest,
             args.cmd,
-            args.profile,
+            COMPOSE_WORKFLOW_NAME,
             serial,
             smoke,
             getattr(args, "fresh", False),

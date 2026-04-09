@@ -13,7 +13,7 @@ class SmokeModeTest(unittest.TestCase):
     def test_profile_test_parser_accepts_smoke_flag(self) -> None:
         args = cache_manager.build_parser().parse_args(["test", "--smoke"])
         self.assertEqual(args.cmd, "test")
-        self.assertEqual(args.profile, "full")
+        self.assertFalse(hasattr(args, "profile"))
         self.assertIs(args.smoke, True)
 
     def test_smoke_flag_only_allowed_for_profile_test(self) -> None:
