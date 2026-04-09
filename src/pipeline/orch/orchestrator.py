@@ -3116,18 +3116,120 @@ def resolve_install_target_serial(serial: str = "") -> str:
     return ""
 
 
-def cmd_install(app: str, serial: str = "", version: str = "") -> int:
+def install_profile_apk_to_device(
+    manifest,
+    profile_name: str,
+    serial: str,
+    rebuild: bool = False,
+    snapshot_version: str = "",
+):
+    work_dir = profile_build_path(profile_name)
+    if rebuild:
+        log_step(f"[PROFILE:{profile_name}] 安装前执行缓存友好重建")
+        work_dir = profile_apk(
+            manifest,
+            profile_name,
+            fresh=False,
+            snapshot_version=snapshot_version,
+        )
+    elif snapshot_version:
+        log_warn("install 未指定 --rebuild，忽略 snapshot-version，仅安装当前已构建 APK")
+
+    signed_apk = work_dir / DEFAULT_SIGNED_APK
+    if not signed_apk.exists():
+        raise RuntimeError(
+            f"Built APK not found: {signed_apk}. "
+            f"Run 'orch build phonepe' first or use 'orch install phonepe --rebuild'."
+        )
+
+    adb = adb_path()
+    device = select_device(adb, serial)
+    split_files = sorted(work_dir.glob("split_config.*.apk"))
+    split_map = {path.name: path for path in split_files}
+    available_splits = sorted(split_map.keys())
+
+    supported_abis = read_supported_abis(adb, device)
+    if not supported_abis:
+        raise RuntimeError("Unable to resolve device ABI for split install")
+    abi_split = None
+    expected_abi_splits = []
+    for abi in supported_abis:
+        split_name = f"split_config.{normalize_abi_token(abi)}.apk"
+        expected_abi_splits.append(split_name)
+        if split_name in split_map:
+            abi_split = split_map[split_name]
+            break
+    if abi_split is None:
+        raise RuntimeError(
+            "Missing ABI split for device. "
+            f"abis={supported_abis}, expected one of {expected_abi_splits}, available={available_splits}"
+        )
+
+    density_bucket = density_to_bucket(read_density_value(adb, device))
+    density_split_name = f"split_config.{density_bucket}.apk"
+    density_split = split_map.get(density_split_name)
+    if density_split is None:
+        raise RuntimeError(
+            "Missing density split for device. "
+            f"density={density_bucket}, expected={density_split_name}, available={available_splits}"
+        )
+
+    log_info(
+        f"[PROFILE:{profile_name}] 使用已构建产物安装: base={signed_apk.name}, "
+        f"abi={abi_split.name}, density={density_split.name}"
+    )
+    install_cmd = [
+        adb,
+        "-s",
+        device,
+        "install-multiple",
+        "--no-incremental",
+        "-r",
+        str(signed_apk),
+        str(abi_split),
+        str(density_split),
+    ]
+
+    last_install_error = ""
+    for install_attempt in range(1, 3):
+        log_run(install_cmd)
+        proc = subprocess.run(
+            install_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        output = proc.stdout or ""
+        for line in output.splitlines():
+            if line.strip():
+                log_cmd_output("adb", line)
+        if proc.returncode == 0:
+            last_install_error = ""
+            break
+        last_install_error = output.strip()
+        if install_attempt >= 2:
+            break
+        log_warn(f"安装失败，准备重试 ({install_attempt}/2)")
+        run([adb, "-s", device, "wait-for-device"], concise=True)
+        time.sleep(1)
+
+    if last_install_error:
+        raise RuntimeError(f"APK 安装失败（重试后仍失败）: {last_install_error}")
+
+    log_step(f"[PROFILE:{profile_name}] 安装完成")
+
+
+def cmd_install(app: str, serial: str = "", version: str = "", rebuild: bool = False) -> int:
     del app
     target_serial = resolve_install_target_serial(serial)
     if not target_serial:
         raise RuntimeError("No running emulator found")
     manifest = load_manifest()
-    profile_test(
+    install_profile_apk_to_device(
         manifest,
         DEFAULT_PROFILE,
         target_serial,
-        smoke=False,
-        install_mode="split-session",
+        rebuild=rebuild,
         snapshot_version=version,
     )
     return 0
@@ -3945,6 +4047,12 @@ def build_parser() -> argparse.ArgumentParser:
     install = sub.add_parser("install")
     install.add_argument("app", choices=SUPPORTED_APPS)
     install.add_argument("--serial")
+    install.add_argument(
+        "--rebuild",
+        action="store_true",
+        default=False,
+        help="安装前执行缓存友好重建（仍复用可复用构建产物）",
+    )
     install.add_argument("version", nargs="?", default="")
     device_parser = sub.add_parser("device")
     device_parser.add_argument("serial", nargs="?")
@@ -3994,6 +4102,7 @@ def main(argv=None):
             getattr(args, "app"),
             getattr(args, "serial", "") or "",
             getattr(args, "version", ""),
+            getattr(args, "rebuild", False),
         )
     elif args.cmd == "device":
         cmd_device(getattr(args, "serial", None))

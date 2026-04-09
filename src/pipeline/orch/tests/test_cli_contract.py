@@ -63,6 +63,13 @@ class CliContractTest(unittest.TestCase):
                 self.assertEqual(args.cmd, cmd)
                 self.assertEqual(args.snapshot_version, "26022705")
 
+    def test_install_accepts_rebuild_flag(self) -> None:
+        parser = orch.build_parser()
+        args = parser.parse_args(["install", "phonepe", "--rebuild"])
+        self.assertEqual(args.cmd, "install")
+        self.assertEqual(args.app, "phonepe")
+        self.assertTrue(args.rebuild)
+
 
 if __name__ == "__main__":
     unittest.main()
