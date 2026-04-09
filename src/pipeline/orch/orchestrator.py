@@ -3,6 +3,7 @@ import argparse
 import copy
 import hashlib
 import json
+import mimetypes
 import os
 import re
 import shutil
@@ -10,6 +11,9 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
+import urllib.request
+import uuid
 from typing import Optional
 from datetime import datetime
 from pathlib import Path
@@ -60,6 +64,30 @@ REUSE_STATE_FILE = "reuse_artifacts_state.json"
 MERGE_STATE_FILE = "profile_merge_state.json"
 DEFAULT_SNAPSHOT_SEED_DIR = "cache/apps/phonepe/snapshot_seed"
 DEFAULT_SPLIT_SEED_DIR = DEFAULT_SNAPSHOT_SEED_DIR
+LOCAL_DEFAULT_RELEASE_TOKEN = "nprt_local_phonepe_publisher"
+RELEASE_ENV_SETTINGS = {
+    "dev": {
+        "base_url_envs": ("RELEASE_DEV_BASE_URL", "RELEASE_BASE_URL"),
+        "token_envs": ("RELEASE_DEV_TOKEN", "RELEASE_TOKEN"),
+        "fallback_base_url": "http://localhost:3000",
+        "fallback_token": LOCAL_DEFAULT_RELEASE_TOKEN,
+        "placeholder": False,
+    },
+    "test": {
+        "base_url_envs": ("RELEASE_TEST_BASE_URL",),
+        "token_envs": ("RELEASE_TEST_TOKEN",),
+        "fallback_base_url": "",
+        "fallback_token": "",
+        "placeholder": True,
+    },
+    "prod": {
+        "base_url_envs": ("RELEASE_PROD_BASE_URL",),
+        "token_envs": ("RELEASE_PROD_TOKEN",),
+        "fallback_base_url": "",
+        "fallback_token": "",
+        "placeholder": True,
+    },
+}
 DEFAULT_REQUIRED_SPLITS = (
     "split_config.arm64_v8a.apk",
     "split_config.xxhdpi.apk",
@@ -3267,6 +3295,358 @@ def cmd_install(app: str, serial: str = "", version: str = "", rebuild: bool = F
     return 0
 
 
+def uninstall_app_from_device(package: str, serial: str):
+    adb = adb_path()
+    device = select_device(adb, serial)
+    uninstall_cmd = [adb, "-s", device, "uninstall", package]
+    log_run(uninstall_cmd)
+    proc = subprocess.run(
+        uninstall_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    output = proc.stdout or ""
+    for line in output.splitlines():
+        if line.strip():
+            log_cmd_output("adb", line)
+    if proc.returncode != 0:
+        msg = output.strip() or "unknown adb uninstall error"
+        if "Unknown package" in msg:
+            log_warn(f"设备 {device} 上未安装 {package}，跳过卸载")
+            return
+        raise RuntimeError(f"APK 卸载失败: {msg}")
+    log_step(f"卸载完成: package={package}, serial={device}")
+
+
+def cmd_uninstall(app: str, serial: str = "") -> int:
+    target_serial = resolve_install_target_serial(serial)
+    if not target_serial:
+        raise RuntimeError("No running emulator found")
+    package = resolve_app_package(app)
+    uninstall_app_from_device(package, target_serial)
+    return 0
+
+
+def normalize_release_base_url(raw: str) -> str:
+    value = (raw or "").strip()
+    return value[:-1] if value.endswith("/") else value
+
+
+def resolve_release_env_settings(target_env: str) -> dict:
+    env_name = (target_env or "").strip().lower() or "dev"
+    settings = RELEASE_ENV_SETTINGS.get(env_name)
+    if not settings:
+        raise RuntimeError(f"Unsupported release target env: {target_env}")
+
+    def first_env(env_names) -> str:
+        for key in env_names:
+            value = (os.environ.get(key) or "").strip()
+            if value:
+                return value
+        return ""
+
+    base_url = first_env(settings.get("base_url_envs", ())) or settings.get("fallback_base_url", "")
+    token = first_env(settings.get("token_envs", ())) or settings.get("fallback_token", "")
+    if settings.get("placeholder") and (not base_url or not token):
+        raise RuntimeError(
+            f"release env '{env_name}' is placeholder-only. "
+            f"Set {', '.join(settings.get('base_url_envs', ()))}, {', '.join(settings.get('token_envs', ()))} first."
+        )
+    if not base_url:
+        raise RuntimeError(f"release env '{env_name}' missing base URL configuration")
+    if not token:
+        raise RuntimeError(f"release env '{env_name}' missing release token configuration")
+    return {
+        "env_name": env_name,
+        "base_url": normalize_release_base_url(base_url),
+        "token": token,
+    }
+
+
+def version_sort_key(raw: str):
+    key = []
+    for part in re.split(r"[._-]", raw):
+        if part.isdigit():
+            key.append((0, int(part)))
+        else:
+            key.append((1, part))
+    return key
+
+
+def resolve_android_build_tool(tool_name: str, env_var: str) -> str:
+    from_env = (os.environ.get(env_var) or "").strip()
+    if from_env:
+        return from_env
+    sdk_root = (os.environ.get("ANDROID_SDK_ROOT") or os.environ.get("ANDROID_HOME") or "").strip()
+    candidate_roots = [sdk_root, str(Path.home() / "Library/Android/sdk")]
+    checked = set()
+    for root in candidate_roots:
+        if not root or root in checked:
+            continue
+        checked.add(root)
+        build_tools_dir = Path(root) / "build-tools"
+        if not build_tools_dir.exists():
+            continue
+        versions = sorted((x.name for x in build_tools_dir.iterdir() if x.is_dir()), key=version_sort_key, reverse=True)
+        for version in versions:
+            candidate = build_tools_dir / version / tool_name
+            if candidate.exists():
+                return str(candidate)
+    return tool_name
+
+
+def read_apk_metadata(apk_path: Path) -> dict:
+    aapt = resolve_android_build_tool("aapt", "AAPT_PATH")
+    proc = subprocess.run(
+        [aapt, "dump", "badging", str(apk_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        check=False,
+    )
+    out = proc.stdout or ""
+    package_match = re.search(r"package:\s+name='([^']+)'", out)
+    version_code_match = re.search(r"versionCode='(\d+)'", out)
+    version_name_match = re.search(r"versionName='([^']*)'", out)
+    min_sdk_match = re.search(r"sdkVersion:'(\d+)'", out)
+    target_sdk_match = re.search(r"targetSdkVersion:'(\d+)'", out)
+    if not package_match or not version_code_match:
+        raise RuntimeError(f"aapt_badging_failed: {apk_path}")
+    return {
+        "packageName": package_match.group(1),
+        "versionCode": int(version_code_match.group(1)),
+        "versionName": version_name_match.group(1) if version_name_match else "",
+        "minSdk": int(min_sdk_match.group(1)) if min_sdk_match else 24,
+        "targetSdk": int(target_sdk_match.group(1)) if target_sdk_match else 35,
+        "installerMinVersion": 1,
+    }
+
+
+def read_signing_digest(apk_path: Path) -> str:
+    apksigner = resolve_android_build_tool("apksigner", "APKSIGNER_PATH")
+    proc = subprocess.run(
+        [apksigner, "verify", "--print-certs", str(apk_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"apksigner_verify_failed: {apk_path}")
+    out = proc.stdout or ""
+    match = re.search(r"certificate SHA-256 digest:\s*([A-Fa-f0-9:\s]+)", out)
+    if not match:
+        raise RuntimeError(f"apk_signing_digest_parse_failed: {apk_path}")
+    return match.group(1).replace(":", "").replace(" ", "").strip().lower()
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def http_json(method: str, url: str, token: str, payload: Optional[dict] = None) -> dict:
+    body = None
+    headers = {
+        "authorization": f"Bearer {token}",
+    }
+    if payload is not None:
+        body = json.dumps(payload).encode("utf-8")
+        headers["content-type"] = "application/json"
+    req = urllib.request.Request(url, data=body, method=method.upper(), headers=headers)
+    try:
+        with urllib.request.urlopen(req) as resp:
+            raw = resp.read().decode("utf-8")
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8")
+        except Exception:
+            detail = ""
+        raise RuntimeError(f"http_{exc.code}_{method.lower()}_failed:{url}:{detail}") from exc
+
+
+def http_multipart_upload(
+    url: str,
+    token: str,
+    fields: dict,
+    file_field: str,
+    file_name: str,
+    file_bytes: bytes,
+) -> dict:
+    boundary = f"----navpay-orch-{uuid.uuid4().hex}"
+    body = bytearray()
+    for key, value in fields.items():
+        body.extend(f"--{boundary}\r\n".encode("utf-8"))
+        body.extend(f'Content-Disposition: form-data; name="{key}"\r\n\r\n'.encode("utf-8"))
+        body.extend(str(value).encode("utf-8"))
+        body.extend(b"\r\n")
+    mime_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
+    body.extend(f"--{boundary}\r\n".encode("utf-8"))
+    body.extend(
+        (
+            f'Content-Disposition: form-data; name="{file_field}"; filename="{file_name}"\r\n'
+            f"Content-Type: {mime_type}\r\n\r\n"
+        ).encode("utf-8")
+    )
+    body.extend(file_bytes)
+    body.extend(b"\r\n")
+    body.extend(f"--{boundary}--\r\n".encode("utf-8"))
+    req = urllib.request.Request(
+        url,
+        data=bytes(body),
+        method="POST",
+        headers={
+            "authorization": f"Bearer {token}",
+            "content-type": f"multipart/form-data; boundary={boundary}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req) as resp:
+            raw = resp.read().decode("utf-8")
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8")
+        except Exception:
+            detail = ""
+        raise RuntimeError(f"http_{exc.code}_upload_failed:{url}:{detail}") from exc
+
+
+def release_list_releases(base_url: str, token: str, app_id: str) -> list:
+    out = http_json("GET", f"{base_url}/api/publisher/payment-apps/{app_id}/releases", token)
+    rows = out.get("rows")
+    return rows if isinstance(rows, list) else []
+
+
+def cmd_release(app: str, version: str, target_env: str = "dev") -> int:
+    if app != "phonepe":
+        raise RuntimeError(f"release currently only supports phonepe, got: {app}")
+    release_env = resolve_release_env_settings(target_env)
+    manifest = load_manifest()
+    work_dir = profile_apk(manifest, COMPOSE_WORKFLOW_NAME, fresh=False)
+    base_apk = work_dir / DEFAULT_SIGNED_APK
+    abi_apk = work_dir / DEFAULT_REQUIRED_SPLITS[0]
+    density_apk = work_dir / DEFAULT_REQUIRED_SPLITS[1]
+    for path in (base_apk, abi_apk, density_apk):
+        if not path.exists():
+            raise RuntimeError(f"release_artifact_missing: {path}")
+
+    base_metadata = read_apk_metadata(base_apk)
+    version_code = base_metadata["versionCode"]
+    if not version_code:
+        raise RuntimeError("invalid_release_version_code")
+    metadata = {
+        "versionName": str(version),
+        "versionCode": int(version_code),
+        "packageName": base_metadata["packageName"],
+        "minSdk": base_metadata["minSdk"],
+        "targetSdk": base_metadata["targetSdk"],
+        "installerMinVersion": base_metadata.get("installerMinVersion", 1),
+    }
+
+    for split_kind, split_path in (("abi", abi_apk), ("density", density_apk)):
+        split_metadata = read_apk_metadata(split_path)
+        if int(split_metadata["versionCode"]) != int(metadata["versionCode"]):
+            raise RuntimeError(
+                f"split_version_code_mismatch split={split_kind} expected={metadata['versionCode']} actual={split_metadata['versionCode']}"
+            )
+        if split_metadata["packageName"] != metadata["packageName"]:
+            raise RuntimeError(
+                f"split_package_mismatch split={split_kind} expected={metadata['packageName']} actual={split_metadata['packageName']}"
+            )
+
+    signing_digests = {
+        "base": read_signing_digest(base_apk),
+        "abi": read_signing_digest(abi_apk),
+        "density": read_signing_digest(density_apk),
+    }
+    if signing_digests["base"] != signing_digests["abi"] or signing_digests["base"] != signing_digests["density"]:
+        raise RuntimeError(
+            "apk_signatures_inconsistent "
+            f"base={signing_digests['base']} abi={signing_digests['abi']} density={signing_digests['density']}"
+        )
+
+    checksum = sha256_file(base_apk)
+    app_id = app
+    rows = release_list_releases(release_env["base_url"], release_env["token"], app_id)
+    active = next((row for row in rows if str(row.get("status", "")).lower() == "active"), None)
+    if active:
+        active_version_code = int(active.get("versionCode", 0) or 0)
+        active_version_name = str(active.get("versionName", "") or "")
+        active_checksum = str(active.get("baseSha256", "") or "")
+        if active_version_code == metadata["versionCode"] and active_version_name == metadata["versionName"]:
+            if not active_checksum or active_checksum == checksum:
+                log_info(
+                    f"[release] idempotent hit: env={release_env['env_name']} releaseId={active.get('id', '')} "
+                    f"version={metadata['versionName']} ({metadata['versionCode']})"
+                )
+                return 0
+
+    created = http_json(
+        "POST",
+        f"{release_env['base_url']}/api/publisher/payment-apps/{app_id}/releases",
+        release_env["token"],
+        metadata,
+    )
+    release_id = str((created.get("row") or {}).get("id") or "")
+    if not release_id:
+        raise RuntimeError("release_create_missing_id")
+
+    artifacts = [
+        ("base", "base.apk", base_apk, {"artifactType": "base", "name": "base.apk", "signingDigest": signing_digests["base"]}),
+        (
+            "abi",
+            "split_config.arm64_v8a.apk",
+            abi_apk,
+            {
+                "artifactType": "abi",
+                "name": "split_config.arm64_v8a.apk",
+                "signingDigest": signing_digests["abi"],
+                "abi": "arm64-v8a",
+            },
+        ),
+        (
+            "density",
+            "split_config.xxhdpi.apk",
+            density_apk,
+            {
+                "artifactType": "density",
+                "name": "split_config.xxhdpi.apk",
+                "signingDigest": signing_digests["density"],
+                "density": "xxhdpi",
+            },
+        ),
+    ]
+    for _, file_name, apk_path, fields in artifacts:
+        http_multipart_upload(
+            f"{release_env['base_url']}/api/publisher/payment-apps/{app_id}/releases/{release_id}/artifacts",
+            release_env["token"],
+            fields=fields,
+            file_field="file",
+            file_name=file_name,
+            file_bytes=apk_path.read_bytes(),
+        )
+
+    activated = http_json(
+        "POST",
+        f"{release_env['base_url']}/api/publisher/payment-apps/{app_id}/releases/{release_id}/activate",
+        release_env["token"],
+    )
+    status = str((activated.get("row") or {}).get("status") or "")
+    log_info(
+        f"[release] published env={release_env['env_name']} app={app_id} "
+        f"releaseId={release_id} version={metadata['versionName']} ({metadata['versionCode']}) status={status}"
+    )
+    return 0
+
+
 def cmd_test(app: str, serial: str = "", smoke: bool = False, install_mode: str = "split-session", snapshot_version: str = "") -> int:
     del app
     manifest = load_manifest()
@@ -4029,6 +4409,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="安装前执行缓存友好重建（仍复用可复用构建产物）",
     )
     install.add_argument("version", nargs="?", default="")
+    uninstall = sub.add_parser("uninstall")
+    uninstall.add_argument("app", choices=SUPPORTED_APPS)
+    uninstall.add_argument("--serial")
     device_parser = sub.add_parser("device")
     device_parser.add_argument("serial", nargs="?")
 
@@ -4064,6 +4447,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Only run merge stage for the selected app",
     )
 
+    release = sub.add_parser("release")
+    release.add_argument("app", choices=SUPPORTED_APPS)
+    release.add_argument("version")
+    release_env = release.add_mutually_exclusive_group()
+    release_env.add_argument("--dev", dest="target_env", action="store_const", const="dev")
+    release_env.add_argument("--test", dest="target_env", action="store_const", const="test")
+    release_env.add_argument("--prod", dest="target_env", action="store_const", const="prod")
+    release.set_defaults(target_env="dev")
+
     return parser
 
 
@@ -4090,6 +4482,11 @@ def main(argv=None):
             getattr(args, "serial", "") or "",
             getattr(args, "version", ""),
             getattr(args, "rebuild", False),
+        )
+    elif args.cmd == "uninstall":
+        return cmd_uninstall(
+            getattr(args, "app"),
+            getattr(args, "serial", "") or "",
         )
     elif args.cmd == "device":
         cmd_device(getattr(args, "serial", None))
@@ -4149,6 +4546,12 @@ def main(argv=None):
             snapshot_version=getattr(args, "snapshot_version", ""),
         )
         return 0
+    elif args.cmd == "release":
+        return cmd_release(
+            getattr(args, "app"),
+            getattr(args, "version"),
+            getattr(args, "target_env", "dev"),
+        )
     elif args.cmd == "test":
         smoke = getattr(args, "smoke", False)
         install_mode = getattr(args, "install_mode", "reinstall")

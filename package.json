@@ -35,7 +35,7 @@
     "collect:phonepe": "yarn orch collect --matrix src/pipeline/orch/device_matrix.example.json --package com.phonepe.app",
     "ins": "bash scripts/install_to_emulator.sh",
     "test:legacy": "bash scripts/run_test.sh",
-    "release": "yarn release:build && yarn release:cache && yarn release:publish",
+    "release": "python3 src/pipeline/orch/orchestrator.py release phonepe ${RELEASE_VERSION_NAME:?RELEASE_VERSION_NAME is required}",
     "verify:tests": "python3 -m pytest src/pipeline/orch/tests/test_split_session_verifier.py -q && python3 -m pytest src/pipeline/orch/tests/test_split_session_install_mode.py -q && python3 -m pytest src/pipeline/orch/tests/test_reuse_artifacts.py -q && python3 -m pytest src/pipeline/orch/tests/test_smoke_mode.py -q",
     "verify:phasea": "bash -lc 'set -euo pipefail; adb -s emulator-5554 uninstall com.phonepe.app >/dev/null 2>&1 || true; cmd=\"python3 scripts/verify_phonepe_split_session_install.py --serial emulator-5554 --base-apk cache/profiles/full/build/patched_signed.apk --splits-dir cache/profiles/full/build --target-apk cache/profiles/full/build/patched_signed.apk --package com.phonepe.app --activity com.phonepe.app/com.phonepe.app.ui.activity.SplashScreenActivity\"; eval \"$cmd\"; eval \"$cmd\"; eval \"$cmd\"; tmpdir=$(mktemp -d); cp cache/profiles/full/build/patched_signed.apk \"$tmpdir/\"; cp cache/profiles/full/build/split_config.arm64_v8a.apk \"$tmpdir/\"; python3 scripts/verify_phonepe_split_session_install.py --serial emulator-5554 --base-apk \"$tmpdir/patched_signed.apk\" --splits-dir \"$tmpdir\" --target-apk cache/profiles/full/build/patched_signed.apk --package com.phonepe.app --activity com.phonepe.app/com.phonepe.app.ui.activity.SplashScreenActivity && { echo \"negative case unexpectedly passed\"; exit 1; } || echo \"negative case failed as expected\"'",
     "verify:baseapk": "python3 scripts/check_base_apk_split_state.py --apk cache/profiles/full/build/patched_signed.apk",
@@ -44,6 +44,6 @@
     "release:build": "yarn apk",
     "release:cache": "bash scripts/release_cache.sh",
     "release:check": "python3 scripts/release_check.py",
-    "release:publish": "node --import tsx scripts/release_to_admin.ts --rebuild false --base-apk cache/release/patched_signed.apk --abi-apk cache/release/split_config.arm64_v8a.apk --density-apk cache/release/split_config.xxhdpi.apk"
+    "release:publish": "python3 src/pipeline/orch/orchestrator.py release phonepe ${RELEASE_VERSION_NAME:?RELEASE_VERSION_NAME is required}"
   }
 }

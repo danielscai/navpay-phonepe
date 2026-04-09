@@ -81,6 +81,27 @@ class CliContractTest(unittest.TestCase):
         self.assertEqual(args.app, "phonepe")
         self.assertTrue(args.rebuild)
 
+    def test_uninstall_accepts_optional_serial(self) -> None:
+        parser = orch.build_parser()
+        args = parser.parse_args(["uninstall", "phonepe"])
+        self.assertEqual(args.cmd, "uninstall")
+        self.assertEqual(args.app, "phonepe")
+        self.assertIsNone(args.serial)
+
+        args_with_serial = parser.parse_args(["uninstall", "phonepe", "--serial", "emulator-5554"])
+        self.assertEqual(args_with_serial.serial, "emulator-5554")
+
+    def test_release_command_accepts_app_version_and_env_flags(self) -> None:
+        parser = orch.build_parser()
+        args = parser.parse_args(["release", "phonepe", "1.0.2"])
+        self.assertEqual(args.cmd, "release")
+        self.assertEqual(args.app, "phonepe")
+        self.assertEqual(args.version, "1.0.2")
+        self.assertEqual(args.target_env, "dev")
+
+        args_prod = parser.parse_args(["release", "phonepe", "1.0.2", "--prod"])
+        self.assertEqual(args_prod.target_env, "prod")
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -161,3 +182,23 @@ def test_collect_yes_routes_to_run_collect_with_auto_yes(monkeypatch):
     assert captured["package"] == "com.phonepe.app"
     assert str(captured["snapshots_root"]) == "/tmp/cache/apps/phonepe/snapshots"
     assert captured["auto_yes"] is True
+
+
+def test_release_routes_to_cmd_release(monkeypatch):
+    monkeypatch.setattr(orch, "load_manifest", lambda: {"dummy": {"deps": []}})
+    captured = {}
+
+    def fake_cmd_release(app, version, target_env):
+        captured["app"] = app
+        captured["version"] = version
+        captured["target_env"] = target_env
+        return 0
+
+    monkeypatch.setattr(orch, "cmd_release", fake_cmd_release)
+    code = orch.main(["release", "phonepe", "1.0.2", "--test"])
+    assert code == 0
+    assert captured == {
+        "app": "phonepe",
+        "version": "1.0.2",
+        "target_env": "test",
+    }
