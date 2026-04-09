@@ -9,6 +9,7 @@ import orchestrator as orch  # noqa: E402
 
 def test_collect_all_runs_all_apps_per_emulator_before_next_emulator(monkeypatch):
     order = []
+    roots = []
     matrix = {
         "bootstrap_target_id": "emu1",
         "targets": [
@@ -18,10 +19,12 @@ def test_collect_all_runs_all_apps_per_emulator_before_next_emulator(monkeypatch
     }
 
     monkeypatch.setattr(orch, "load_device_matrix", lambda _: matrix)
+    monkeypatch.setattr(orch, "snapshots_root_for_app", lambda app: Path("/tmp/cache/snapshots") / app, raising=False)
 
     def fake_collect_for_app_target(app, target, matrix_path, resume=None, snapshots_root=None):
-        del matrix_path, resume, snapshots_root
+        del matrix_path, resume
         order.append(f"{target['target_id']}-{app}")
+        roots.append((app, str(snapshots_root)))
         return 0
 
     monkeypatch.setattr(orch, "run_collect_for_app_target", fake_collect_for_app_target)
@@ -29,3 +32,9 @@ def test_collect_all_runs_all_apps_per_emulator_before_next_emulator(monkeypatch
     code = orch.run_collect_all_apps("dummy.json", ["phonepe", "paytm"])
     assert code == 0
     assert order == ["emu1-phonepe", "emu1-paytm", "emu2-phonepe", "emu2-paytm"]
+    assert roots == [
+        ("phonepe", "/tmp/cache/snapshots/phonepe"),
+        ("paytm", "/tmp/cache/snapshots/paytm"),
+        ("phonepe", "/tmp/cache/snapshots/phonepe"),
+        ("paytm", "/tmp/cache/snapshots/paytm"),
+    ]

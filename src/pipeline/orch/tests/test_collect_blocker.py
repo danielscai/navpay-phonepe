@@ -15,7 +15,7 @@ class CollectBlockerTest(unittest.TestCase):
     def test_collect_exits_20_and_writes_blocker_report_when_play_not_logged_in(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             root = Path(tempdir)
-            snapshots_root = root / "cache" / "phonepe" / "snapshots"
+            snapshots_root = root / "cache" / "snapshots" / "phonepe"
             matrix_path = root / "device_matrix.json"
             matrix_path.write_text(
                 json.dumps(

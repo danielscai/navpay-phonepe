@@ -28,7 +28,7 @@ MANIFEST_PATH = SCRIPT_DIR / "cache_manifest.json"
 APPS_MANIFEST_PATH = SCRIPT_DIR / "apps_manifest.json"
 EMULATOR_CONFIG_PATH = SCRIPT_DIR / "emulators.json"
 DEFAULT_DEVICE_MATRIX_PATH = SCRIPT_DIR / "device_matrix.example.json"
-DEFAULT_SNAPSHOTS_ROOT = REPO_ROOT / "cache" / "phonepe" / "snapshots"
+DEFAULT_SNAPSHOTS_ROOT = REPO_ROOT / "cache" / "snapshots" / "phonepe"
 
 DEFAULT_PACKAGE = "com.phonepe.app"
 DEFAULT_SERIAL = "GSLDU18106001520"
@@ -1027,6 +1027,10 @@ def resolve_app_package(app: str) -> str:
     return package
 
 
+def snapshots_root_for_app(app: str) -> Path:
+    return REPO_ROOT / "cache" / "snapshots" / app
+
+
 def run_collect_for_app_target(
     app: str,
     target,
@@ -1073,7 +1077,7 @@ def run_collect_all_apps(
                 target=target,
                 matrix_path=matrix_path,
                 resume=resume,
-                snapshots_root=snapshots_root,
+                snapshots_root=snapshots_root_for_app(app),
             )
             if code != 0:
                 return code
@@ -1615,8 +1619,9 @@ def snapshot_seed_ready(cache_path: Path, anchor: dict) -> bool:
     return True
 
 
-def resolve_snapshot_index_path() -> Path:
-    return DEFAULT_SNAPSHOTS_ROOT / "index.json"
+def resolve_snapshot_index_path(snapshots_root: Optional[Path] = None) -> Path:
+    root = Path(snapshots_root) if snapshots_root else DEFAULT_SNAPSHOTS_ROOT
+    return root / "index.json"
 
 
 def resolve_snapshot_anchor(index_path: Path, package: str, snapshot_version: str = "") -> dict:
@@ -1688,9 +1693,10 @@ def resolve_snapshot_capture_dir(snapshots_root: Path, anchor: dict) -> Path:
     raise RuntimeError(f"Missing required APKs in snapshot captures: {capture_root}")
 
 
-def build_phonepe_snapshot_seed(cache_path: Path, package: str, snapshot_version: str):
-    anchor = resolve_snapshot_anchor(resolve_snapshot_index_path(), package, snapshot_version)
-    capture_dir = resolve_snapshot_capture_dir(DEFAULT_SNAPSHOTS_ROOT, anchor)
+def build_phonepe_snapshot_seed(cache_path: Path, package: str, snapshot_version: str, snapshots_root: Optional[Path] = None):
+    snapshots_path = Path(snapshots_root) if snapshots_root else DEFAULT_SNAPSHOTS_ROOT
+    anchor = resolve_snapshot_anchor(resolve_snapshot_index_path(snapshots_path), package, snapshot_version)
+    capture_dir = resolve_snapshot_capture_dir(snapshots_path, anchor)
 
     delete_cache_dir(cache_path)
     cache_path.mkdir(parents=True, exist_ok=True)
@@ -1705,7 +1711,7 @@ def build_phonepe_snapshot_seed(cache_path: Path, package: str, snapshot_version
             "source": "snapshot_capture",
             "snapshot_anchor": anchor,
             "snapshot_version": anchor["versionCode"],
-            "snapshot_index": str(resolve_snapshot_index_path()),
+            "snapshot_index": str(resolve_snapshot_index_path(snapshots_path)),
             "capture_dir": str(capture_dir),
             "capture_target_id": capture_dir.name,
             "package": package,
@@ -1713,26 +1719,35 @@ def build_phonepe_snapshot_seed(cache_path: Path, package: str, snapshot_version
     )
 
 
-def ensure_phonepe_snapshot_seed(cache_path: Path, package: str, snapshot_version: str):
-    anchor = resolve_snapshot_anchor(resolve_snapshot_index_path(), package, snapshot_version)
+def ensure_phonepe_snapshot_seed(cache_path: Path, package: str, snapshot_version: str, snapshots_root: Optional[Path] = None):
+    snapshots_path = Path(snapshots_root) if snapshots_root else DEFAULT_SNAPSHOTS_ROOT
+    anchor = resolve_snapshot_anchor(resolve_snapshot_index_path(snapshots_path), package, snapshot_version)
     if snapshot_seed_ready(cache_path, anchor):
         return cache_path, anchor
-    build_phonepe_snapshot_seed(cache_path, package, snapshot_version)
+    build_phonepe_snapshot_seed(cache_path, package, snapshot_version, snapshots_root=snapshots_path)
     return cache_path, anchor
 
 
-def ensure_phonepe_decompiled_snapshot(manifest, snapshot_version: str, package: str = DEFAULT_PACKAGE):
-    seed_path = resolve_cache_path(DEFAULT_SNAPSHOT_SEED_DIR)
-    _, anchor = ensure_phonepe_snapshot_seed(seed_path, package, snapshot_version)
+def ensure_phonepe_decompiled_snapshot(
+    manifest,
+    snapshot_version: str,
+    package: str = DEFAULT_PACKAGE,
+    snapshots_root: Optional[Path] = None,
+    seed_path: Optional[Path] = None,
+    merged_path: Optional[Path] = None,
+    decompiled_path: Optional[Path] = None,
+):
+    local_seed_path = Path(seed_path) if seed_path else resolve_cache_path(DEFAULT_SNAPSHOT_SEED_DIR)
+    _, anchor = ensure_phonepe_snapshot_seed(local_seed_path, package, snapshot_version, snapshots_root=snapshots_root)
 
-    merged_path = resolve_manifest_path(manifest, "phonepe_merged")
-    decompiled_path = resolve_manifest_path(manifest, "phonepe_decompiled")
-    decompiled_meta = read_cache_meta(decompiled_path)
+    local_merged_path = Path(merged_path) if merged_path else resolve_manifest_path(manifest, "phonepe_merged")
+    local_decompiled_path = Path(decompiled_path) if decompiled_path else resolve_manifest_path(manifest, "phonepe_decompiled")
+    decompiled_meta = read_cache_meta(local_decompiled_path)
     cached_anchor = snapshot_anchor_from_meta(decompiled_meta)
-    if cached_anchor != anchor or not (decompiled_path / "base_decompiled_clean").exists():
-        build_phonepe_merged(merged_path, seed_path, package, "")
-        build_phonepe_decompiled(decompiled_path, merged_path)
-    return decompiled_path, anchor
+    if cached_anchor != anchor or not (local_decompiled_path / "base_decompiled_clean").exists():
+        build_phonepe_merged(local_merged_path, local_seed_path, package, "")
+        build_phonepe_decompiled(local_decompiled_path, local_merged_path)
+    return local_decompiled_path, anchor
 
 def build_phonepe_merged(cache_path: Path, input_path: Path, package: str, serial: str):
     merge_script = REPO_ROOT / "tools" / "merge_split_apks.sh"
@@ -2823,7 +2838,7 @@ def cmd_status(manifest):
 
 
 def app_snapshots_root(app: str) -> Path:
-    return REPO_ROOT / "cache" / app / "snapshots"
+    return snapshots_root_for_app(app)
 
 
 def cmd_info(app: Optional[str] = None) -> int:
@@ -2856,9 +2871,20 @@ def cmd_info(app: Optional[str] = None) -> int:
 
 
 def cmd_decompiled(app: str, version: str = "") -> int:
-    del app
-    manifest = load_manifest()
-    profile_prepare(manifest, DEFAULT_PROFILE, version)
+    package = resolve_app_package(app)
+    snapshots_root = snapshots_root_for_app(app)
+    seed_path = REPO_ROOT / "cache" / app / "snapshot_seed"
+    merged_path = REPO_ROOT / "cache" / app / "merged"
+    decompiled_path = REPO_ROOT / "cache" / app / "decompiled"
+    ensure_phonepe_decompiled_snapshot(
+        manifest=load_manifest(),
+        snapshot_version=version,
+        package=package,
+        snapshots_root=snapshots_root,
+        seed_path=seed_path,
+        merged_path=merged_path,
+        decompiled_path=decompiled_path,
+    )
     return 0
 
 
@@ -3750,6 +3776,7 @@ def main(argv=None):
                 matrix_path=matrix_path,
                 package=resolve_app_package(app),
                 resume=resume,
+                snapshots_root=snapshots_root_for_app(app),
             )
         if package and package != DEFAULT_PACKAGE:
             return run_collect(

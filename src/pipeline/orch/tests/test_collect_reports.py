@@ -15,7 +15,7 @@ class CollectReportsTest(unittest.TestCase):
     def test_collect_writes_gap_and_summary_reports(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             root = Path(tempdir)
-            snapshots_root = root / "cache" / "phonepe" / "snapshots"
+            snapshots_root = root / "cache" / "snapshots" / "phonepe"
             matrix_path = root / "device_matrix.json"
             matrix_path.write_text(
                 json.dumps(

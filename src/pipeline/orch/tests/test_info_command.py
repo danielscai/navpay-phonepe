@@ -9,8 +9,8 @@ import orchestrator as orch  # noqa: E402
 
 
 def test_info_lists_collected_versions_per_app(tmp_path, monkeypatch, capsys):
-    phonepe_root = tmp_path / "cache" / "phonepe" / "snapshots"
-    paytm_root = tmp_path / "cache" / "paytm" / "snapshots"
+    phonepe_root = tmp_path / "cache" / "snapshots" / "phonepe"
+    paytm_root = tmp_path / "cache" / "snapshots" / "paytm"
     phonepe_root.mkdir(parents=True, exist_ok=True)
     paytm_root.mkdir(parents=True, exist_ok=True)
 
@@ -28,6 +28,7 @@ def test_info_lists_collected_versions_per_app(tmp_path, monkeypatch, capsys):
     (paytm_root / "index.json").write_text(json.dumps(paytm_index), encoding="utf-8")
 
     monkeypatch.setattr(orch, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(orch, "app_snapshots_root", lambda app: tmp_path / "cache" / "snapshots" / app, raising=False)
     code = orch.cmd_info()
     out = capsys.readouterr().out
     assert code == 0

@@ -15,7 +15,7 @@ class CollectRunStateTest(unittest.TestCase):
     def test_collect_resume_skips_completed_targets(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             root = Path(tempdir)
-            snapshots_root = root / "cache" / "phonepe" / "snapshots"
+            snapshots_root = root / "cache" / "snapshots" / "phonepe"
             run_dir = snapshots_root / "runs" / "r1"
             run_dir.mkdir(parents=True, exist_ok=True)
             (run_dir / "run_state.json").write_text(
