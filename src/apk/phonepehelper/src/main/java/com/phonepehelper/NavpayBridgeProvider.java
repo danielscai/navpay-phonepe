@@ -251,7 +251,7 @@ public final class NavpayBridgeProvider extends ContentProvider {
         return result;
     }
 
-    private static Bundle buildSetEnvironmentBundle(Bundle extras) {
+    private Bundle buildSetEnvironmentBundle(Bundle extras) {
         String envName = resolveValue(extras, new String[] { NavpayBridgeContract.EXTRA_ENV_NAME });
         String baseUrl = resolveValue(extras, new String[] { NavpayBridgeContract.EXTRA_ENV_BASE_URL });
         long updatedAt = resolveLong(extras, new String[] { NavpayBridgeContract.EXTRA_ENV_UPDATED_AT }, System.currentTimeMillis());
@@ -270,7 +270,7 @@ public final class NavpayBridgeProvider extends ContentProvider {
         return buildEnvironmentSuccess("updated", envName.trim(), baseUrl.trim(), updatedAt);
     }
 
-    private static Bundle buildGetEnvironmentBundle() {
+    private Bundle buildGetEnvironmentBundle() {
         Bundle stored = NavpayBridgeDbHelper.queryEnvironment(getContext());
         if (stored == null) {
             return buildEnvironmentSuccess("loaded", "", "", 0L);
