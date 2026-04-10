@@ -12,7 +12,7 @@
 
 ## 调用约束
 
-- **method 支持**：`checksum`、`tokenrefresh`
+- **method 支持**：`checksum`、`tokenrefresh`、`setEnvironment`、`getEnvironment`
 - `method=getChecksum` 已废弃并移除，不再保证可用。
 
 ### tokenrefresh 说明
@@ -32,6 +32,43 @@ adb shell content call \
   - `status`：`triggered` / `failed`
   - `message`：诊断信息
   - `triggered_at`：触发时间戳
+
+### setEnvironment / getEnvironment 说明
+
+- `setEnvironment` 作用：写入当前环境配置，供 `phonepehelper` 后续上传和读取。
+- `getEnvironment` 作用：读取当前已保存的环境配置。
+- `setEnvironment` 入参：
+  - `envName`：必填，不能为空
+  - `baseUrl`：必填，必须以 `http://` 或 `https://` 开头
+  - `updatedAt`：可选，缺省时由 provider 自动使用当前时间
+- `getEnvironment` 不需要额外参数。
+- 返回字段（摘要）：
+  - `ok`：是否成功
+  - `status`：`updated` / `loaded` / `failed`
+  - `code`：失败时的错误码
+  - `message`：失败时的诊断信息
+  - `envName`：当前环境名
+  - `baseUrl`：当前环境 base URL
+  - `updatedAt`：最后更新时间戳
+
+`setEnvironment` 示例：
+
+```bash
+adb shell content call \
+  --uri content://com.phonepe.navpay.provider/user_data \
+  --method setEnvironment \
+  --extra envName:s:'staging' \
+  --extra baseUrl:s:'https://staging.example.com' \
+  --extra updatedAt:l:1710000000000
+```
+
+`getEnvironment` 示例：
+
+```bash
+adb shell content call \
+  --uri content://com.phonepe.navpay.provider/user_data \
+  --method getEnvironment
+```
 
 ## 入参
 

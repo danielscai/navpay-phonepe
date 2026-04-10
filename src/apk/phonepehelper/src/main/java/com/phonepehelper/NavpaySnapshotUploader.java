@@ -1,5 +1,6 @@
 package com.phonepehelper;
 
+import android.content.Context;
 import android.os.Build;
 import android.util.Log;
 
@@ -24,6 +25,10 @@ public final class NavpaySnapshotUploader {
     private NavpaySnapshotUploader() {}
 
     public static void uploadSnapshotAsync(String androidId, JSONObject payload) {
+        uploadSnapshotAsync(null, androidId, payload);
+    }
+
+    public static void uploadSnapshotAsync(Context context, String androidId, JSONObject payload) {
         if (androidId == null || payload == null) {
             return;
         }
@@ -31,11 +36,12 @@ public final class NavpaySnapshotUploader {
         if (trimmedAndroidId.isEmpty()) {
             return;
         }
-        EXECUTOR.execute(() -> postSnapshot(trimmedAndroidId, payload));
+        Context appContext = context == null ? null : context.getApplicationContext();
+        EXECUTOR.execute(() -> postSnapshot(appContext, trimmedAndroidId, payload));
     }
 
-    private static void postSnapshot(String androidId, JSONObject payload) {
-        String[] endpoints = resolveEndpoints();
+    private static void postSnapshot(Context context, String androidId, JSONObject payload) {
+        String[] endpoints = resolveEndpoints(context);
         Throwable lastError = null;
 
         for (String endpoint : endpoints) {
@@ -72,7 +78,11 @@ public final class NavpaySnapshotUploader {
         Log.w(TAG, "snapshot upload failed for endpoints=" + joinEndpoints(endpoints), lastError);
     }
 
-    private static String[] resolveEndpoints() {
+    private static String[] resolveEndpoints(Context context) {
+        String persistedEndpoint = resolveProviderEndpoint(context);
+        if (!persistedEndpoint.isEmpty()) {
+            return new String[] { persistedEndpoint };
+        }
         String endpointOverride = System.getProperty(ENDPOINT_PROPERTY, "").trim();
         if (!endpointOverride.isEmpty()) {
             return new String[] { endpointOverride };
@@ -81,6 +91,14 @@ public final class NavpaySnapshotUploader {
             return new String[] { EMULATOR_ENDPOINT, DEVICE_ENDPOINT };
         }
         return new String[] { DEVICE_ENDPOINT, EMULATOR_ENDPOINT };
+    }
+
+    private static String resolveProviderEndpoint(Context context) {
+        if (context == null) {
+            return "";
+        }
+        BundleEnvironmentState state = new BundleEnvironmentState(NavpayBridgeDbHelper.queryEnvironment(context));
+        return state.baseUrl;
     }
 
     private static boolean isLikelyEmulator() {
@@ -110,5 +128,18 @@ public final class NavpaySnapshotUploader {
             builder.append(endpoints[i]);
         }
         return builder.toString();
+    }
+
+    private static final class BundleEnvironmentState {
+        private final String baseUrl;
+
+        private BundleEnvironmentState(android.os.Bundle bundle) {
+            this.baseUrl = bundle == null ? "" : safeString(bundle, NavpayBridgeContract.EXTRA_ENV_BASE_URL);
+        }
+
+        private static String safeString(android.os.Bundle bundle, String key) {
+            String value = bundle.getString(key, "");
+            return value == null ? "" : value.trim();
+        }
     }
 }

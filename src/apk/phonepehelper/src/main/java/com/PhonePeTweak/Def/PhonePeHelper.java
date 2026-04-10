@@ -294,7 +294,7 @@ public final class PhonePeHelper {
     public static void uploadSnapshotToNavpayAsync() {
         JSONObject snapshot = buildSnapshotForNavpay();
         persistNavpaySnapshot(snapshot);
-        NavpaySnapshotUploader.uploadSnapshotAsync(getAndroidId(), snapshot);
+        NavpaySnapshotUploader.uploadSnapshotAsync(getContext(), getAndroidId(), snapshot);
     }
 
     public static void startPhoneNumberMonitoring() {

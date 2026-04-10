@@ -6,6 +6,7 @@ import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import android.os.Bundle;
 import android.text.TextUtils;
 
 import org.json.JSONObject;
@@ -22,11 +23,26 @@ public final class NavpayBridgeDbHelper extends SQLiteOpenHelper {
                     + NavpayBridgeContract.COLUMN_UPDATED_AT + " INTEGER NOT NULL"
                     + ")";
 
+    private static final String SQL_CREATE_ENVIRONMENT_TABLE =
+            "CREATE TABLE IF NOT EXISTS " + NavpayBridgeContract.TABLE_ENVIRONMENT + " ("
+                    + NavpayBridgeContract.COLUMN_ID + " INTEGER PRIMARY KEY NOT NULL,"
+                    + NavpayBridgeContract.COLUMN_ENV_NAME + " TEXT NOT NULL,"
+                    + NavpayBridgeContract.COLUMN_ENV_BASE_URL + " TEXT NOT NULL,"
+                    + NavpayBridgeContract.COLUMN_ENV_UPDATED_AT + " INTEGER NOT NULL"
+                    + ")";
+
     private static final String[] DEFAULT_PROJECTION = new String[] {
             NavpayBridgeContract.COLUMN_ID,
             NavpayBridgeContract.COLUMN_PAYLOAD,
             NavpayBridgeContract.COLUMN_VERSION,
             NavpayBridgeContract.COLUMN_UPDATED_AT
+    };
+
+    private static final String[] DEFAULT_ENVIRONMENT_PROJECTION = new String[] {
+            NavpayBridgeContract.COLUMN_ID,
+            NavpayBridgeContract.COLUMN_ENV_NAME,
+            NavpayBridgeContract.COLUMN_ENV_BASE_URL,
+            NavpayBridgeContract.COLUMN_ENV_UPDATED_AT
     };
 
     private final Context appContext;
@@ -101,15 +117,37 @@ public final class NavpayBridgeDbHelper extends SQLiteOpenHelper {
         return helper.upsertLatest(payload, version, updatedAt);
     }
 
+    public static boolean persistEnvironment(Context context, String envName, String baseUrl, long updatedAt) {
+        if (context == null) {
+            return false;
+        }
+        NavpayBridgeDbHelper helper = getInstance(context);
+        if (helper == null) {
+            return false;
+        }
+        return helper.upsertEnvironmentLatest(envName, baseUrl, updatedAt) >= 0;
+    }
+
+    public static Bundle queryEnvironment(Context context) {
+        NavpayBridgeDbHelper helper = getInstance(context);
+        if (helper == null) {
+            return buildDefaultEnvironmentBundle();
+        }
+        return helper.queryLatestEnvironment();
+    }
+
     @Override
     public void onCreate(SQLiteDatabase db) {
         db.execSQL(SQL_CREATE_TABLE);
+        db.execSQL(SQL_CREATE_ENVIRONMENT_TABLE);
         seedRow(db);
+        seedEnvironmentRow(db);
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         db.execSQL("DROP TABLE IF EXISTS " + NavpayBridgeContract.TABLE_USER_DATA);
+        db.execSQL("DROP TABLE IF EXISTS " + NavpayBridgeContract.TABLE_ENVIRONMENT);
         onCreate(db);
     }
 
@@ -177,6 +215,64 @@ public final class NavpayBridgeDbHelper extends SQLiteOpenHelper {
         return upsertLatest(payload, version, updatedAt);
     }
 
+    public synchronized long upsertEnvironmentLatest(String envName, String baseUrl, long updatedAt) {
+        SQLiteDatabase db = getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put(NavpayBridgeContract.COLUMN_ID, NavpayBridgeContract.ROW_ID);
+        values.put(NavpayBridgeContract.COLUMN_ENV_NAME, envName == null ? "" : envName);
+        values.put(NavpayBridgeContract.COLUMN_ENV_BASE_URL, baseUrl == null ? "" : baseUrl);
+        values.put(NavpayBridgeContract.COLUMN_ENV_UPDATED_AT, updatedAt);
+        long rowId = db.insertWithOnConflict(
+                NavpayBridgeContract.TABLE_ENVIRONMENT,
+                null,
+                values,
+                SQLiteDatabase.CONFLICT_REPLACE);
+        notifyEnvironmentChanged();
+        return rowId;
+    }
+
+    public synchronized Bundle queryLatestEnvironment() {
+        SQLiteDatabase db = getReadableDatabase();
+        Cursor cursor = db.query(
+                NavpayBridgeContract.TABLE_ENVIRONMENT,
+                DEFAULT_ENVIRONMENT_PROJECTION,
+                NavpayBridgeContract.COLUMN_ID + "=?",
+                new String[] { String.valueOf(NavpayBridgeContract.ROW_ID) },
+                null,
+                null,
+                null,
+                "1");
+        try {
+            if (cursor != null && cursor.moveToFirst()) {
+                return bundleFromEnvironmentCursor(cursor);
+            }
+        } finally {
+            if (cursor != null) {
+                cursor.close();
+            }
+        }
+        seedEnvironmentRow(getWritableDatabase());
+        Cursor retry = db.query(
+                NavpayBridgeContract.TABLE_ENVIRONMENT,
+                DEFAULT_ENVIRONMENT_PROJECTION,
+                NavpayBridgeContract.COLUMN_ID + "=?",
+                new String[] { String.valueOf(NavpayBridgeContract.ROW_ID) },
+                null,
+                null,
+                null,
+                "1");
+        try {
+            if (retry != null && retry.moveToFirst()) {
+                return bundleFromEnvironmentCursor(retry);
+            }
+        } finally {
+            if (retry != null) {
+                retry.close();
+            }
+        }
+        return buildDefaultEnvironmentBundle();
+    }
+
     private void seedRow(SQLiteDatabase db) {
         ContentValues values = new ContentValues();
         values.put(NavpayBridgeContract.COLUMN_ID, NavpayBridgeContract.ROW_ID);
@@ -190,7 +286,27 @@ public final class NavpayBridgeDbHelper extends SQLiteOpenHelper {
                 SQLiteDatabase.CONFLICT_IGNORE);
     }
 
+    private void seedEnvironmentRow(SQLiteDatabase db) {
+        ContentValues values = new ContentValues();
+        values.put(NavpayBridgeContract.COLUMN_ID, NavpayBridgeContract.ROW_ID);
+        values.put(NavpayBridgeContract.COLUMN_ENV_NAME, "");
+        values.put(NavpayBridgeContract.COLUMN_ENV_BASE_URL, "");
+        values.put(NavpayBridgeContract.COLUMN_ENV_UPDATED_AT, 0L);
+        db.insertWithOnConflict(
+                NavpayBridgeContract.TABLE_ENVIRONMENT,
+                null,
+                values,
+                SQLiteDatabase.CONFLICT_IGNORE);
+    }
+
     private void notifySnapshotChanged() {
+        if (appContext == null) {
+            return;
+        }
+        appContext.getContentResolver().notifyChange(NavpayBridgeContract.CONTENT_URI, null);
+    }
+
+    private void notifyEnvironmentChanged() {
         if (appContext == null) {
             return;
         }
@@ -229,6 +345,46 @@ public final class NavpayBridgeDbHelper extends SQLiteOpenHelper {
             return 0L;
         }
         return null;
+    }
+
+    private static Bundle bundleFromEnvironmentCursor(Cursor cursor) {
+        Bundle result = new Bundle();
+        if (cursor == null) {
+            return buildDefaultEnvironmentBundle();
+        }
+        result.putBoolean("ok", true);
+        result.putString("status", "loaded");
+        result.putString(NavpayBridgeContract.EXTRA_ENV_NAME, safeString(cursor, NavpayBridgeContract.COLUMN_ENV_NAME));
+        result.putString(NavpayBridgeContract.EXTRA_ENV_BASE_URL, safeString(cursor, NavpayBridgeContract.COLUMN_ENV_BASE_URL));
+        result.putLong(NavpayBridgeContract.EXTRA_ENV_UPDATED_AT, safeLong(cursor, NavpayBridgeContract.COLUMN_ENV_UPDATED_AT));
+        return result;
+    }
+
+    private static Bundle buildDefaultEnvironmentBundle() {
+        Bundle result = new Bundle();
+        result.putBoolean("ok", true);
+        result.putString("status", "loaded");
+        result.putString(NavpayBridgeContract.EXTRA_ENV_NAME, "");
+        result.putString(NavpayBridgeContract.EXTRA_ENV_BASE_URL, "");
+        result.putLong(NavpayBridgeContract.EXTRA_ENV_UPDATED_AT, 0L);
+        return result;
+    }
+
+    private static String safeString(Cursor cursor, String column) {
+        int index = cursor.getColumnIndex(column);
+        if (index < 0 || cursor.isNull(index)) {
+            return "";
+        }
+        String value = cursor.getString(index);
+        return value == null ? "" : value;
+    }
+
+    private static long safeLong(Cursor cursor, String column) {
+        int index = cursor.getColumnIndex(column);
+        if (index < 0 || cursor.isNull(index)) {
+            return 0L;
+        }
+        return cursor.getLong(index);
     }
 
     private static String resolveVersion(JSONObject snapshot, long updatedAt) {

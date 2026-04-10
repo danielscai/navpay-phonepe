@@ -13,6 +13,8 @@ public final class NavpayBridgeContract {
     public static final String METHOD_TOKEN_REFRESH = "tokenrefresh";
     public static final String METHOD_TOKEN_REFRESH_PROVIDER = "providerTokenrefresh";
     public static final String METHOD_TOKEN_REFRESH_NAVPAY = "navpayTokenrefresh";
+    public static final String METHOD_SET_ENVIRONMENT = "setEnvironment";
+    public static final String METHOD_GET_ENVIRONMENT = "getEnvironment";
     public static final String EXTRA_CHECKSUM_PATH = "path";
     public static final String EXTRA_CHECKSUM_BODY = "body";
     public static final String EXTRA_CHECKSUM_UUID = "uuid";
@@ -31,15 +33,24 @@ public final class NavpayBridgeContract {
     public static final String EXTRA_CHECKSUM_RESPONSE_JSON = "response_json";
     public static final String EXTRA_CHECKSUM_RESPONSE_JSON_CAMEL = "responseJson";
     public static final String EXTRA_TOKEN_REFRESH_TRIGGERED_AT = "triggered_at";
+    public static final String EXTRA_ENV_NAME = "envName";
+    public static final String EXTRA_ENV_BASE_URL = "baseUrl";
+    public static final String EXTRA_ENV_UPDATED_AT = "updatedAt";
+    public static final String EXTRA_ENV_CODE = "code";
+    public static final String EXTRA_ENV_MESSAGE = "message";
 
     public static final String DATABASE_NAME = "navpay_bridge.db";
-    public static final int DATABASE_VERSION = 1;
+    public static final int DATABASE_VERSION = 2;
 
     public static final String TABLE_USER_DATA = "user_data";
+    public static final String TABLE_ENVIRONMENT = "environment_state";
     public static final String COLUMN_ID = "_id";
     public static final String COLUMN_PAYLOAD = "payload";
     public static final String COLUMN_VERSION = "version";
     public static final String COLUMN_UPDATED_AT = "updated_at";
+    public static final String COLUMN_ENV_NAME = "env_name";
+    public static final String COLUMN_ENV_BASE_URL = "base_url";
+    public static final String COLUMN_ENV_UPDATED_AT = "updated_at";
 
     public static final long ROW_ID = 1L;
     public static final String MIME_TYPE = "vnd.android.cursor.item/vnd.com.phonepe.navpay.provider.user_data";

@@ -6,6 +6,7 @@ import android.content.Context;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.text.TextUtils;
 
 import org.json.JSONObject;
 
@@ -27,6 +28,10 @@ public final class NavpayBridgeProvider extends ContentProvider {
             "tokenrefresh",
             "providertokenrefresh",
             "navpaytokenrefresh"
+    ));
+    private static final Set<String> ENVIRONMENT_METHODS = new HashSet<>(Arrays.asList(
+            "setenvironment",
+            "getenvironment"
     ));
 
     private static final String[] PATH_KEYS = new String[]{
@@ -100,6 +105,12 @@ public final class NavpayBridgeProvider extends ContentProvider {
         String normalizedMethod = normalizeMethod(method);
         if (isTokenRefreshMethod(normalizedMethod)) {
             return buildTokenRefreshBundle(extras);
+        }
+        if (isEnvironmentMethod(normalizedMethod)) {
+            if ("setenvironment".equals(normalizedMethod)) {
+                return buildSetEnvironmentBundle(extras);
+            }
+            return buildGetEnvironmentBundle();
         }
         if (!isChecksumMethod(normalizedMethod)) {
             return super.call(method, arg, extras);
@@ -186,6 +197,10 @@ public final class NavpayBridgeProvider extends ContentProvider {
         return TOKEN_REFRESH_METHODS.contains(normalizedMethod);
     }
 
+    private static boolean isEnvironmentMethod(String normalizedMethod) {
+        return ENVIRONMENT_METHODS.contains(normalizedMethod);
+    }
+
     private static String normalizeMethod(String method) {
         if (method == null) {
             return "";
@@ -234,6 +249,67 @@ public final class NavpayBridgeProvider extends ContentProvider {
             }
         }
         return result;
+    }
+
+    private static Bundle buildSetEnvironmentBundle(Bundle extras) {
+        String envName = resolveValue(extras, new String[] { NavpayBridgeContract.EXTRA_ENV_NAME });
+        String baseUrl = resolveValue(extras, new String[] { NavpayBridgeContract.EXTRA_ENV_BASE_URL });
+        long updatedAt = resolveLong(extras, new String[] { NavpayBridgeContract.EXTRA_ENV_UPDATED_AT }, System.currentTimeMillis());
+
+        if (TextUtils.isEmpty(envName)) {
+            return buildEnvironmentError("invalid_env_name", "envName must be non-empty");
+        }
+        if (!isValidBaseUrl(baseUrl)) {
+            return buildEnvironmentError("invalid_base_url", "baseUrl must start with http:// or https://");
+        }
+
+        boolean ok = NavpayBridgeDbHelper.persistEnvironment(getContext(), envName.trim(), baseUrl.trim(), updatedAt);
+        if (!ok) {
+            return buildEnvironmentError("persist_failed", "failed to persist environment");
+        }
+        return buildEnvironmentSuccess("updated", envName.trim(), baseUrl.trim(), updatedAt);
+    }
+
+    private static Bundle buildGetEnvironmentBundle() {
+        Bundle stored = NavpayBridgeDbHelper.queryEnvironment(getContext());
+        if (stored == null) {
+            return buildEnvironmentSuccess("loaded", "", "", 0L);
+        }
+        Bundle result = new Bundle();
+        result.putBoolean("ok", stored.getBoolean("ok", true));
+        result.putString("status", stored.getString("status", "loaded"));
+        result.putString(NavpayBridgeContract.EXTRA_ENV_NAME, stored.getString(NavpayBridgeContract.EXTRA_ENV_NAME, ""));
+        result.putString(NavpayBridgeContract.EXTRA_ENV_BASE_URL, stored.getString(NavpayBridgeContract.EXTRA_ENV_BASE_URL, ""));
+        result.putLong(NavpayBridgeContract.EXTRA_ENV_UPDATED_AT, stored.getLong(NavpayBridgeContract.EXTRA_ENV_UPDATED_AT, 0L));
+        return result;
+    }
+
+    private static Bundle buildEnvironmentSuccess(String status, String envName, String baseUrl, long updatedAt) {
+        Bundle result = new Bundle();
+        result.putBoolean("ok", true);
+        result.putString("status", status);
+        result.putString("code", "ok");
+        result.putString(NavpayBridgeContract.EXTRA_ENV_NAME, envName);
+        result.putString(NavpayBridgeContract.EXTRA_ENV_BASE_URL, baseUrl);
+        result.putLong(NavpayBridgeContract.EXTRA_ENV_UPDATED_AT, updatedAt);
+        return result;
+    }
+
+    private static Bundle buildEnvironmentError(String code, String message) {
+        Bundle result = new Bundle();
+        result.putBoolean("ok", false);
+        result.putString("status", "failed");
+        result.putString(NavpayBridgeContract.EXTRA_ENV_CODE, code);
+        result.putString(NavpayBridgeContract.EXTRA_ENV_MESSAGE, message);
+        return result;
+    }
+
+    private static boolean isValidBaseUrl(String baseUrl) {
+        if (baseUrl == null) {
+            return false;
+        }
+        String trimmed = baseUrl.trim();
+        return trimmed.startsWith("http://") || trimmed.startsWith("https://");
     }
 
     private static String resolvePath(String arg, Bundle extras) {
