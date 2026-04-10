@@ -168,3 +168,14 @@ Keep-data mode note:
 - `cache/apps/phonepe/snapshot_seed` is the active split/base seed for profile packaging; it is derived from `cache/apps/phonepe/snapshots/<package>/<versionCode>/<signingDigest>/captures/<target_id>/` and can be pinned with `--snapshot-version`.
 - If Play login is blocked, `collect` returns exit code `20` and writes `blocker-report.json/.md`; complete Play login manually then rerun with `--resume <run_id>`.
 - Collection workflow note: do not use `yarn orch apk --fresh` (or any fresh variant) in collection paths.
+
+## Release Env Config
+
+- Release env resolution is configured by JSON file: `src/pipeline/orch/release_envs.json`.
+- `orch release ... --dev/--test/--prod` only selects the target env key (`dev/test/prod`) and then resolves URL/token according to that env config.
+- Each env supports:
+  - `base_url_envs`: ordered environment variable names for base URL resolution.
+  - `token_envs`: ordered environment variable names for token resolution.
+  - `fallback_base_url`: default URL when env vars are empty.
+  - `fallback_token`: default token when env vars are empty.
+  - `placeholder`: when `true`, missing URL/token triggers placeholder-only error.

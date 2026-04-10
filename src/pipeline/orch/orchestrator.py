@@ -68,29 +68,8 @@ MERGE_STATE_FILE = "profile_merge_state.json"
 DEFAULT_SNAPSHOT_SEED_DIR = "cache/apps/phonepe/snapshot_seed"
 DEFAULT_SPLIT_SEED_DIR = DEFAULT_SNAPSHOT_SEED_DIR
 LOCAL_DEFAULT_RELEASE_TOKEN = "nprt_local_phonepe_publisher"
-RELEASE_ENV_SETTINGS = {
-    "dev": {
-        "base_url_envs": ("RELEASE_DEV_BASE_URL", "RELEASE_BASE_URL"),
-        "token_envs": ("RELEASE_DEV_TOKEN", "RELEASE_TOKEN"),
-        "fallback_base_url": "http://localhost:3000",
-        "fallback_token": LOCAL_DEFAULT_RELEASE_TOKEN,
-        "placeholder": False,
-    },
-    "test": {
-        "base_url_envs": ("RELEASE_TEST_BASE_URL",),
-        "token_envs": ("RELEASE_TEST_TOKEN",),
-        "fallback_base_url": "",
-        "fallback_token": "",
-        "placeholder": True,
-    },
-    "prod": {
-        "base_url_envs": ("RELEASE_PROD_BASE_URL",),
-        "token_envs": ("RELEASE_PROD_TOKEN",),
-        "fallback_base_url": "",
-        "fallback_token": "",
-        "placeholder": True,
-    },
-}
+RELEASE_ENV_CONFIG_PATH = SCRIPT_DIR / "release_envs.json"
+DEFAULT_HTTP_USER_AGENT = "navpay-orch/1.0"
 DEFAULT_REQUIRED_SPLITS = (
     "split_config.arm64_v8a.apk",
     "split_config.xxhdpi.apk",
@@ -3518,9 +3497,49 @@ def normalize_release_base_url(raw: str) -> str:
     return value[:-1] if value.endswith("/") else value
 
 
+def load_release_env_settings(config_path: Path = RELEASE_ENV_CONFIG_PATH) -> dict:
+    if not config_path.exists():
+        raise RuntimeError(f"release env config not found: {config_path}")
+    try:
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"release env config json invalid: {config_path} ({exc})") from exc
+    if not isinstance(raw, dict):
+        raise RuntimeError(f"release env config must be object: {config_path}")
+
+    normalized = {}
+    for env_name, entry in raw.items():
+        if not isinstance(env_name, str) or not env_name.strip():
+            continue
+        if not isinstance(entry, dict):
+            raise RuntimeError(f"release env '{env_name}' config must be object")
+
+        def normalize_env_names(field_name: str):
+            value = entry.get(field_name, [])
+            if isinstance(value, str):
+                value = [value]
+            if not isinstance(value, list):
+                raise RuntimeError(f"release env '{env_name}' field '{field_name}' must be list")
+            out = []
+            for item in value:
+                if isinstance(item, str) and item.strip():
+                    out.append(item.strip())
+            return tuple(out)
+
+        normalized[env_name.strip().lower()] = {
+            "base_url_envs": normalize_env_names("base_url_envs"),
+            "token_envs": normalize_env_names("token_envs"),
+            "fallback_base_url": str(entry.get("fallback_base_url", "") or "").strip(),
+            "fallback_token": str(entry.get("fallback_token", "") or "").strip(),
+            "placeholder": bool(entry.get("placeholder", False)),
+        }
+    return normalized
+
+
 def resolve_release_env_settings(target_env: str) -> dict:
     env_name = (target_env or "").strip().lower() or "dev"
-    settings = RELEASE_ENV_SETTINGS.get(env_name)
+    all_settings = load_release_env_settings()
+    settings = all_settings.get(env_name)
     if not settings:
         raise RuntimeError(f"Unsupported release target env: {target_env}")
 
@@ -3638,6 +3657,7 @@ def http_json(method: str, url: str, token: str, payload: Optional[dict] = None)
     body = None
     headers = {
         "authorization": f"Bearer {token}",
+        "user-agent": DEFAULT_HTTP_USER_AGENT,
     }
     if payload is not None:
         body = json.dumps(payload).encode("utf-8")
@@ -3688,6 +3708,7 @@ def http_multipart_upload(
         method="POST",
         headers={
             "authorization": f"Bearer {token}",
+            "user-agent": DEFAULT_HTTP_USER_AGENT,
             "content-type": f"multipart/form-data; boundary={boundary}",
         },
     )

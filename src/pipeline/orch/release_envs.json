@@ -1,0 +1,23 @@
+{
+  "dev": {
+    "base_url_envs": ["RELEASE_DEV_BASE_URL", "RELEASE_BASE_URL"],
+    "token_envs": ["RELEASE_DEV_TOKEN", "RELEASE_TOKEN"],
+    "fallback_base_url": "http://localhost:3000",
+    "fallback_token": "nprt_local_phonepe_publisher",
+    "placeholder": false
+  },
+  "test": {
+    "base_url_envs": ["RELEASE_TEST_BASE_URL", "RELEASE_BASE_URL"],
+    "token_envs": ["RELEASE_TEST_TOKEN", "RELEASE_TOKEN"],
+    "fallback_base_url": "https://test-admin.navpay.site",
+    "fallback_token": "nprt_JaPc24zLAyTEOAxXeGCW9XWvNvrQjcqi",
+    "placeholder": false
+  },
+  "prod": {
+    "base_url_envs": ["RELEASE_PROD_BASE_URL"],
+    "token_envs": ["RELEASE_PROD_TOKEN"],
+    "fallback_base_url": "",
+    "fallback_token": "",
+    "placeholder": true
+  }
+}
