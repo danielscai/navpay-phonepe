@@ -13,10 +13,8 @@ def test_package_scripts_expose_orch_shortcuts():
     assert scripts.get("test") == "python3 src/pipeline/orch/orchestrator.py test"
 
 
-def test_release_scripts_are_yarn4_compatible():
+def test_release_shortcut_is_removed_and_publish_uses_orch():
     package = json.loads(Path("package.json").read_text(encoding="utf-8"))
     scripts = package.get("scripts", {})
-    release_script = scripts.get("release", "")
-    publish_script = scripts.get("release:publish", "")
-    assert ":?" not in release_script
-    assert ":?" not in publish_script
+    assert "release" not in scripts
+    assert "release:publish" not in scripts

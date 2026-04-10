@@ -59,6 +59,8 @@ DEFAULT_TIMEOUT_SEC = 12
 SMOKE_TIMEOUT_SEC = 20
 DEFAULT_TEST_MODE = "sigbypass"
 DEFAULT_EMULATOR_BOOT_TIMEOUT = 20
+DEFAULT_AVD_SYSTEM_IMAGE = "system-images;android-35;google_apis_playstore;arm64-v8a"
+DEFAULT_AVD_DEVICE = "pixel_5"
 COLLECT_EMULATOR_SNAPSHOT_NAME = "navpay_collect_last"
 REUSE_STATE_FILE = "reuse_artifacts_state.json"
 MERGE_STATE_FILE = "profile_merge_state.json"
@@ -1357,6 +1359,19 @@ def emulator_path():
     return "emulator"
 
 
+def avdmanager_path():
+    android_sdk = os.environ.get("ANDROID_HOME") or os.path.expanduser("~/Library/Android/sdk")
+    candidates = [
+        Path(android_sdk) / "cmdline-tools" / "latest" / "bin" / "avdmanager",
+        Path(android_sdk) / "cmdline-tools" / "bin" / "avdmanager",
+        Path(android_sdk) / "tools" / "bin" / "avdmanager",
+    ]
+    for p in candidates:
+        if p.exists():
+            return str(p)
+    return "avdmanager"
+
+
 
 def resolve_cache_path(rel_path: str) -> Path:
     return (REPO_ROOT / rel_path).resolve()
@@ -1544,6 +1559,55 @@ def is_boot_completed(adb: str, serial: str) -> bool:
 def avd_exists(avd_name: str) -> bool:
     avd_dir = Path.home() / ".android" / "avd" / f"{avd_name}.avd"
     return avd_dir.exists()
+
+
+def create_emulator_avd(emulator_cfg):
+    avd_name = str(emulator_cfg.get("avd_name") or "").strip()
+    if not avd_name:
+        raise RuntimeError("Emulator config missing avd_name")
+
+    system_image = str(emulator_cfg.get("system_image") or DEFAULT_AVD_SYSTEM_IMAGE).strip()
+    device = str(emulator_cfg.get("device") or DEFAULT_AVD_DEVICE).strip()
+    abi = str(emulator_cfg.get("abi") or "").strip()
+    if not system_image:
+        raise RuntimeError(f"Emulator config missing system_image: {avd_name}")
+    if not device:
+        raise RuntimeError(f"Emulator config missing device: {avd_name}")
+
+    cmd = [
+        avdmanager_path(),
+        "create",
+        "avd",
+        "--force",
+        "--name",
+        avd_name,
+        "--package",
+        system_image,
+        "--device",
+        device,
+    ]
+    if abi:
+        cmd.extend(["--abi", abi])
+
+    log_info(
+        f"Creating AVD {avd_name} (image={system_image}, device={device}{', abi=' + abi if abi else ''})"
+    )
+    try:
+        subprocess.run(
+            cmd,
+            input="\n",
+            text=True,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("avdmanager not found. Install Android cmdline-tools first.") from exc
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            f"Failed to create AVD {avd_name}. "
+            f"Ensure system image exists: sdkmanager '{system_image}'"
+        ) from exc
 
 def find_emulator_by_module(emulators, module_name: str):
     for cfg in emulators:
@@ -3674,12 +3738,82 @@ def resolve_release_version_name(version: str, rows: list, now: Optional[datetim
     return compute_next_release_version(rows, now=now)
 
 
-def cmd_release(app: str, version: str = "", target_env: str = "dev") -> int:
+def parse_bridge_schema_version(raw: str) -> int:
+    value = str(raw or "").strip()
+    if not value:
+        return 1
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise RuntimeError(f"invalid_bridge_schema_version:{value}") from exc
+    if parsed < 0:
+        raise RuntimeError(f"invalid_bridge_schema_version:{value}")
+    return parsed
+
+
+def parse_bridge_built_at_ms(raw: str) -> int:
+    value = str(raw or "").strip()
+    if not value:
+        return int(time.time() * 1000)
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise RuntimeError(f"invalid_bridge_built_at_ms:{value}") from exc
+    if parsed < 0:
+        raise RuntimeError(f"invalid_bridge_built_at_ms:{value}")
+    return parsed
+
+
+def with_bridge_release_env(bridge_version: str, bridge_schema_version: int, bridge_built_at_ms: int):
+    previous = {
+        "BRIDGE_VERSION": os.environ.get("BRIDGE_VERSION"),
+        "BRIDGE_SCHEMA_VERSION": os.environ.get("BRIDGE_SCHEMA_VERSION"),
+        "BRIDGE_BUILT_AT_MS": os.environ.get("BRIDGE_BUILT_AT_MS"),
+    }
+    os.environ["BRIDGE_VERSION"] = bridge_version
+    os.environ["BRIDGE_SCHEMA_VERSION"] = str(bridge_schema_version)
+    os.environ["BRIDGE_BUILT_AT_MS"] = str(bridge_built_at_ms)
+    return previous
+
+
+def restore_bridge_release_env(previous: dict):
+    for key, value in previous.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+
+
+def cmd_release(
+    app: str,
+    version: str = "",
+    target_env: str = "dev",
+    bridge_version: str = "",
+    bridge_schema_version: str = "",
+    bridge_built_at_ms: str = "",
+) -> int:
     if app != "phonepe":
         raise RuntimeError(f"release currently only supports phonepe, got: {app}")
     release_env = resolve_release_env_settings(target_env)
-    manifest = load_manifest()
-    work_dir = profile_apk(manifest, COMPOSE_WORKFLOW_NAME, fresh=False)
+    rows = release_list_releases(release_env["base_url"], release_env["token"], app)
+    version_name = resolve_release_version_name(version, rows)
+    if not str(version or "").strip():
+        log_info(f"[release] auto version resolved: env={release_env['env_name']} version={version_name}")
+    resolved_bridge_version = str(bridge_version or "").strip() or version_name
+    if not re.fullmatch(r"\d{2}\.\d{2}\.\d{2}\.\d+", resolved_bridge_version):
+        raise RuntimeError(f"invalid_bridge_version:{resolved_bridge_version}")
+    resolved_bridge_schema_version = parse_bridge_schema_version(bridge_schema_version)
+    resolved_bridge_built_at_ms = parse_bridge_built_at_ms(bridge_built_at_ms)
+    previous_bridge_env = with_bridge_release_env(
+        bridge_version=resolved_bridge_version,
+        bridge_schema_version=resolved_bridge_schema_version,
+        bridge_built_at_ms=resolved_bridge_built_at_ms,
+    )
+    try:
+        manifest = load_manifest()
+        work_dir = profile_apk(manifest, COMPOSE_WORKFLOW_NAME, fresh=False)
+    finally:
+        restore_bridge_release_env(previous_bridge_env)
     base_apk = work_dir / DEFAULT_SIGNED_APK
     if not base_apk.exists():
         raise RuntimeError(f"release_artifact_missing: {base_apk}")
@@ -3690,10 +3824,10 @@ def cmd_release(app: str, version: str = "", target_env: str = "dev") -> int:
     if not version_code:
         raise RuntimeError("invalid_release_version_code")
     app_id = app
-    rows = release_list_releases(release_env["base_url"], release_env["token"], app_id)
-    version_name = resolve_release_version_name(version, rows)
-    if not str(version or "").strip():
-        log_info(f"[release] auto version resolved: env={release_env['env_name']} version={version_name}")
+    log_info(
+        f"[release] bridge mode: bridgeVersion={resolved_bridge_version} "
+        f"bridgeSchemaVersion={resolved_bridge_schema_version} bridgeBuiltAtMs={resolved_bridge_built_at_ms}"
+    )
 
     metadata = {
         "versionName": version_name,
@@ -3840,6 +3974,30 @@ def cmd_test(app: str, serial: str = "", smoke: bool = False, install_mode: str 
         install_mode=install_mode,
         snapshot_version=snapshot_version,
     )
+    return 0
+
+
+def cmd_emulator_build() -> int:
+    emulators = load_emulators()
+    if not emulators:
+        log_warn("No emulator targets found in src/pipeline/orch/emulators.json")
+        return 0
+
+    created_count = 0
+    skipped_count = 0
+    for cfg in emulators:
+        avd_name = str(cfg.get("avd_name") or "").strip()
+        if not avd_name:
+            name = str(cfg.get("name") or "").strip() or "<unnamed>"
+            raise RuntimeError(f"Emulator target {name} missing avd_name")
+        if avd_exists(avd_name):
+            skipped_count += 1
+            log_info(f"AVD exists, skip: {avd_name}")
+            continue
+        create_emulator_avd(cfg)
+        created_count += 1
+
+    log_info(f"Emulator build finished. created={created_count}, skipped={skipped_count}")
     return 0
 
 
@@ -4606,6 +4764,9 @@ def build_parser() -> argparse.ArgumentParser:
     uninstall.add_argument("--serial")
     device_parser = sub.add_parser("device")
     device_parser.add_argument("serial", nargs="?")
+    emulator_parser = sub.add_parser("emulator")
+    emulator_sub = emulator_parser.add_subparsers(dest="emulator_cmd", required=True)
+    emulator_sub.add_parser("build")
 
     reset = sub.add_parser("reset")
     reset.add_argument("--from", dest="target")
@@ -4643,6 +4804,9 @@ def build_parser() -> argparse.ArgumentParser:
     release.add_argument("app", choices=SUPPORTED_APPS)
     release.add_argument("version", nargs="?")
     release.add_argument("--version", dest="version_name", default="")
+    release.add_argument("--bridge-version", dest="bridge_version", default="")
+    release.add_argument("--bridge-schema-version", dest="bridge_schema_version", default="")
+    release.add_argument("--bridge-built-at-ms", dest="bridge_built_at_ms", default="")
     release_env = release.add_mutually_exclusive_group()
     release_env.add_argument("--dev", dest="target_env", action="store_const", const="dev")
     release_env.add_argument("--test", dest="target_env", action="store_const", const="test")
@@ -4683,6 +4847,10 @@ def main(argv=None):
         )
     elif args.cmd == "device":
         cmd_device(getattr(args, "serial", None))
+    elif args.cmd == "emulator":
+        if getattr(args, "emulator_cmd", "") == "build":
+            return cmd_emulator_build()
+        raise RuntimeError("Unknown emulator command")
     elif args.cmd == "reset":
         cmd_reset(manifest, args.target)
     elif args.cmd == "rebuild":
@@ -4748,6 +4916,9 @@ def main(argv=None):
             getattr(args, "app"),
             version_name or version_positional,
             getattr(args, "target_env", "dev"),
+            str(getattr(args, "bridge_version", "") or "").strip(),
+            str(getattr(args, "bridge_schema_version", "") or "").strip(),
+            str(getattr(args, "bridge_built_at_ms", "") or "").strip(),
         )
     elif args.cmd == "test":
         smoke = getattr(args, "smoke", False)

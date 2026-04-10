@@ -34,6 +34,8 @@ Install the CLI once with `yarn install:orch`, then use `orch <subcommand>` dire
   - `python3 src/pipeline/orch/orchestrator.py collect --matrix src/pipeline/orch/device_matrix.example.json --package com.phonepe.app`
 - Resume PhonePe snapshot collection from run id:
   - `python3 src/pipeline/orch/orchestrator.py collect --matrix src/pipeline/orch/device_matrix.example.json --resume <run_id> --package com.phonepe.app`
+- Create required AVDs from `emulators.json` (existing ones are skipped):
+  - `python3 src/pipeline/orch/orchestrator.py emulator build`
 
 Top-level workflow uses a single composed pipeline (no profile mode selection).
 

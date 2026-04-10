@@ -54,6 +54,12 @@ class CliContractTest(unittest.TestCase):
         self.assertEqual(args_yes.cmd, "collect")
         self.assertEqual(args_yes.yes, True)
 
+    def test_emulator_build_command_is_supported(self) -> None:
+        parser = orch.build_parser()
+        args = parser.parse_args(["emulator", "build"])
+        self.assertEqual(args.cmd, "emulator")
+        self.assertEqual(args.emulator_cmd, "build")
+
     def test_build_and_test_accept_snapshot_version_arg(self) -> None:
         parser = orch.build_parser()
         for cmd in ("build", "test"):
@@ -98,6 +104,9 @@ class CliContractTest(unittest.TestCase):
         self.assertEqual(args.app, "phonepe")
         self.assertEqual(args.version, None)
         self.assertEqual(args.version_name, "")
+        self.assertEqual(args.bridge_version, "")
+        self.assertEqual(args.bridge_schema_version, "")
+        self.assertEqual(args.bridge_built_at_ms, "")
         self.assertEqual(args.target_env, "dev")
 
         args_flag = parser.parse_args(["release", "phonepe", "--version", "1.0.2"])
@@ -192,30 +201,89 @@ def test_release_routes_to_cmd_release(monkeypatch):
     monkeypatch.setattr(orch, "load_manifest", lambda: {"dummy": {"deps": []}})
     captured = {}
 
-    def fake_cmd_release(app, version, target_env):
+    def fake_cmd_release(app, version, target_env, bridge_version, bridge_schema_version, bridge_built_at_ms):
         captured["app"] = app
         captured["version"] = version
         captured["target_env"] = target_env
+        captured["bridge_version"] = bridge_version
+        captured["bridge_schema_version"] = bridge_schema_version
+        captured["bridge_built_at_ms"] = bridge_built_at_ms
         return 0
 
     monkeypatch.setattr(orch, "cmd_release", fake_cmd_release)
-    code = orch.main(["release", "phonepe", "--version", "1.0.2", "--test"])
+    code = orch.main(
+        [
+            "release",
+            "phonepe",
+            "--version",
+            "1.0.2",
+            "--bridge-version",
+            "26.04.10.1",
+            "--bridge-schema-version",
+            "1",
+            "--bridge-built-at-ms",
+            "1712707200000",
+            "--test",
+        ]
+    )
     assert code == 0
     assert captured == {
         "app": "phonepe",
         "version": "1.0.2",
         "target_env": "test",
+        "bridge_version": "26.04.10.1",
+        "bridge_schema_version": "1",
+        "bridge_built_at_ms": "1712707200000",
     }
+
+
+def test_main_routes_emulator_build_command(monkeypatch):
+    monkeypatch.setattr(orch, "load_manifest", lambda: {"dummy": {"deps": []}})
+    called = {"value": 0}
+
+    def fake_cmd_emulator_build():
+        called["value"] += 1
+        return 0
+
+    monkeypatch.setattr(orch, "cmd_emulator_build", fake_cmd_emulator_build)
+    code = orch.main(["emulator", "build"])
+    assert code == 0
+    assert called["value"] == 1
+
+
+def test_cmd_emulator_build_skips_existing_and_creates_missing(monkeypatch):
+    monkeypatch.setattr(
+        orch,
+        "load_emulators",
+        lambda: [
+            {"name": "existing", "avd_name": "phonepe_collect_clean35_xhdpi"},
+            {"name": "missing", "avd_name": "phonepe_collect_clean35_xxhdpi"},
+        ],
+    )
+    monkeypatch.setattr(
+        orch,
+        "avd_exists",
+        lambda avd_name: avd_name == "phonepe_collect_clean35_xhdpi",
+    )
+    created = []
+    monkeypatch.setattr(orch, "create_emulator_avd", lambda cfg: created.append(cfg.get("avd_name")))
+
+    code = orch.cmd_emulator_build()
+    assert code == 0
+    assert created == ["phonepe_collect_clean35_xxhdpi"]
 
 
 def test_release_routes_to_cmd_release_with_empty_version_by_default(monkeypatch):
     monkeypatch.setattr(orch, "load_manifest", lambda: {"dummy": {"deps": []}})
     captured = {}
 
-    def fake_cmd_release(app, version, target_env):
+    def fake_cmd_release(app, version, target_env, bridge_version, bridge_schema_version, bridge_built_at_ms):
         captured["app"] = app
         captured["version"] = version
         captured["target_env"] = target_env
+        captured["bridge_version"] = bridge_version
+        captured["bridge_schema_version"] = bridge_schema_version
+        captured["bridge_built_at_ms"] = bridge_built_at_ms
         return 0
 
     monkeypatch.setattr(orch, "cmd_release", fake_cmd_release)
@@ -225,4 +293,7 @@ def test_release_routes_to_cmd_release_with_empty_version_by_default(monkeypatch
         "app": "phonepe",
         "version": "",
         "target_env": "dev",
+        "bridge_version": "",
+        "bridge_schema_version": "",
+        "bridge_built_at_ms": "",
     }
