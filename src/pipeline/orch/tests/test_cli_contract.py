@@ -107,6 +107,8 @@ class CliContractTest(unittest.TestCase):
         self.assertEqual(args.bridge_version, "")
         self.assertEqual(args.bridge_schema_version, "")
         self.assertEqual(args.bridge_built_at_ms, "")
+        self.assertEqual(args.release_mode, "repack")
+        self.assertFalse(args.release_full)
         self.assertEqual(args.target_env, "dev")
 
         args_flag = parser.parse_args(["release", "phonepe", "--version", "1.0.2"])
@@ -114,6 +116,8 @@ class CliContractTest(unittest.TestCase):
 
         args_prod = parser.parse_args(["release", "phonepe", "--version", "1.0.2", "--prod"])
         self.assertEqual(args_prod.target_env, "prod")
+        args_full = parser.parse_args(["release", "phonepe", "--full"])
+        self.assertTrue(args_full.release_full)
 
 
 if __name__ == "__main__":
@@ -201,13 +205,14 @@ def test_release_routes_to_cmd_release(monkeypatch):
     monkeypatch.setattr(orch, "load_manifest", lambda: {"dummy": {"deps": []}})
     captured = {}
 
-    def fake_cmd_release(app, version, target_env, bridge_version, bridge_schema_version, bridge_built_at_ms):
+    def fake_cmd_release(app, version, target_env, bridge_version, bridge_schema_version, bridge_built_at_ms, release_mode):
         captured["app"] = app
         captured["version"] = version
         captured["target_env"] = target_env
         captured["bridge_version"] = bridge_version
         captured["bridge_schema_version"] = bridge_schema_version
         captured["bridge_built_at_ms"] = bridge_built_at_ms
+        captured["release_mode"] = release_mode
         return 0
 
     monkeypatch.setattr(orch, "cmd_release", fake_cmd_release)
@@ -234,6 +239,7 @@ def test_release_routes_to_cmd_release(monkeypatch):
         "bridge_version": "26.04.10.1",
         "bridge_schema_version": "1",
         "bridge_built_at_ms": "1712707200000",
+        "release_mode": "repack",
     }
 
 
@@ -277,13 +283,14 @@ def test_release_routes_to_cmd_release_with_empty_version_by_default(monkeypatch
     monkeypatch.setattr(orch, "load_manifest", lambda: {"dummy": {"deps": []}})
     captured = {}
 
-    def fake_cmd_release(app, version, target_env, bridge_version, bridge_schema_version, bridge_built_at_ms):
+    def fake_cmd_release(app, version, target_env, bridge_version, bridge_schema_version, bridge_built_at_ms, release_mode):
         captured["app"] = app
         captured["version"] = version
         captured["target_env"] = target_env
         captured["bridge_version"] = bridge_version
         captured["bridge_schema_version"] = bridge_schema_version
         captured["bridge_built_at_ms"] = bridge_built_at_ms
+        captured["release_mode"] = release_mode
         return 0
 
     monkeypatch.setattr(orch, "cmd_release", fake_cmd_release)
@@ -296,4 +303,25 @@ def test_release_routes_to_cmd_release_with_empty_version_by_default(monkeypatch
         "bridge_version": "",
         "bridge_schema_version": "",
         "bridge_built_at_ms": "",
+        "release_mode": "repack",
     }
+
+
+def test_release_routes_to_cmd_release_in_full_mode(monkeypatch):
+    monkeypatch.setattr(orch, "load_manifest", lambda: {"dummy": {"deps": []}})
+    captured = {}
+
+    def fake_cmd_release(app, version, target_env, bridge_version, bridge_schema_version, bridge_built_at_ms, release_mode):
+        captured["app"] = app
+        captured["version"] = version
+        captured["target_env"] = target_env
+        captured["bridge_version"] = bridge_version
+        captured["bridge_schema_version"] = bridge_schema_version
+        captured["bridge_built_at_ms"] = bridge_built_at_ms
+        captured["release_mode"] = release_mode
+        return 0
+
+    monkeypatch.setattr(orch, "cmd_release", fake_cmd_release)
+    code = orch.main(["release", "phonepe", "--full"])
+    assert code == 0
+    assert captured["release_mode"] == "full"

@@ -14,6 +14,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+import xml.etree.ElementTree as ET
 from typing import Optional
 from datetime import datetime
 from pathlib import Path
@@ -94,6 +95,8 @@ DEFAULT_REQUIRED_SPLITS = (
     "split_config.arm64_v8a.apk",
     "split_config.xxhdpi.apk",
 )
+RELEASE_MODE_REPACK = "repack"
+RELEASE_MODE_FULL = "full"
 KNOWN_ABI_SPLIT_TOKENS = {
     "arm64_v8a",
     "armeabi_v7a",
@@ -329,11 +332,6 @@ MANIFEST_REGISTRY = {
             "outputs": [
                 {"source": "src/apk/phonepehelper/build/smali", "target": "smali"},
                 {"source": "src/apk/phonepehelper/build/bridge-release.json", "target": "bridge-release.json"},
-            ],
-            "fingerprint_env": [
-                "BRIDGE_VERSION",
-                "BRIDGE_SCHEMA_VERSION",
-                "BRIDGE_BUILT_AT_MS",
             ],
         },
         "merge_script": "src/apk/phonepehelper/scripts/merge.sh",
@@ -3764,6 +3762,17 @@ def parse_bridge_built_at_ms(raw: str) -> int:
     return parsed
 
 
+def resolve_release_mode(raw_mode: str, full_build: bool) -> str:
+    if full_build:
+        return RELEASE_MODE_FULL
+    mode = str(raw_mode or "").strip().lower()
+    if not mode:
+        return RELEASE_MODE_REPACK
+    if mode not in (RELEASE_MODE_REPACK, RELEASE_MODE_FULL):
+        raise RuntimeError(f"unsupported_release_mode:{raw_mode}")
+    return mode
+
+
 def with_bridge_release_env(bridge_version: str, bridge_schema_version: int, bridge_built_at_ms: int):
     previous = {
         "BRIDGE_VERSION": os.environ.get("BRIDGE_VERSION"),
@@ -3784,6 +3793,102 @@ def restore_bridge_release_env(previous: dict):
             os.environ[key] = value
 
 
+def apply_bridge_metadata_to_manifest(
+    manifest_path: Path,
+    bridge_version: str,
+    bridge_schema_version: int,
+    bridge_built_at_ms: int,
+):
+    if not manifest_path.exists():
+        raise RuntimeError(f"release_manifest_missing:{manifest_path}")
+    ns_android = "http://schemas.android.com/apk/res/android"
+    ET.register_namespace("android", ns_android)
+    tree = ET.parse(manifest_path)
+    root = tree.getroot()
+    app_node = root.find("application")
+    if app_node is None:
+        raise RuntimeError(f"release_manifest_missing_application:{manifest_path}")
+
+    provider_name = "com.phonepehelper.NavpayBridgeVersionProvider"
+    provider_authority = "com.phonepe.navpay.bridge.version.provider"
+
+    provider_node = None
+    for node in app_node.findall("provider"):
+        node_name = node.get(f"{{{ns_android}}}name")
+        node_authority = node.get(f"{{{ns_android}}}authorities")
+        if node_name == provider_name or node_authority == provider_authority:
+            provider_node = node
+            break
+
+    if provider_node is None:
+        provider_node = ET.Element("provider")
+        app_node.append(provider_node)
+
+    provider_node.set(f"{{{ns_android}}}name", provider_name)
+    provider_node.set(f"{{{ns_android}}}authorities", provider_authority)
+    provider_node.set(f"{{{ns_android}}}exported", "true")
+
+    meta_values = {
+        "navpay.bridge.version": str(bridge_version),
+        "navpay.bridge.schema.version": str(bridge_schema_version),
+        "navpay.bridge.built.at.ms": str(bridge_built_at_ms),
+    }
+    for key, value in meta_values.items():
+        for child in list(provider_node.findall("meta-data")):
+            if child.get(f"{{{ns_android}}}name") == key:
+                provider_node.remove(child)
+        meta = ET.Element("meta-data")
+        meta.set(f"{{{ns_android}}}name", key)
+        meta.set(f"{{{ns_android}}}value", value)
+        provider_node.append(meta)
+    tree.write(manifest_path, encoding="utf-8", xml_declaration=True)
+
+
+def profile_apk_release_repack(
+    manifest,
+    profile_name: str,
+    bridge_version: str,
+    bridge_schema_version: int,
+    bridge_built_at_ms: int,
+    snapshot_version: str = "",
+):
+    work_dir = profile_build_path(profile_name)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    split_seed_dir, _ = ensure_phonepe_snapshot_seed(
+        resolve_cache_path(DEFAULT_SNAPSHOT_SEED_DIR),
+        DEFAULT_PACKAGE,
+        snapshot_version,
+    )
+    signed_apk_path = work_dir / DEFAULT_SIGNED_APK
+    try:
+        workspace = resolve_profile_workspace(profile_name)
+        log_info(f"[PROFILE:{profile_name}] release repack workspace reused: {workspace}")
+    except RuntimeError:
+        log_warn(f"[PROFILE:{profile_name}] release repack workspace missing, fallback to one-time merge")
+        workspace = profile_merge(
+            manifest,
+            profile_name,
+            reuse_artifacts=True,
+            refresh_workspace=True,
+            snapshot_version=snapshot_version,
+        )
+    apply_bridge_metadata_to_manifest(
+        workspace / "AndroidManifest.xml",
+        bridge_version=bridge_version,
+        bridge_schema_version=bridge_schema_version,
+        bridge_built_at_ms=bridge_built_at_ms,
+    )
+    sigbypass_compile(
+        workspace,
+        work_dir,
+        DEFAULT_UNSIGNED_APK,
+        DEFAULT_ALIGNED_APK,
+        DEFAULT_SIGNED_APK,
+    )
+    ensure_profile_release_splits_signed(work_dir, split_seed_dir, signed_apk_path)
+    return work_dir
+
+
 def cmd_release(
     app: str,
     version: str = "",
@@ -3791,6 +3896,7 @@ def cmd_release(
     bridge_version: str = "",
     bridge_schema_version: str = "",
     bridge_built_at_ms: str = "",
+    release_mode: str = RELEASE_MODE_REPACK,
 ) -> int:
     if app != "phonepe":
         raise RuntimeError(f"release currently only supports phonepe, got: {app}")
@@ -3804,16 +3910,26 @@ def cmd_release(
         raise RuntimeError(f"invalid_bridge_version:{resolved_bridge_version}")
     resolved_bridge_schema_version = parse_bridge_schema_version(bridge_schema_version)
     resolved_bridge_built_at_ms = parse_bridge_built_at_ms(bridge_built_at_ms)
-    previous_bridge_env = with_bridge_release_env(
-        bridge_version=resolved_bridge_version,
-        bridge_schema_version=resolved_bridge_schema_version,
-        bridge_built_at_ms=resolved_bridge_built_at_ms,
-    )
-    try:
-        manifest = load_manifest()
-        work_dir = profile_apk(manifest, COMPOSE_WORKFLOW_NAME, fresh=False)
-    finally:
-        restore_bridge_release_env(previous_bridge_env)
+    resolved_release_mode = resolve_release_mode(release_mode, full_build=False)
+    manifest = load_manifest()
+    if resolved_release_mode == RELEASE_MODE_REPACK:
+        work_dir = profile_apk_release_repack(
+            manifest,
+            COMPOSE_WORKFLOW_NAME,
+            bridge_version=resolved_bridge_version,
+            bridge_schema_version=resolved_bridge_schema_version,
+            bridge_built_at_ms=resolved_bridge_built_at_ms,
+        )
+    else:
+        previous_bridge_env = with_bridge_release_env(
+            bridge_version=resolved_bridge_version,
+            bridge_schema_version=resolved_bridge_schema_version,
+            bridge_built_at_ms=resolved_bridge_built_at_ms,
+        )
+        try:
+            work_dir = profile_apk(manifest, COMPOSE_WORKFLOW_NAME, fresh=False)
+        finally:
+            restore_bridge_release_env(previous_bridge_env)
     base_apk = work_dir / DEFAULT_SIGNED_APK
     if not base_apk.exists():
         raise RuntimeError(f"release_artifact_missing: {base_apk}")
@@ -3825,7 +3941,7 @@ def cmd_release(
         raise RuntimeError("invalid_release_version_code")
     app_id = app
     log_info(
-        f"[release] bridge mode: bridgeVersion={resolved_bridge_version} "
+        f"[release] mode={resolved_release_mode} bridge mode: bridgeVersion={resolved_bridge_version} "
         f"bridgeSchemaVersion={resolved_bridge_schema_version} bridgeBuiltAtMs={resolved_bridge_built_at_ms}"
     )
 
@@ -4807,6 +4923,8 @@ def build_parser() -> argparse.ArgumentParser:
     release.add_argument("--bridge-version", dest="bridge_version", default="")
     release.add_argument("--bridge-schema-version", dest="bridge_schema_version", default="")
     release.add_argument("--bridge-built-at-ms", dest="bridge_built_at_ms", default="")
+    release.add_argument("--mode", dest="release_mode", choices=(RELEASE_MODE_REPACK, RELEASE_MODE_FULL), default=RELEASE_MODE_REPACK)
+    release.add_argument("--full", dest="release_full", action="store_true", default=False)
     release_env = release.add_mutually_exclusive_group()
     release_env.add_argument("--dev", dest="target_env", action="store_const", const="dev")
     release_env.add_argument("--test", dest="target_env", action="store_const", const="test")
@@ -4919,6 +5037,10 @@ def main(argv=None):
             str(getattr(args, "bridge_version", "") or "").strip(),
             str(getattr(args, "bridge_schema_version", "") or "").strip(),
             str(getattr(args, "bridge_built_at_ms", "") or "").strip(),
+            resolve_release_mode(
+                str(getattr(args, "release_mode", RELEASE_MODE_REPACK) or ""),
+                bool(getattr(args, "release_full", False)),
+            ),
         )
     elif args.cmd == "test":
         smoke = getattr(args, "smoke", False)

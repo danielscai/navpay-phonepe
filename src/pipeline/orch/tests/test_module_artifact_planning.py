@@ -74,11 +74,6 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
                     "smali": cache_manager.REPO_ROOT / "src/apk/phonepehelper/build/smali",
                     "bridge-release.json": cache_manager.REPO_ROOT / "src/apk/phonepehelper/build/bridge-release.json",
                 },
-                "fingerprint_env": [
-                    "BRIDGE_VERSION",
-                    "BRIDGE_SCHEMA_VERSION",
-                    "BRIDGE_BUILT_AT_MS",
-                ],
             },
         }
 
