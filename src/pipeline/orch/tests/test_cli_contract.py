@@ -91,15 +91,19 @@ class CliContractTest(unittest.TestCase):
         args_with_serial = parser.parse_args(["uninstall", "phonepe", "--serial", "emulator-5554"])
         self.assertEqual(args_with_serial.serial, "emulator-5554")
 
-    def test_release_command_accepts_app_version_and_env_flags(self) -> None:
+    def test_release_command_accepts_optional_version_and_env_flags(self) -> None:
         parser = orch.build_parser()
-        args = parser.parse_args(["release", "phonepe", "1.0.2"])
+        args = parser.parse_args(["release", "phonepe"])
         self.assertEqual(args.cmd, "release")
         self.assertEqual(args.app, "phonepe")
-        self.assertEqual(args.version, "1.0.2")
+        self.assertEqual(args.version, None)
+        self.assertEqual(args.version_name, "")
         self.assertEqual(args.target_env, "dev")
 
-        args_prod = parser.parse_args(["release", "phonepe", "1.0.2", "--prod"])
+        args_flag = parser.parse_args(["release", "phonepe", "--version", "1.0.2"])
+        self.assertEqual(args_flag.version_name, "1.0.2")
+
+        args_prod = parser.parse_args(["release", "phonepe", "--version", "1.0.2", "--prod"])
         self.assertEqual(args_prod.target_env, "prod")
 
 
@@ -195,10 +199,30 @@ def test_release_routes_to_cmd_release(monkeypatch):
         return 0
 
     monkeypatch.setattr(orch, "cmd_release", fake_cmd_release)
-    code = orch.main(["release", "phonepe", "1.0.2", "--test"])
+    code = orch.main(["release", "phonepe", "--version", "1.0.2", "--test"])
     assert code == 0
     assert captured == {
         "app": "phonepe",
         "version": "1.0.2",
         "target_env": "test",
+    }
+
+
+def test_release_routes_to_cmd_release_with_empty_version_by_default(monkeypatch):
+    monkeypatch.setattr(orch, "load_manifest", lambda: {"dummy": {"deps": []}})
+    captured = {}
+
+    def fake_cmd_release(app, version, target_env):
+        captured["app"] = app
+        captured["version"] = version
+        captured["target_env"] = target_env
+        return 0
+
+    monkeypatch.setattr(orch, "cmd_release", fake_cmd_release)
+    code = orch.main(["release", "phonepe", "--dev"])
+    assert code == 0
+    assert captured == {
+        "app": "phonepe",
+        "version": "",
+        "target_env": "dev",
     }

@@ -8,7 +8,7 @@
 # 用法：./merge.sh --artifact-dir <artifact_dir> <decompiled_apk_dir>
 #######################################################################
 
-set -e
+set -euo pipefail
 
 # 颜色
 RED='\033[0;31m'
@@ -123,7 +123,7 @@ log_info "Smali 目录: $SMALI_DIR"
 log_step "1. 复制 PhonePeHelper 代码"
 
 # 确定目标 smali 目录（使用最后一个 smali_classes 目录，或创建新的）
-LAST_SMALI=$(ls -d "$TARGET_DIR"/smali_classes* 2>/dev/null | sort -V | tail -1)
+LAST_SMALI=$(find "$TARGET_DIR" -maxdepth 1 -type d -name 'smali_classes*' | sort -V | tail -1)
 if [ -z "$LAST_SMALI" ]; then
     TARGET_SMALI_DIR="$TARGET_DIR/smali_classes2"
 else
@@ -197,14 +197,44 @@ log_step "4. 注入 Navpay ContentProvider 到 Manifest"
 
 MANIFEST_FILE="$TARGET_DIR/AndroidManifest.xml"
 if [ -f "$MANIFEST_FILE" ]; then
-    python3 - "$MANIFEST_FILE" <<'PYCODE'
+    python3 - "$MANIFEST_FILE" "$ARTIFACT_DIR" <<'PYCODE'
+import json
+import os
 import sys
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 path = sys.argv[1]
+artifact_dir = Path(sys.argv[2])
 ns_android = "http://schemas.android.com/apk/res/android"
 provider_name = "com.phonepehelper.NavpayBridgeProvider"
 provider_authority = "com.phonepe.navpay.provider"
+version_provider_name = "com.phonepehelper.NavpayBridgeVersionProvider"
+version_provider_authority = "com.phonepe.navpay.bridge.version.provider"
+bridge_defaults = {
+    "navpay.bridge.version": "0.0.0.0",
+    "navpay.bridge.schema.version": "0",
+    "navpay.bridge.built.at.ms": "0",
+}
+bridge_values = dict(bridge_defaults)
+config_path = artifact_dir / "bridge-release.json"
+if config_path.is_file():
+    try:
+        config_data = json.loads(config_path.read_text(encoding="utf-8"))
+    except Exception:
+        config_data = {}
+    for key in bridge_values:
+        value = config_data.get(key)
+        if value is not None and str(value).strip():
+            bridge_values[key] = str(value).strip()
+for key, env_key in (
+    ("navpay.bridge.version", "BRIDGE_VERSION"),
+    ("navpay.bridge.schema.version", "BRIDGE_SCHEMA_VERSION"),
+    ("navpay.bridge.built.at.ms", "BRIDGE_BUILT_AT_MS"),
+):
+    value = (os.environ.get(env_key) or "").strip()
+    if value:
+        bridge_values[key] = value
 
 ET.register_namespace("android", ns_android)
 tree = ET.parse(path)
@@ -213,18 +243,40 @@ app = root.find("application")
 if app is None:
     raise SystemExit("application node not found")
 
-for node in app.findall("provider"):
-    if node.get(f"{{{ns_android}}}name") == provider_name or node.get(f"{{{ns_android}}}authorities") == provider_authority:
-        tree.write(path, encoding="utf-8", xml_declaration=True)
-        print("provider already exists")
-        raise SystemExit(0)
+def find_provider(name, authority):
+    for node in app.findall("provider"):
+        if node.get(f"{{{ns_android}}}name") == name or node.get(f"{{{ns_android}}}authorities") == authority:
+            return node
+    return None
 
-provider = ET.Element("provider")
-provider.set(f"{{{ns_android}}}name", provider_name)
-provider.set(f"{{{ns_android}}}exported", "true")
-provider.set(f"{{{ns_android}}}grantUriPermissions", "true")
-provider.set(f"{{{ns_android}}}authorities", provider_authority)
-app.append(provider)
+def upsert_provider(name, authority, exported, grant_uri_permissions=True):
+    provider = find_provider(name, authority)
+    if provider is None:
+        provider = ET.Element("provider")
+        app.append(provider)
+    provider.set(f"{{{ns_android}}}name", name)
+    provider.set(f"{{{ns_android}}}exported", "true" if exported else "false")
+    provider.set(f"{{{ns_android}}}authorities", authority)
+    if grant_uri_permissions:
+        provider.set(f"{{{ns_android}}}grantUriPermissions", "true")
+    elif f"{{{ns_android}}}grantUriPermissions" in provider.attrib:
+        provider.attrib.pop(f"{{{ns_android}}}grantUriPermissions", None)
+    return provider
+
+def upsert_meta_data(provider, name, value):
+    for node in list(provider.findall("meta-data")):
+        if node.get(f"{{{ns_android}}}name") == name:
+            provider.remove(node)
+    meta = ET.Element("meta-data")
+    meta.set(f"{{{ns_android}}}name", name)
+    meta.set(f"{{{ns_android}}}value", value)
+    provider.append(meta)
+
+upsert_provider(provider_name, provider_authority, exported=True, grant_uri_permissions=True)
+version_provider = upsert_provider(version_provider_name, version_provider_authority, exported=True, grant_uri_permissions=False)
+upsert_meta_data(version_provider, "navpay.bridge.version", bridge_values["navpay.bridge.version"])
+upsert_meta_data(version_provider, "navpay.bridge.schema.version", str(bridge_values["navpay.bridge.schema.version"]))
+upsert_meta_data(version_provider, "navpay.bridge.built.at.ms", str(bridge_values["navpay.bridge.built.at.ms"]))
 tree.write(path, encoding="utf-8", xml_declaration=True)
 print("provider injected")
 PYCODE
@@ -247,10 +299,16 @@ check_file() {
 }
 
 check_file "$TARGET_SMALI_DIR/com/PhonePeTweak/Def/PhonePeHelper.smali" "PhonePeHelper.smali"
+check_file "$TARGET_SMALI_DIR/com/phonepehelper/NavpayBridgeVersionProvider.smali" "NavpayBridgeVersionProvider.smali"
 check_file "$DISPATCHER_SMALI" "Dispatcher.smali"
 
 if [ ! -f "$TARGET_SMALI_DIR/com/PhonePeTweak/Def/PhonePeHelper.smali" ]; then
     log_error "PhonePeHelper.smali 缺失，注入失败"
+    exit 1
+fi
+
+if [ ! -f "$TARGET_SMALI_DIR/com/phonepehelper/NavpayBridgeVersionProvider.smali" ]; then
+    log_error "NavpayBridgeVersionProvider.smali 缺失，注入失败"
     exit 1
 fi
 

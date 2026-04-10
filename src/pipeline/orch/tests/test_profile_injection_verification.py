@@ -20,6 +20,7 @@ class ProfileInjectionVerificationTest(unittest.TestCase):
             hook_entry_smali = workspace / "smali_classes4/com/sigbypass/HookEntry.smali"
             helper_smali = workspace / "smali_classes4/com/phonepehelper/ModuleInit.smali"
             legacy_helper_smali = workspace / "smali_classes4/com/PhonePeTweak/Def/PhonePeHelper.smali"
+            version_provider_smali = workspace / "smali_classes4/com/phonepehelper/NavpayBridgeVersionProvider.smali"
             dispatcher_smali = workspace / "smali_classes4/com/indipay/inject/Dispatcher.smali"
             heartbeat_provider_smali = workspace / "smali_classes5/com/heartbeatbridge/HeartbeatBridgeProvider.smali"
             heartbeat_sender_smali = workspace / "smali_classes5/com/heartbeatbridge/HeartbeatSender.smali"
@@ -33,6 +34,7 @@ class ProfileInjectionVerificationTest(unittest.TestCase):
             hook_entry_smali.parent.mkdir(parents=True, exist_ok=True)
             helper_smali.parent.mkdir(parents=True, exist_ok=True)
             legacy_helper_smali.parent.mkdir(parents=True, exist_ok=True)
+            version_provider_smali.parent.mkdir(parents=True, exist_ok=True)
             dispatcher_smali.parent.mkdir(parents=True, exist_ok=True)
             heartbeat_provider_smali.parent.mkdir(parents=True, exist_ok=True)
             heartbeat_sender_smali.parent.mkdir(parents=True, exist_ok=True)
@@ -52,6 +54,7 @@ class ProfileInjectionVerificationTest(unittest.TestCase):
             )
             helper_smali.write_text(".class public Lcom/phonepehelper/ModuleInit;\n", encoding="utf-8")
             legacy_helper_smali.write_text(".class public Lcom/PhonePeTweak/Def/PhonePeHelper;\n", encoding="utf-8")
+            version_provider_smali.write_text(".class public Lcom/phonepehelper/NavpayBridgeVersionProvider;\n", encoding="utf-8")
             dispatcher_smali.write_text(
                 "invoke-static {p0}, Lcom/sigbypass/HookEntry;->init(Landroid/content/Context;)V\n"
                 "invoke-static {p0}, Lcom/phonepehelper/ModuleInit;->init(Landroid/content/Context;)V\n",

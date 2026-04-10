@@ -24,6 +24,11 @@ class EntryContractTest(unittest.TestCase):
             "Lcom/phonepehelper/ModuleInit;->init(Landroid/content/Context;)V",
             content,
         )
+        self.assertIn("com.phonepehelper.NavpayBridgeVersionProvider", content)
+        self.assertIn("com.phonepe.navpay.bridge.version.provider", content)
+        self.assertIn("navpay.bridge.version", content)
+        self.assertIn("navpay.bridge.schema.version", content)
+        self.assertIn("navpay.bridge.built.at.ms", content)
 
 
 if __name__ == "__main__":

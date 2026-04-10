@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -155,6 +156,41 @@ class ModuleArtifactCacheTest(unittest.TestCase):
             )
 
             self.assertNotEqual(fingerprint_one, fingerprint_two)
+
+    def test_compute_module_fingerprint_changes_when_declared_env_changes(self) -> None:
+        spec = {
+            "name": "phonepe_phonepehelper",
+            "builder": {
+                "command": "noop",
+                "args": [],
+                "outputs": [],
+                "fingerprint_env": ["BRIDGE_VERSION", "BRIDGE_SCHEMA_VERSION", "BRIDGE_BUILT_AT_MS"],
+            },
+            "fingerprint_inputs": [],
+        }
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                "BRIDGE_VERSION": "26.04.10.1",
+                "BRIDGE_SCHEMA_VERSION": "1",
+                "BRIDGE_BUILT_AT_MS": "1000",
+            },
+            clear=False,
+        ):
+            fingerprint_one = cache_manager.compute_module_fingerprint(spec)
+        with mock.patch.dict(
+            os.environ,
+            {
+                "BRIDGE_VERSION": "26.04.10.2",
+                "BRIDGE_SCHEMA_VERSION": "1",
+                "BRIDGE_BUILT_AT_MS": "1000",
+            },
+            clear=False,
+        ):
+            fingerprint_two = cache_manager.compute_module_fingerprint(spec)
+
+        self.assertNotEqual(fingerprint_one, fingerprint_two)
 
 
 if __name__ == "__main__":

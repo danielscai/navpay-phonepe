@@ -326,6 +326,12 @@ MANIFEST_REGISTRY = {
             ],
             "outputs": [
                 {"source": "src/apk/phonepehelper/build/smali", "target": "smali"},
+                {"source": "src/apk/phonepehelper/build/bridge-release.json", "target": "bridge-release.json"},
+            ],
+            "fingerprint_env": [
+                "BRIDGE_VERSION",
+                "BRIDGE_SCHEMA_VERSION",
+                "BRIDGE_BUILT_AT_MS",
             ],
         },
         "merge_script": "src/apk/phonepehelper/scripts/merge.sh",
@@ -2532,6 +2538,15 @@ def compute_module_fingerprint(spec) -> str:
     })
     hasher.update(json.dumps(builder_payload, sort_keys=True, ensure_ascii=True).encode("utf-8"))
     hasher.update(b"\0")
+    builder_fingerprint_env = builder.get("fingerprint_env", [])
+    if isinstance(builder_fingerprint_env, list) and builder_fingerprint_env:
+        env_payload = {
+            str(key): os.environ.get(str(key), "")
+            for key in builder_fingerprint_env
+            if isinstance(key, str) and key.strip()
+        }
+        hasher.update(json.dumps(env_payload, sort_keys=True, ensure_ascii=True).encode("utf-8"))
+        hasher.update(b"\0")
     inputs = spec.get("fingerprint_inputs")
     if inputs:
         for item in inputs:
@@ -3633,7 +3648,33 @@ def release_list_releases(base_url: str, token: str, app_id: str) -> list:
     return rows if isinstance(rows, list) else []
 
 
-def cmd_release(app: str, version: str, target_env: str = "dev") -> int:
+def compute_next_release_version(rows: list, now: Optional[datetime] = None) -> str:
+    current = now or datetime.now()
+    prefix = current.strftime("%y.%m.%d")
+    max_patch = -1
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        version_name = str(row.get("versionName", "") or "").strip()
+        match = re.fullmatch(r"(\d{2})\.(\d{2})\.(\d{2})\.(\d+)", version_name)
+        if not match:
+            continue
+        if ".".join(match.groups()[:3]) != prefix:
+            continue
+        patch = int(match.group(4))
+        if patch > max_patch:
+            max_patch = patch
+    return f"{prefix}.{max_patch + 1 if max_patch >= 0 else 0}"
+
+
+def resolve_release_version_name(version: str, rows: list, now: Optional[datetime] = None) -> str:
+    requested = str(version or "").strip()
+    if requested:
+        return requested
+    return compute_next_release_version(rows, now=now)
+
+
+def cmd_release(app: str, version: str = "", target_env: str = "dev") -> int:
     if app != "phonepe":
         raise RuntimeError(f"release currently only supports phonepe, got: {app}")
     release_env = resolve_release_env_settings(target_env)
@@ -3648,8 +3689,14 @@ def cmd_release(app: str, version: str, target_env: str = "dev") -> int:
     version_code = base_metadata["versionCode"]
     if not version_code:
         raise RuntimeError("invalid_release_version_code")
+    app_id = app
+    rows = release_list_releases(release_env["base_url"], release_env["token"], app_id)
+    version_name = resolve_release_version_name(version, rows)
+    if not str(version or "").strip():
+        log_info(f"[release] auto version resolved: env={release_env['env_name']} version={version_name}")
+
     metadata = {
-        "versionName": str(version),
+        "versionName": version_name,
         "versionCode": int(version_code),
         "packageName": base_metadata["packageName"],
         "minSdk": base_metadata["minSdk"],
@@ -3692,8 +3739,6 @@ def cmd_release(app: str, version: str, target_env: str = "dev") -> int:
         )
 
     checksum = sha256_file(base_apk)
-    app_id = app
-    rows = release_list_releases(release_env["base_url"], release_env["token"], app_id)
     active = next((row for row in rows if str(row.get("status", "")).lower() == "active"), None)
     if active:
         active_version_code = int(active.get("versionCode", 0) or 0)
@@ -4002,6 +4047,9 @@ def resolve_module_spec(manifest, name: str):
     builder_outputs = builder_cfg.get("outputs", [])
     if not isinstance(builder_outputs, list):
         raise RuntimeError(f"{name} builder.outputs must be a list")
+    builder_fingerprint_env = builder_cfg.get("fingerprint_env", [])
+    if not isinstance(builder_fingerprint_env, list):
+        raise RuntimeError(f"{name} builder.fingerprint_env must be a list")
 
     return {
         "name": name,
@@ -4033,6 +4081,9 @@ def resolve_module_spec(manifest, name: str):
                 }
                 for item in builder_outputs
                 if isinstance(item, dict) and item.get("source") and item.get("target")
+            ],
+            "fingerprint_env": [
+                str(item) for item in builder_fingerprint_env if isinstance(item, str) and item.strip()
             ],
         },
         "fingerprint_inputs": [resolve_repo_path(item) for item in fingerprint_inputs],
@@ -4279,6 +4330,7 @@ def verify_profile_injection(manifest, workspace: Path, modules):
     checked_labels = []
     module_set = set(modules or [])
     provider_paths = find_workspace_matches(workspace, "com/phonepehelper/NavpayBridgeProvider.smali")
+    version_provider_paths = find_workspace_matches(workspace, "com/phonepehelper/NavpayBridgeVersionProvider.smali")
     provider_bootstraps_dispatcher = workspace_contains_text(provider_paths, "com.indipay.inject.Dispatcher")
     app_paths = find_workspace_matches(workspace, "com/phonepe/app/PhonePeApplication.smali")
     app_has_dispatcher_entry = workspace_contains_text(
@@ -4301,11 +4353,14 @@ def verify_profile_injection(manifest, workspace: Path, modules):
         elif module == "phonepe_phonepehelper":
             module_init_paths = find_workspace_matches(workspace, "com/phonepehelper/ModuleInit.smali")
             helper_paths = find_workspace_matches(workspace, "com/PhonePeTweak/Def/PhonePeHelper.smali")
+            version_provider_paths = find_workspace_matches(workspace, "com/phonepehelper/NavpayBridgeVersionProvider.smali")
             dispatcher_paths = find_workspace_matches(workspace, "com/indipay/inject/Dispatcher.smali")
             if not module_init_paths:
                 missing.append("phonepe_phonepehelper: missing ModuleInit.smali")
             if not helper_paths:
                 missing.append("phonepe_phonepehelper: missing PhonePeHelper.smali")
+            if not version_provider_paths:
+                missing.append("phonepe_phonepehelper: missing NavpayBridgeVersionProvider.smali")
             if not workspace_contains_text(
                 dispatcher_paths,
                 "Lcom/phonepehelper/ModuleInit;->init(Landroid/content/Context;)V",
@@ -4586,7 +4641,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     release = sub.add_parser("release")
     release.add_argument("app", choices=SUPPORTED_APPS)
-    release.add_argument("version")
+    release.add_argument("version", nargs="?")
+    release.add_argument("--version", dest="version_name", default="")
     release_env = release.add_mutually_exclusive_group()
     release_env.add_argument("--dev", dest="target_env", action="store_const", const="dev")
     release_env.add_argument("--test", dest="target_env", action="store_const", const="test")
@@ -4684,9 +4740,13 @@ def main(argv=None):
         )
         return 0
     elif args.cmd == "release":
+        version_name = str(getattr(args, "version_name", "") or "").strip()
+        version_positional = str(getattr(args, "version", "") or "").strip()
+        if version_name and version_positional and version_name != version_positional:
+            raise RuntimeError("release version conflict between positional and --version")
         return cmd_release(
             getattr(args, "app"),
-            getattr(args, "version"),
+            version_name or version_positional,
             getattr(args, "target_env", "dev"),
         )
     elif args.cmd == "test":

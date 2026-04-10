@@ -34,6 +34,11 @@ SRC_DIR="$PROJECT_DIR/src/main/java"
 LIBS_DIR="$PROJECT_DIR/libs"
 BUILD_DIR="$PROJECT_DIR/build"
 OUTPUT_DIR="$BUILD_DIR/smali"
+BRIDGE_RELEASE_JSON="$BUILD_DIR/bridge-release.json"
+
+BRIDGE_VERSION="${BRIDGE_VERSION:-0.0.0.0}"
+BRIDGE_SCHEMA_VERSION="${BRIDGE_SCHEMA_VERSION:-0}"
+BRIDGE_BUILT_AT_MS="${BRIDGE_BUILT_AT_MS:-0}"
 
 # Android SDK 路径
 ANDROID_SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
@@ -87,6 +92,31 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR/classes"
 mkdir -p "$OUTPUT_DIR"
 
+log_info "Bridge values: version=${BRIDGE_VERSION}, schema=${BRIDGE_SCHEMA_VERSION}, built_at_ms=${BRIDGE_BUILT_AT_MS}"
+python3 - "$BRIDGE_RELEASE_JSON" "$BRIDGE_VERSION" "$BRIDGE_SCHEMA_VERSION" "$BRIDGE_BUILT_AT_MS" <<'PYCODE'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+version = sys.argv[2]
+schema_version_raw = sys.argv[3]
+built_at_ms_raw = sys.argv[4]
+
+def parse_int(raw: str, default: int) -> int:
+    try:
+        return int(str(raw).strip())
+    except Exception:
+        return default
+
+payload = {
+    "navpay.bridge.version": version,
+    "navpay.bridge.schema.version": parse_int(schema_version_raw, 0),
+    "navpay.bridge.built.at.ms": parse_int(built_at_ms_raw, 0),
+}
+path.write_text(json.dumps(payload, ensure_ascii=True, sort_keys=True, indent=2), encoding="utf-8")
+PYCODE
+
 # 查找所有 Java 文件
 JAVA_FILES=$(find "$SRC_DIR" -name "*.java")
 log_info "找到 Java 文件:"
@@ -137,6 +167,8 @@ log_info "生成 Smali 文件:"
 find "$OUTPUT_DIR" -name "*.smali" | while read f; do
     echo "  - ${f#$OUTPUT_DIR/}"
 done
+
+log_info "生成 Bridge 配置: ${BRIDGE_RELEASE_JSON#$PROJECT_DIR/}"
 
 log_step "完成"
 

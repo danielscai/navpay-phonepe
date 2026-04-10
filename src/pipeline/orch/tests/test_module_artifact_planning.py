@@ -72,7 +72,13 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
                 ],
                 "outputs": {
                     "smali": cache_manager.REPO_ROOT / "src/apk/phonepehelper/build/smali",
+                    "bridge-release.json": cache_manager.REPO_ROOT / "src/apk/phonepehelper/build/bridge-release.json",
                 },
+                "fingerprint_env": [
+                    "BRIDGE_VERSION",
+                    "BRIDGE_SCHEMA_VERSION",
+                    "BRIDGE_BUILT_AT_MS",
+                ],
             },
         }
 
@@ -85,6 +91,7 @@ class ModuleArtifactPlanningTest(unittest.TestCase):
                     {item["target"]: item["source"] for item in spec["builder"]["outputs"]},
                     expected_spec["outputs"],
                 )
+                self.assertEqual(spec["builder"].get("fingerprint_env", []), expected_spec.get("fingerprint_env", []))
                 self.assertEqual(spec["fingerprint_inputs"], expected_spec["fingerprint_inputs"])
                 self.assertTrue(all(isinstance(path, Path) and path.is_absolute() for path in spec["fingerprint_inputs"]))
 
